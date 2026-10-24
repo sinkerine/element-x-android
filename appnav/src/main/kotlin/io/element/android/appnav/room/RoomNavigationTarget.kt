@@ -22,6 +22,13 @@ sealed interface RoomNavigationTarget : Parcelable {
     ) : RoomNavigationTarget
 
     @Parcelize
+    data class Thread(
+        val threadId: io.element.android.libraries.matrix.api.core.ThreadId,
+        val focusedEventId: EventId?,
+        val triage: Boolean = true,
+    ) : RoomNavigationTarget
+
+    @Parcelize
     data object Details : RoomNavigationTarget
 
     @Parcelize

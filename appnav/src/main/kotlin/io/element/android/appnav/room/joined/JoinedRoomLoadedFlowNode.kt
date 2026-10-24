@@ -82,6 +82,7 @@ class JoinedRoomLoadedFlowNode(
     plugins = plugins,
 ), DependencyInjectionGraphOwner {
     interface Callback : Plugin {
+        fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {}
         fun onDone()
         fun navigateToRoom(roomId: RoomId, serverNames: List<String>, clearBackStack: Boolean = false)
         fun handlePermalinkClick(data: PermalinkData, pushToBackstack: Boolean)
@@ -267,14 +268,20 @@ class JoinedRoomLoadedFlowNode(
                 callback.navigateToDeveloperSettings()
             }
         }
+        val triageCallback = object : MessagesEntryPoint.Callback by callback {
+            override fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {
+                this@JoinedRoomLoadedFlowNode.callback.navigateToTriageThread(roomId, threadId, focusedEventId)
+            }
+        }
         val params = MessagesEntryPoint.Params(
-            MessagesEntryPoint.InitialTarget.Messages(navTarget.focusedEventId)
+            navTarget.thread?.let { MessagesEntryPoint.InitialTarget.Thread(it.threadId, it.focusedEventId, it.triage) }
+                ?: MessagesEntryPoint.InitialTarget.Messages(navTarget.focusedEventId)
         )
         return messagesEntryPoint.createNode(
             parentNode = this,
             buildContext = buildContext,
             params = params,
-            callback = callback,
+            callback = triageCallback,
         )
     }
 
@@ -285,6 +292,7 @@ class JoinedRoomLoadedFlowNode(
         @Parcelize
         data class Messages(
             val focusedEventId: EventId? = null,
+            val thread: RoomNavigationTarget.Thread? = null,
         ) : NavTarget
 
         @Parcelize
@@ -328,6 +336,7 @@ private fun initialElement(plugins: List<Plugin>): JoinedRoomLoadedFlowNode.NavT
                 JoinedRoomLoadedFlowNode.NavTarget.Messages(input.initialElement.eventId)
             }
         }
+        is RoomNavigationTarget.Thread -> JoinedRoomLoadedFlowNode.NavTarget.Messages(thread = input.initialElement)
         RoomNavigationTarget.Details -> JoinedRoomLoadedFlowNode.NavTarget.RoomDetails
         RoomNavigationTarget.NotificationSettings -> JoinedRoomLoadedFlowNode.NavTarget.RoomNotificationSettings
     }

@@ -13,6 +13,7 @@ import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -98,10 +99,12 @@ class ThreadedMessagesNode(
     private val roomMemberModerationRenderer: RoomMemberModerationRenderer,
     private val emojiPickerRenderer: EmojiPickerRenderer,
     private val dispatchers: CoroutineDispatchers,
+    private val triageQueue: io.element.android.features.threads.api.ThreadsTriageQueue,
 ) : Node(buildContext, plugins = plugins), MessagesNavigator {
     data class Inputs(
         val threadRootEventId: ThreadId,
         val focusedEventId: EventId?,
+        val triage: Boolean = false,
     ) : NodeInputs
 
     private val inputs = inputs<Inputs>()
@@ -152,6 +155,8 @@ class ThreadedMessagesNode(
         fun navigateToRoomCall(roomId: RoomId, isAudioCall: Boolean)
         fun navigateToThread(threadRootId: ThreadId, focusedEventId: EventId?)
         fun navigateToDeveloperSettings()
+        fun navigateToNextTriageThread() {}
+        fun openInRoom() {}
 
         fun navigateToAvatarPreview(username: String, avatarUrl: String)
     }
@@ -276,7 +281,25 @@ class ThreadedMessagesNode(
             LocalTimelineItemPresenterFactories provides timelineItemPresenterFactories,
         ) {
             // Only display the actual UI and lifecycle logic if the presenter is loaded
-            presenter?.present()?.let { state ->
+            presenter?.present()?.let { presentedState ->
+                val state = if (inputs.triage && inputs.focusedEventId != null) {
+                    val items = presentedState.timelineState.timelineItems
+                        .filterNot {
+                            it is TimelineItem.Virtual &&
+                            it.model is io.element.android.features.messages.impl.timeline.model.virtual.TimelineItemReadMarkerModel
+                        }
+                        .toMutableList()
+                    val index = items.indexOfFirst { it is TimelineItem.Event && it.eventId == inputs.focusedEventId }
+                    if (index >= 0) {
+                        items.add(index + 1, TimelineItem.Virtual(
+                        io.element.android.libraries.matrix.api.core.UniqueId("triage-new-divider"),
+                        io.element.android.features.messages.impl.timeline.model.virtual.TimelineItemReadMarkerModel,
+                    ))
+                    }
+                    presentedState.copy(timelineState = presentedState.timelineState.copy(timelineItems = items.toImmutableList()))
+                } else {
+                    presentedState
+                }
                 OnLifecycleEvent { _, event ->
                     when (event) {
                         Lifecycle.Event.ON_PAUSE -> state.composerState.eventSink(MessageComposerEvent.SaveDraft)
@@ -344,6 +367,33 @@ class ThreadedMessagesNode(
                         )
                     },
                     onThreadsListClick = {},
+                    triageBar = {
+                        if (inputs.triage) {
+                            val next by triageQueue.upNext.collectAsState()
+                            androidx.compose.foundation.layout.Row {
+                                androidx.compose.material3.TextButton(onClick = callback::openInRoom) {
+                                    io.element.android.libraries.designsystem.theme.components.Text(
+                                        androidx.compose.ui.res.stringResource(
+                                            io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_open_in_room
+                                        )
+                                    )
+                                }
+                                io.element.android.libraries.designsystem.theme.components.Text(
+                                    next?.roomName
+                                        ?: androidx.compose.ui.res.stringResource(
+                                            io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_caught_up_title
+                                        )
+                                )
+                                androidx.compose.material3.TextButton(onClick = callback::navigateToNextTriageThread, enabled = next != null) {
+                                    io.element.android.libraries.designsystem.theme.components.Text(
+                                        androidx.compose.ui.res.stringResource(
+                                            io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_up_next
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    },
                 )
 
                 roomMemberModerationRenderer.Render(
