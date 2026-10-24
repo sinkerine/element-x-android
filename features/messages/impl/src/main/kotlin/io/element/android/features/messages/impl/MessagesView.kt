@@ -154,6 +154,7 @@ fun MessagesView(
     knockRequestsBannerView: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     forceJumpToBottomVisibility: Boolean = false,
+    triageBar: @Composable () -> Unit = {},
     customReactionBottomSheet: @Composable () -> Unit,
 ) {
     val eventContentValidationState = LocalEventContentValidationState.current
@@ -339,6 +340,7 @@ fun MessagesView(
             )
         },
         bottomSheetContent = {
+            triageBar()
             MessagesViewComposerBottomSheetContents(
                 state = state,
                 onLinkClick = { url, customTab -> onLinkClick(url, customTab) },

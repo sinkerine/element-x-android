@@ -21,6 +21,7 @@ import com.bumble.appyx.core.modality.BuildContext
 import com.bumble.appyx.core.node.Node
 import com.bumble.appyx.core.plugin.Plugin
 import com.bumble.appyx.navmodel.backstack.BackStack
+import com.bumble.appyx.navmodel.backstack.operation.newRoot
 import com.bumble.appyx.navmodel.backstack.operation.pop
 import com.bumble.appyx.navmodel.backstack.operation.push
 import dev.zacsweers.metro.Assisted
@@ -104,6 +105,7 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.IgnoredOnParcel
 import kotlinx.parcelize.Parcelize
@@ -135,6 +137,7 @@ class MessagesFlowNode(
     private val dateFormatter: DateFormatter,
     private val coroutineDispatchers: CoroutineDispatchers,
     private val hasVulkanSupport: DeviceHasVulkanSupport,
+    private val triageQueue: io.element.android.features.threads.api.ThreadsTriageQueue,
 ) : BaseFlowNode<MessagesFlowNode.NavTarget>(
     backstack = BackStack(
         initialElement = plugins.filterIsInstance<MessagesEntryPoint.Params>().first().initialTarget.toNavTarget(),
@@ -205,7 +208,7 @@ class MessagesFlowNode(
         data object KnockRequestsList : NavTarget
 
         @Parcelize
-        data class Thread(val threadRootId: ThreadId, val focusedEventId: EventId?) : NavTarget
+        data class Thread(val threadRootId: ThreadId, val focusedEventId: EventId?, val triage: Boolean = false) : NavTarget
 
         @Parcelize
         data object ThreadsList : NavTarget
@@ -566,9 +569,21 @@ class MessagesFlowNode(
             is NavTarget.Thread -> {
                 val inputs = ThreadedMessagesNode.Inputs(
                     threadRootEventId = navTarget.threadRootId,
+                    triage = navTarget.triage,
                     focusedEventId = navTarget.focusedEventId,
                 )
                 val callback = object : ThreadedMessagesNode.Callback {
+                    override fun openInRoom() {
+                        backstack.newRoot(NavTarget.Messages(null))
+                        lifecycleScope.launch { attachThread(navTarget.threadRootId, navTarget.focusedEventId) }
+                    }
+                    override fun navigateToNextTriageThread() {
+                        val next = triageQueue.upNext.value ?: return
+                        lifecycleScope.launch {
+                            val focused = triageQueue.open(next.key).getOrNull()
+                            callback.navigateToTriageThread(next.key.roomId, next.key.threadId, focused)
+                        }
+                    }
                     override fun handleEventClick(
                         timelineMode: Timeline.Mode,
                         event: TimelineItem.Event,

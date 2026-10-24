@@ -87,6 +87,7 @@ import io.element.android.libraries.matrix.api.MatrixClient
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.RoomIdOrAlias
+import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.matrix.api.core.toRoomIdOrAlias
 import io.element.android.libraries.matrix.api.permalink.PermalinkData
@@ -345,6 +346,13 @@ class LoggedInFlowNode(
                         }
                     }
 
+                    override fun navigateToThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {
+                        backstack.push(NavTarget.Room(
+                            roomIdOrAlias = roomId.toRoomIdOrAlias(),
+                            initialElement = RoomNavigationTarget.Thread(threadId, focusedEventId),
+                        ))
+                    }
+
                     override fun navigateToSettings() {
                         backstack.push(NavTarget.Settings())
                     }
@@ -387,6 +395,12 @@ class LoggedInFlowNode(
             }
             is NavTarget.Room -> {
                 val joinedRoomCallback = object : JoinedRoomLoadedFlowNode.Callback {
+                    override fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {
+                        backstack.replace(NavTarget.Room(
+                            roomIdOrAlias = roomId.toRoomIdOrAlias(),
+                            initialElement = RoomNavigationTarget.Thread(threadId, focusedEventId),
+                        ))
+                    }
                     override fun onDone() {
                         backstack.pop()
                     }

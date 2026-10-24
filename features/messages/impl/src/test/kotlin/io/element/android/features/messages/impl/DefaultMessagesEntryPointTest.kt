@@ -87,6 +87,7 @@ class DefaultMessagesEntryPointTest {
                 knockRequestsListEntryPoint = FakeKnockRequestsListEntryPoint(),
                 dateFormatter = FakeDateFormatter(),
                 coroutineDispatchers = testCoroutineDispatchers(),
+                triageQueue = io.element.android.features.threads.test.FakeThreadsTriageQueue(),
                 hasVulkanSupport = DeviceHasVulkanSupport(mockk(relaxed = true))
             )
         }

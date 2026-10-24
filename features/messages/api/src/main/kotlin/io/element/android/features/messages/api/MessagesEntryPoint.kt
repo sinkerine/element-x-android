@@ -29,6 +29,9 @@ interface MessagesEntryPoint : FeatureEntryPoint {
         ) : InitialTarget
 
         @Parcelize
+        data class Thread(val threadId: ThreadId, val focusedEventId: EventId?, val triage: Boolean) : InitialTarget
+
+        @Parcelize
         data object PinnedMessages : InitialTarget
     }
 
@@ -39,6 +42,7 @@ interface MessagesEntryPoint : FeatureEntryPoint {
         fun forwardEvent(eventId: EventId, fromPinnedEvents: Boolean)
         fun navigateToRoom(roomId: RoomId)
         fun navigateToDeveloperSettings()
+        fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {}
     }
 
     data class Params(val initialTarget: InitialTarget) : NodeInputs
