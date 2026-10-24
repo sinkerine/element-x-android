@@ -33,6 +33,7 @@ class DefaultHomeEntryPointTest : RobolectricTest() {
                 plugins = plugins,
                 matrixClient = FakeMatrixClient(),
                 presenter = createHomePresenter(),
+                threadsInbox = io.element.android.features.threads.test.FakeThreadsInboxEntryPoint(),
                 inviteFriendsUseCase = { lambdaError() },
                 analyticsService = FakeAnalyticsService(),
                 acceptDeclineInviteView = { _, _, _, _ -> lambdaError() },
