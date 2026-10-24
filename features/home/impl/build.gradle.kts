@@ -28,6 +28,7 @@ android {
 setupDependencyInjection()
 
 dependencies {
+    implementation(projects.features.threads.api)
     implementation(projects.appconfig)
     implementation(projects.libraries.core)
     implementation(projects.libraries.androidutils)
@@ -67,6 +68,7 @@ dependencies {
     api(projects.features.home.api)
 
     testCommonDependencies(libs, true)
+    testImplementation(projects.features.threads.test)
     testImplementation(projects.features.announcement.test)
     testImplementation(projects.features.invite.test)
     testImplementation(projects.features.logout.test)

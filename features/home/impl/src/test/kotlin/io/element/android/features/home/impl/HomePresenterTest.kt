@@ -165,4 +165,6 @@ internal fun createHomePresenter(
     logoutPresenter = { aDirectLogoutState() },
     rageshakeFeatureAvailability = rageshakeFeatureAvailability,
     sessionStore = sessionStore,
+    featureFlags = io.element.android.libraries.featureflag.test.FakeFeatureFlagService(),
+    threadsQueue = io.element.android.features.threads.test.FakeThreadsTriageQueue(),
 )

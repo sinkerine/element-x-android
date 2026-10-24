@@ -80,6 +80,7 @@ class HomeFlowNode(
     @Assisted plugins: List<Plugin>,
     private val matrixClient: MatrixClient,
     private val presenter: HomePresenter,
+    private val threadsInbox: io.element.android.features.threads.api.ThreadsInboxEntryPoint,
     private val inviteFriendsUseCase: InviteFriendsUseCase,
     private val analyticsService: AnalyticsService,
     private val acceptDeclineInviteView: AcceptDeclineInviteView,
@@ -221,6 +222,13 @@ class HomeFlowNode(
 
             HomeView(
                 homeState = state,
+                threadsView = { inboxModifier ->
+                    threadsInbox.Render(
+                        onOpen = { key, event -> callback.navigateToThread(key.roomId, key.threadId, event) },
+                        onOpenInRoom = { key -> callback.navigateToThread(key.roomId, key.threadId, null) },
+                        modifier = inboxModifier,
+                    )
+                },
                 onRoomClick = ::navigateToRoom,
                 onSettingsClick = callback::navigateToSettings,
                 onStartChatClick = callback::navigateToCreateRoom,
