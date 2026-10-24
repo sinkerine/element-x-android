@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.TextButton
@@ -89,7 +90,9 @@ fun ThreadsInboxView(
             }
         }
         if (state.pending.isNotEmpty()) {
-            Row {
+            Snackbar(action = {
+                TextButton(onClick = { state.eventSink(ThreadsInboxEvent.Undo) }) { Text(stringResource(CommonStrings.action_undo)) }
+            }) {
                 Text(
                     pluralStringResource(
                         io.element.android.libraries.ui.strings.R.plurals.screen_threads_inbox_marked_read,
@@ -97,12 +100,14 @@ fun ThreadsInboxView(
                         state.pending.size
                     )
                 )
-                TextButton(onClick = { state.eventSink(ThreadsInboxEvent.Undo) }) { Text(stringResource(CommonStrings.action_undo)) }
             }
         }
         if (state.failed) {
-            Text(stringResource(CommonStrings.screen_threads_inbox_mark_failed))
-            TextButton(onClick = { state.eventSink(ThreadsInboxEvent.Retry) }) { Text(stringResource(CommonStrings.action_retry)) }
+            Snackbar(action = {
+                TextButton(onClick = { state.eventSink(ThreadsInboxEvent.Retry) }) { Text(stringResource(CommonStrings.action_retry)) }
+            }) {
+                Text(stringResource(CommonStrings.screen_threads_inbox_mark_failed))
+            }
         }
         when {
             state.rows.isFailure() -> Text(stringResource(CommonStrings.screen_threads_inbox_load_failed))
