@@ -93,6 +93,9 @@ class ThreadsInboxSessionTest {
         runCurrent()
         assertThat(session.visited.value).isEmpty()
         assertThat(service.visiting).isFalse()
+        session.setForeground(true)
+        assertThat(service.visiting).isTrue()
+        assertThat(session.visited.value).isEmpty()
     }
 
     @Test
@@ -205,6 +208,27 @@ class ThreadsInboxSessionTest {
         service.threads.value = AsyncData.Success(listOf(acknowledged.copy(isMarkedUnread = true)).toImmutableList())
         runCurrent()
         assertThat(session.threads.value.dataOrNull()!!.single().isUnread).isTrue()
+    }
+
+    @Test
+    fun `mention only thread stays in My as dimmed visited row until visit ends`() = runTest {
+        val mention = previewThread().copy(isParticipating = false, numUnreadMentions = 1)
+        val (session, service) = session(mention)
+        session.startVisit()
+        runCurrent()
+        session.opened(mention)
+        service.threads.value = AsyncData.Success(listOf(mention.copy(
+            numUnread = 0,
+            numUnreadMentions = 0,
+            readReceiptEventId = mention.rootEvent.eventId
+        )).toImmutableList())
+        runCurrent()
+        val row = session.threads.value.dataOrNull()!!.single()
+        assertThat(row.isMine).isTrue()
+        assertThat(visibleThreads(listOf(row), ThreadsInboxTab.Mine, ThreadsInboxFilter.Unread, session.visited.value)).hasSize(1)
+        session.endVisit()
+        runCurrent()
+        assertThat(session.threads.value.dataOrNull()!!.single().isMine).isFalse()
     }
 
     @Test

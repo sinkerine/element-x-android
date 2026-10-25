@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /** The visit outlives list compositions and room nodes. A batch always owns immutable event targets. */
 @SingleIn(SessionScope::class)
@@ -34,6 +36,7 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         val failed: List<InboxThread> = emptyList(),
         val retained: Set<InboxThreadKey> = emptySet(),
         val failedUnread: Set<InboxThreadKey> = emptySet(),
+        val retainedMine: Set<InboxThreadKey> = emptySet(),
     )
 
     val readState = MutableStateFlow(ReadState())
@@ -43,8 +46,11 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
     private var timer: Job? = null
     private var expiry: Job? = null
     private var active = false
+    private val sends = Semaphore(4)
+    private var selected = false
     private val touched = mutableSetOf<InboxThreadKey>()
     private var frozenOrder: List<InboxThreadKey>? = null
+    val orderRevision = MutableStateFlow(0)
 
     fun touch(key: InboxThreadKey, pressed: Boolean) {
         if (pressed) {
@@ -52,7 +58,10 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
             touched += key
         } else {
             touched -= key
-            if (touched.isEmpty()) frozenOrder = null
+            if (touched.isEmpty()) {
+                frozenOrder = null
+                orderRevision.value++
+            }
         }
     }
 
@@ -65,7 +74,14 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
             items.map { item ->
                 val target = state.optimistic[item.key]
                 if (target != null && target.latestEvent?.eventId == item.latestEvent?.eventId) {
-                    item.copy(numUnread = 0, numUnreadMentions = 0, isMarkedUnread = false)
+                    item.copy(
+                        numUnread = 0,
+                        numUnreadMentions = 0,
+                        isMarkedUnread = false,
+                        isParticipating = item.isParticipating || item.key in state.retainedMine,
+                    )
+                } else if (!item.isUnread && item.key in state.retainedMine) {
+                    item.copy(isParticipating = true)
                 } else {
                     item
                 }
@@ -88,12 +104,14 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
     }
 
     fun startVisit() {
+        selected = true
         if (active) return
         active = true
         service.startVisit()
     }
 
     fun endVisit() {
+        selected = false
         commit()
         expiry?.cancel()
         active = false
@@ -101,22 +119,28 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         touched.clear()
         frozenOrder = null
         // Keep in-flight optimistic targets until their individual result is known.
-        readState.value = readState.value.copy(retained = emptySet())
+        readState.value = readState.value.copy(retained = emptySet(), retainedMine = emptySet())
         service.endVisit()
     }
 
     fun setForeground(foreground: Boolean) {
         expiry?.cancel()
+        if (foreground && selected && !active) startVisit()
         if (!foreground && active) {
             expiry = client.sessionCoroutineScope.launch {
-            delay(300_000)
-            endVisit()
-        }
+                delay(300_000)
+                endVisit()
+                // Home still has Threads selected; foreground starts a fresh visit.
+                selected = true
+            }
         }
     }
 
     fun opened(thread: InboxThread) {
-        readState.value = readState.value.copy(optimistic = readState.value.optimistic + (thread.key to thread))
+        readState.value = readState.value.copy(
+            optimistic = readState.value.optimistic + (thread.key to thread),
+            retainedMine = if (thread.isMine) readState.value.retainedMine + thread.key else readState.value.retainedMine,
+        )
         visited.value += thread.key
         tab.value = if (thread.isMine) ThreadsInboxTab.Mine else ThreadsInboxTab.Other
     }
@@ -130,6 +154,7 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
             pending = targets,
             optimistic = state.optimistic + targets.associateBy { it.key },
             retained = state.retained + keys,
+            retainedMine = state.retainedMine + targets.filter { it.isMine }.map { it.key },
         )
         timer = client.sessionCoroutineScope.launch {
             delay(5_000)
@@ -177,7 +202,7 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         // Per-target results restore only failed rows; successful receipts must not be retried as a batch.
         targets.forEach { target ->
             client.sessionCoroutineScope.launch {
-                val result = service.markSnapshotAsRead(listOf(target))
+                val result = sends.withPermit { service.markSnapshotAsRead(listOf(target)) }
                 val state = readState.value
                 val sameTarget = state.optimistic[target.key] == target
                 readState.value = state.copy(
