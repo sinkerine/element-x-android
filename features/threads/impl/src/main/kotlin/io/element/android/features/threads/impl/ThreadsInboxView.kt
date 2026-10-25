@@ -7,18 +7,21 @@
 
 package io.element.android.features.threads.impl
 
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SwipeToDismissBox
@@ -26,30 +29,27 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import io.element.android.libraries.designsystem.components.avatar.Avatar
-import io.element.android.libraries.designsystem.components.avatar.AvatarData
-import io.element.android.libraries.designsystem.components.avatar.AvatarSize
-import io.element.android.libraries.designsystem.components.avatar.AvatarType
+import io.element.android.compound.theme.ElementTheme
+import io.element.android.compound.tokens.generated.CompoundIcons
+import io.element.android.libraries.designsystem.theme.components.Icon
 import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.matrix.api.room.threads.InboxThread
 import io.element.android.libraries.matrix.api.room.threads.InboxThreadKey
-import io.element.android.libraries.matrix.api.timeline.item.event.MessageContent
-import io.element.android.libraries.matrix.api.timeline.item.event.getDisplayName
 import io.element.android.libraries.ui.strings.CommonStrings
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,16 +62,32 @@ fun ThreadsInboxView(
     var menu by remember { mutableStateOf<InboxThread?>(null) }
     val clipboard = LocalClipboardManager.current
     val markReadLabel = stringResource(CommonStrings.screen_threads_inbox_mark_read)
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState, state.tab, state.filter) {
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            layout.totalItemsCount > 2 && (layout.visibleItemsInfo.lastOrNull()?.index ?: 0) >= layout.totalItemsCount - 3
+        }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) state.eventSink(ThreadsInboxEvent.LoadMore) }
+    }
     Column(modifier.padding(16.dp)) {
-        Row {
-            TextButton(onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Mine)) }) {
-                Text(stringResource(CommonStrings.screen_threads_inbox_tab_mine) + " (${state.mineUnreadCount})")
-            }
-            TextButton(onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Other)) }) {
-                Text(stringResource(CommonStrings.screen_threads_inbox_tab_other) + " (${state.otherUnreadCount})")
-            }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = state.tab == ThreadsInboxTab.Mine,
+                onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Mine)) },
+                label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_mine) + " (${state.mineUnreadCount})") },
+            )
+            FilterChip(
+                selected = state.tab == ThreadsInboxTab.Other,
+                onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Other)) },
+                label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_other) + " (${state.otherUnreadCount})") },
+            )
         }
-        Row {
+        TextButton(onClick = { state.eventSink(ThreadsInboxEvent.MarkAllAsRead) }) {
+            Icon(CompoundIcons.Check(), null)
+            Icon(CompoundIcons.Check(), null)
+            Text(stringResource(CommonStrings.screen_threads_inbox_mark_all_read))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ThreadsInboxFilter.entries.forEach { filter ->
                 FilterChip(
                     selected = state.filter == filter,
@@ -86,15 +102,20 @@ fun ThreadsInboxView(
                     },
                 )
             }
-            TextButton(onClick = { state.eventSink(ThreadsInboxEvent.MarkAllAsRead) }) {
-                Text(stringResource(CommonStrings.screen_threads_inbox_mark_all_read))
-            }
         }
         state.latestUnread?.let { thread ->
-            Card(onClick = { onOpen(thread.key) }, modifier = Modifier.fillMaxWidth()) {
+            Card(
+                onClick = { onOpen(thread.key) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = ElementTheme.colors.bgAccentRest, contentColor = ElementTheme.colors.textOnSolidPrimary),
+            ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text(stringResource(CommonStrings.screen_threads_inbox_open_latest_unread))
-                    Text(thread.roomName.orEmpty(), maxLines = 1)
+                    Row {
+                        Icon(CompoundIcons.ArrowRight(), null)
+                        Text(stringResource(CommonStrings.screen_threads_inbox_open_latest_unread))
+                    }
+                    Text(thread.roomName.orEmpty() + " · " + state.summaries[thread.key]?.second.orEmpty(), maxLines = 1)
+                    Text((state.mineUnreadCount + state.otherUnreadCount).toString())
                 }
             }
         }
@@ -111,6 +132,11 @@ fun ThreadsInboxView(
                 )
             }
         }
+        if (state.rows.isFailure() && !state.rows.dataOrNull().isNullOrEmpty()) {
+            Snackbar(action = {
+                TextButton(onClick = { state.eventSink(ThreadsInboxEvent.RetryLoad) }) { Text(stringResource(CommonStrings.action_retry)) }
+            }) { Text(stringResource(CommonStrings.screen_threads_inbox_load_failed)) }
+        }
         if (state.failed) {
             Snackbar(action = {
                 TextButton(onClick = { state.eventSink(ThreadsInboxEvent.Retry) }) { Text(stringResource(CommonStrings.action_retry)) }
@@ -119,8 +145,18 @@ fun ThreadsInboxView(
             }
         }
         when {
-            state.rows.isFailure() -> Text(stringResource(CommonStrings.screen_threads_inbox_load_failed))
-            state.rows.dataOrNull() == null -> CircularProgressIndicator()
+            state.rows.isFailure() && state.rows.dataOrNull().isNullOrEmpty() -> Column {
+                Text(stringResource(CommonStrings.screen_threads_inbox_load_failed))
+                TextButton(onClick = { state.eventSink(ThreadsInboxEvent.RetryLoad) }) { Text(stringResource(CommonStrings.action_retry)) }
+            }
+            state.rows.dataOrNull() == null -> Column {
+                repeat(3) {
+                    io.element.android.libraries.designsystem.atomic.molecules.IconTitlePlaceholdersRowMolecule(
+                        iconSize = 52.dp,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    )
+                }
+            }
             state.rows.dataOrNull().isNullOrEmpty() -> {
                 Text(stringResource(if (state.filter ==
                     ThreadsInboxFilter.Unread) {
@@ -128,11 +164,17 @@ fun ThreadsInboxView(
                     } else {
                         CommonStrings.screen_threads_inbox_empty
                     }))
+                Icon(CompoundIcons.CheckCircle(), null)
+                if (state.filter == ThreadsInboxFilter.Unread) {
+                    Text(stringResource(CommonStrings.screen_threads_inbox_no_replies))
+                } else {
+                    Text(stringResource(CommonStrings.screen_threads_inbox_start_thread_hint))
+                }
                 TextButton(onClick = { state.eventSink(ThreadsInboxEvent.SelectFilter(ThreadsInboxFilter.All)) }) {
                     Text(stringResource(CommonStrings.screen_threads_inbox_show_all))
                 }
             }
-            else -> LazyColumn {
+            else -> LazyColumn(state = listState) {
                 items(state.rows.dataOrNull().orEmpty(), key = { it.key.roomId.value + it.key.threadId.value }) { thread ->
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { value ->
@@ -143,38 +185,22 @@ fun ThreadsInboxView(
                     SwipeToDismissBox(
                         state = dismissState,
                         enableDismissFromStartToEnd = false,
-                        backgroundContent = { Text(stringResource(CommonStrings.screen_threads_inbox_mark_read)) },
+                        backgroundContent = {
+                            Box(Modifier.fillMaxSize().background(ElementTheme.colors.bgAccentRest).padding(16.dp), contentAlignment = Alignment.CenterEnd) {
+                                Text(stringResource(CommonStrings.screen_threads_inbox_mark_read), color = ElementTheme.colors.textOnSolidPrimary)
+                            }
+                        },
                     ) {
-                    ListItem(
-                        leadingContent = {
-                            Avatar(AvatarData(thread.key.roomId.value, thread.roomName, thread.roomAvatarUrl, AvatarSize.ThreadsListItem), AvatarType.Room())
-                        },
-                        headlineContent = { Text(thread.roomName ?: thread.key.roomId.value) },
-                        supportingContent = {
-                            Column {
-                                Text((thread.rootEvent.content as? MessageContent)?.body.orEmpty(), maxLines = 1)
-                                Text(
-                                    (thread.latestEvent?.senderProfile?.getDisplayName() ?: thread.latestEvent?.senderId?.value).orEmpty() +
-                                        ": " + (thread.latestEvent?.content as? MessageContent)?.body.orEmpty(),
-                                    maxLines = 1,
-                                )
-                            }
-                        },
-                        trailingContent = {
-                            Column {
-                                Text(formatInboxTime(thread.timestamp))
-                                if (thread.isUnread) Text(if (thread.numUnreadMentions > 0) "@ ${thread.numUnreadMentions}" else thread.numUnread.toString())
-                            }
-                        },
-                        modifier = Modifier.alpha(if (thread.isUnread && thread.key !in state.visited) 1f else 0.55f)
-                            .semantics(mergeDescendants = true) {
-                                customActions = listOf(CustomAccessibilityAction(markReadLabel) {
-                                    state.eventSink(ThreadsInboxEvent.MarkAsRead(thread.key))
-                                    true
-                                })
-                            }
-                            .combinedClickable(onClick = { onOpen(thread.key) }, onLongClick = { menu = thread }),
-                    )
+                        ThreadsInboxRow(
+                            thread = thread,
+                            rootPreview = state.summaries[thread.key]?.first.orEmpty(),
+                            replyPreview = state.summaries[thread.key]?.second.orEmpty(),
+                            visited = thread.key in state.visited,
+                            onOpen = { onOpen(thread.key) },
+                            onLongClick = { menu = thread },
+                            onMarkRead = { state.eventSink(ThreadsInboxEvent.MarkAsRead(thread.key)) },
+                            onTouch = { state.eventSink(ThreadsInboxEvent.Touch(thread.key, it)) },
+                        )
                     }
                 }
                 item {
@@ -187,10 +213,10 @@ fun ThreadsInboxView(
     menu?.let { thread ->
         ModalBottomSheet(onDismissRequest = { menu = null }) {
             TextButton(onClick = {
-                state.eventSink(ThreadsInboxEvent.MarkAsRead(thread.key))
+                state.eventSink(if (thread.isUnread) ThreadsInboxEvent.MarkAsRead(thread.key) else ThreadsInboxEvent.MarkAsUnread(thread.key))
                 menu = null
             }) {
-                Text(stringResource(CommonStrings.screen_threads_inbox_mark_read))
+                Text(stringResource(if (thread.isUnread) CommonStrings.screen_threads_inbox_mark_read else CommonStrings.screen_threads_inbox_mark_unread))
             }
             TextButton(onClick = {
                 onOpenInRoom(thread.key)

@@ -14,6 +14,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import io.element.android.features.threads.api.ThreadsInboxEntryPoint
 import io.element.android.features.threads.api.ThreadsTriageQueue
+import io.element.android.libraries.architecture.createNode
 import io.element.android.libraries.di.SessionScope
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.room.threads.InboxThreadKey
@@ -22,6 +23,12 @@ import kotlinx.coroutines.launch
 @ContributesBinding(SessionScope::class)
 @Inject
 class DefaultThreadsInboxEntryPoint(private val presenter: ThreadsInboxPresenter, private val queue: ThreadsTriageQueue) : ThreadsInboxEntryPoint {
+    override fun createNode(
+        parentNode: com.bumble.appyx.core.node.Node,
+        buildContext: com.bumble.appyx.core.modality.BuildContext,
+        callback: ThreadsInboxEntryPoint.Callback,
+    ): com.bumble.appyx.core.node.Node = parentNode.createNode<ThreadsInboxNode>(buildContext, listOf(callback))
+
     @Composable
     override fun Render(onOpen: (InboxThreadKey, EventId?) -> Unit, onOpenInRoom: (InboxThreadKey) -> Unit, modifier: Modifier) {
         val scope = rememberCoroutineScope()
