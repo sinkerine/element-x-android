@@ -30,6 +30,16 @@ import org.junit.Test
 
 class TimelineControllerTest {
     @Test
+    fun `thread controller never exposes room main timeline before first collection`() = runTest {
+        val main = FakeTimeline(name = "room-main")
+        val thread = FakeTimeline(name = "thread", mode = Timeline.Mode.Thread(io.element.android.libraries.matrix.api.core.ThreadId("\$root")))
+        val sut = createTimelineController(room = FakeJoinedRoom(liveTimeline = main), liveTimeline = thread)
+        assertThat(sut.activeTimelineFlow().value).isSameInstanceAs(thread)
+        assertThat(sut.timelineItems().first()).isEmpty()
+        assertThat(sut.mainTimelineMode()).isEqualTo(thread.mode)
+    }
+
+    @Test
     fun `test switching between live and detached timeline`() = runTest {
         val liveTimeline = FakeTimeline(name = "live")
         val detachedTimeline = FakeTimeline(name = "detached")

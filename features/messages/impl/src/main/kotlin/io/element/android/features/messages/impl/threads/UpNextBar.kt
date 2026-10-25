@@ -45,11 +45,14 @@ internal fun UpNextBar(preview: String?, count: Int, onNext: () -> Unit, modifie
     }
 }
 
+internal class UpNextBarPreviewParam : androidx.compose.ui.tooling.preview.PreviewParameterProvider<Pair<String?, Int>> {
+    override val values = sequenceOf("Android team · Lena: Could you mock this up?" to 3, null to 0)
+}
+
 @PreviewsDayNight
 @Composable
-internal fun UpNextBarPreview() = ElementPreview {
-    Column {
-        UpNextBar("Android team · Lena: Could you mock this up?", 3, {})
-        UpNextBar(null, 0, {})
-    }
+internal fun UpNextBarPreview(
+    @androidx.compose.ui.tooling.preview.PreviewParameter(UpNextBarPreviewParam::class) state: Pair<String?, Int>,
+) = ElementPreview {
+    UpNextBar(state.first, state.second, {})
 }

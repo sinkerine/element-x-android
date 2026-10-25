@@ -189,7 +189,10 @@ fun TimelineView(
     }
 
     // Animate alpha when timeline is first displayed, to avoid flashes or glitching when viewing rooms
-    AnimatedVisibility(visible = true, enter = fadeIn()) {
+    AnimatedVisibility(
+        visible = true,
+        enter = if (state.timelineMode is Timeline.Mode.Thread) androidx.compose.animation.EnterTransition.None else fadeIn(),
+    ) {
         val composeLocalTimelineEventRendererConfig = remember(state.useNewTimelineEventRenderer, state.timelineRoomInfo.currentUserId) {
             ComposeLocalTimelineEventRendererConfig(
                 isComposeRendererEnabled = state.useNewTimelineEventRenderer,
@@ -256,6 +259,7 @@ fun TimelineView(
                     newEventState = state.newEventState,
                     isLive = state.isLive,
                     focusRequestState = state.focusRequestState,
+                    timelineMode = state.timelineMode,
                     displayJumpToUnread = state.displayJumpToUnread,
                     jumpToUnread = state.jumpToUnread,
                     onScrollFinishAt = ::onScrollFinishAt,
@@ -344,6 +348,7 @@ private fun BoxScope.TimelineScrollHelper(
     focusRequestState: FocusRequestState,
     displayJumpToUnread: Boolean,
     jumpToUnread: JumpToUnreadState,
+    timelineMode: Timeline.Mode,
     onScrollFinishAt: (Int) -> Unit,
     onJumpToLive: () -> Unit,
     onFocusEventRender: () -> Unit,
@@ -419,7 +424,11 @@ private fun BoxScope.TimelineScrollHelper(
     val latestOnFocusEventRender by rememberUpdatedState(onFocusEventRender)
     LaunchedEffect(focusRequestState) {
         if (focusRequestState is FocusRequestState.Success && focusRequestState.isIndexed && !focusRequestState.rendered) {
-            lazyListState.animateScrollToItemCenter(focusRequestState.index)
+            if (timelineMode is Timeline.Mode.Thread) {
+                lazyListState.scrollToItem(focusRequestState.index)
+            } else {
+                lazyListState.animateScrollToItemCenter(focusRequestState.index)
+            }
             latestOnFocusEventRender()
         }
     }
