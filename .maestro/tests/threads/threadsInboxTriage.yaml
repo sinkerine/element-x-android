@@ -1,0 +1,25 @@
+appId: ${MAESTRO_APP_ID}
+---
+# Preconditions: authenticated dedicated account on Home; Threads and Cross-room
+# threads enabled; at least two unread threads in distinct dedicated rooms.
+# This flow reads threads. Reseed unread replies before repeating it.
+- tapOn: "Threads"
+- extendedWaitUntil:
+    visible: "Open latest unread"
+    timeout: 30000
+- assertVisible: "My threads.*"
+- tapOn: "Open latest unread"
+- extendedWaitUntil:
+    visible: "Next .*"
+    timeout: 30000
+- assertVisible: "NEW"
+- assertVisible: "Open in room"
+- tapOn: "Next .*"
+- extendedWaitUntil:
+    visible: "Next .*"
+    timeout: 30000
+- back
+- extendedWaitUntil:
+    visible: "My threads.*"
+    timeout: 10000
+- assertVisible: "Mark all as read"

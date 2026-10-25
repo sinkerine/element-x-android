@@ -35,12 +35,20 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import io.element.android.libraries.designsystem.components.avatar.Avatar
+import io.element.android.libraries.designsystem.components.avatar.AvatarData
+import io.element.android.libraries.designsystem.components.avatar.AvatarSize
+import io.element.android.libraries.designsystem.components.avatar.AvatarType
 import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.matrix.api.room.threads.InboxThread
 import io.element.android.libraries.matrix.api.room.threads.InboxThreadKey
 import io.element.android.libraries.matrix.api.timeline.item.event.MessageContent
+import io.element.android.libraries.matrix.api.timeline.item.event.getDisplayName
 import io.element.android.libraries.ui.strings.CommonStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,6 +61,7 @@ fun ThreadsInboxView(
 ) {
     var menu by remember { mutableStateOf<InboxThread?>(null) }
     val clipboard = LocalClipboardManager.current
+    val markReadLabel = stringResource(CommonStrings.screen_threads_inbox_mark_read)
     Column(modifier.padding(16.dp)) {
         Row {
             TextButton(onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Mine)) }) {
@@ -137,15 +146,33 @@ fun ThreadsInboxView(
                         backgroundContent = { Text(stringResource(CommonStrings.screen_threads_inbox_mark_read)) },
                     ) {
                     ListItem(
+                        leadingContent = {
+                            Avatar(AvatarData(thread.key.roomId.value, thread.roomName, thread.roomAvatarUrl, AvatarSize.ThreadsListItem), AvatarType.Room())
+                        },
                         headlineContent = { Text(thread.roomName ?: thread.key.roomId.value) },
                         supportingContent = {
                             Column {
                                 Text((thread.rootEvent.content as? MessageContent)?.body.orEmpty(), maxLines = 1)
-                                Text((thread.latestEvent?.content as? MessageContent)?.body.orEmpty(), maxLines = 1)
+                                Text(
+                                    (thread.latestEvent?.senderProfile?.getDisplayName() ?: thread.latestEvent?.senderId?.value).orEmpty() +
+                                        ": " + (thread.latestEvent?.content as? MessageContent)?.body.orEmpty(),
+                                    maxLines = 1,
+                                )
                             }
                         },
-                        trailingContent = { if (thread.isUnread) Text(thread.numUnread.toString()) },
+                        trailingContent = {
+                            Column {
+                                Text(formatInboxTime(thread.timestamp))
+                                if (thread.isUnread) Text(if (thread.numUnreadMentions > 0) "@ ${thread.numUnreadMentions}" else thread.numUnread.toString())
+                            }
+                        },
                         modifier = Modifier.alpha(if (thread.isUnread && thread.key !in state.visited) 1f else 0.55f)
+                            .semantics(mergeDescendants = true) {
+                                customActions = listOf(CustomAccessibilityAction(markReadLabel) {
+                                    state.eventSink(ThreadsInboxEvent.MarkAsRead(thread.key))
+                                    true
+                                })
+                            }
                             .combinedClickable(onClick = { onOpen(thread.key) }, onLongClick = { menu = thread }),
                     )
                     }
