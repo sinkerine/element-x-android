@@ -22,6 +22,7 @@ interface CrossRoomThreadsService {
     fun endVisit()
     suspend fun paginate(): Result<Unit>
     suspend fun markAsRead(threads: List<InboxThreadKey>): Result<Unit>
+    suspend fun markSnapshotAsRead(threads: List<InboxThread>): Result<Unit> = markAsRead(threads.map { it.key })
     suspend fun firstUnreadEventId(key: InboxThreadKey): Result<EventId?>
 }
 

@@ -52,6 +52,7 @@ class KotlinCrossRoomThreadsService(
 ) : CrossRoomThreadsService {
     override val threads = MutableStateFlow<AsyncData<ImmutableList<InboxThread>>>(AsyncData.Uninitialized)
     private var visit: Job? = null
+    private val roomJobs = mutableMapOf<io.element.android.libraries.matrix.api.core.RoomId, Job>()
     private val rooms = mutableMapOf<io.element.android.libraries.matrix.api.core.RoomId, JoinedRoom>()
     private val rows = mutableMapOf<io.element.android.libraries.matrix.api.core.RoomId, List<InboxThread>>()
     private val receipts = Semaphore(4)
@@ -59,17 +60,20 @@ class KotlinCrossRoomThreadsService(
     override fun startVisit() {
         if (visit?.isActive == true) return
         visit = client.sessionCoroutineScope.launch {
+            client.roomListService.state.first { it == io.element.android.libraries.matrix.api.roomlist.RoomListService.State.Running }
             client.roomListService.allRooms.summaries.catch { error ->
                 threads.value = AsyncData.Failure(error, threads.value.dataOrNull())
-            }.collectLatest { summaries ->
-                if (!client.roomListService.isInitialSyncDone) return@collectLatest
+            }.collect { summaries ->
                 coroutineScope {
                     val candidates = summaries.filter { it.info.currentUserMembership == CurrentUserMembership.JOINED }
                         .sortedByDescending { it.latestEventTimestamp }.take(20)
-                    rows.keys.retainAll(candidates.map { it.roomId }.toSet())
+                    val ids = candidates.map { it.roomId }.toSet()
+                    roomJobs.keys.filter { it !in ids }.forEach { id -> roomJobs.remove(id)?.cancelAndJoin() }
+                    rows.keys.retainAll(ids)
                     publish()
                     candidates.forEach { summary ->
-                        launch {
+                        if (roomJobs[summary.roomId]?.isActive == true) return@forEach
+                        roomJobs[summary.roomId] = client.sessionCoroutineScope.launch {
                             val room = client.getJoinedRoom(summary.roomId) ?: return@launch
                             rooms[summary.roomId] = room
                             try {
@@ -79,12 +83,25 @@ class KotlinCrossRoomThreadsService(
                                     val inner = (client as RustMatrixClient).innerClient.getRoom(summary.roomId.value)
                                         ?: return@collectLatest
                                     try {
+                                        val previousRows = rows[summary.roomId].orEmpty()
                                         rows[summary.roomId] = items.map { item ->
                                             val receipt = inner.loadUserReceipt(
                                                 receiptType(),
                                                 ReceiptThread.Thread(item.threadId.value),
                                                 client.sessionId.value
                                             )
+                                            val previous = previousRows.find { it.key.threadId == item.threadId }
+                                            val history = runCatchingExceptions {
+                                                loadHistory(room, item.threadId.value, receipt?.eventId?.let(::EventId))
+                                            }.getOrElse { error ->
+                                                timber.log.Timber.w(error, "Using cached inbox history for thread %s", item.threadId)
+                                                InboxThreadHistory(
+                                                    unreadCount = if (receipt?.eventId == item.latestEvent?.eventId?.value) 0 else previous?.numUnread ?: 1,
+                                                    mentionCount = previous?.numUnreadMentions ?: 0,
+                                                    participating = previous?.isParticipating ?: item.rootEvent.isOwn,
+                                                    firstUnread = null,
+                                                )
+                                            }
                                             InboxThread(
                                                 key = InboxThreadKey(summary.roomId, item.threadId),
                                                 roomName = summary.info.name,
@@ -92,15 +109,9 @@ class KotlinCrossRoomThreadsService(
                                                 rootEvent = item.rootEvent,
                                                 latestEvent = item.latestEvent,
                                                 numberOfReplies = item.numberOfReplies,
-                                                numUnread = if (item.latestEvent != null && item.latestEvent?.eventId?.value != receipt?.eventId &&
-                                                    item.latestEvent?.isOwn == false
-                                                ) {
-                                                    1
-                                                } else {
-                                                    0
-                                                },
-                                                numUnreadMentions = 0,
-                                                isParticipating = item.rootEvent.isOwn || item.latestEvent?.isOwn == true,
+                                                numUnread = history.unreadCount,
+                                                numUnreadMentions = history.mentionCount,
+                                                isParticipating = item.rootEvent.isOwn || history.participating,
                                                 roomNotificationMode = summary.info.userDefinedNotificationMode ?: RoomNotificationMode.ALL_MESSAGES,
                                                 readReceiptEventId = receipt?.eventId?.let(::EventId),
                                             )
@@ -112,6 +123,7 @@ class KotlinCrossRoomThreadsService(
                                 }
                             } catch (error: Exception) {
                                 if (error is CancellationException) throw error
+                                timber.log.Timber.w(error, "Failed to load inbox thread history for room %s", summary.roomId)
                                 threads.value = AsyncData.Failure(error, threads.value.dataOrNull())
                             } finally {
                                 rooms.remove(summary.roomId)
@@ -125,6 +137,27 @@ class KotlinCrossRoomThreadsService(
         }
     }
 
+    private suspend fun loadHistory(room: JoinedRoom, rootId: String, receiptId: EventId?): InboxThreadHistory =
+        kotlinx.coroutines.withTimeout(30_000) {
+            room.createTimeline(CreateTimelineParams.Threaded(io.element.android.libraries.matrix.api.core.ThreadId(rootId))).getOrThrow().use { timeline ->
+                var events = timeline.timelineItems.first { it.any { item -> item is MatrixTimelineItem.Event } }
+                    .filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
+                while (timeline.backwardPaginationStatus.value.hasMoreToLoad &&
+                    events.none { it.eventId?.value == rootId }
+                ) {
+                    timeline.backwardPaginationStatus.first { !it.isPaginating }
+                    if (!timeline.backwardPaginationStatus.value.hasMoreToLoad) break
+                    val previous = events.map { it.eventId }
+                    val reachedEnd = timeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
+                    events = timeline.timelineItems.first { items ->
+                        reachedEnd || items.filterIsInstance<MatrixTimelineItem.Event>().map { it.eventId } != previous
+                    }.filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
+                    if (reachedEnd) break
+                }
+                aggregateThreadHistory(events, rootId, receiptId, client.sessionId)
+            }
+        }
+
     private fun publish() {
         threads.value = AsyncData.Success(rows.values.flatten().sortedByDescending { it.timestamp }.toImmutableList())
     }
@@ -133,6 +166,8 @@ class KotlinCrossRoomThreadsService(
         val previous = visit
         visit = null
         previous?.cancel()
+        roomJobs.values.forEach { it.cancel() }
+        roomJobs.clear()
         client.sessionCoroutineScope.launch { previous?.cancelAndJoin() }
     }
 
@@ -142,18 +177,26 @@ class KotlinCrossRoomThreadsService(
 
     private suspend fun receiptType() = if (preferences.isSendPublicReadReceiptsEnabled().first()) ReceiptType.READ else ReceiptType.READ_PRIVATE
 
-    override suspend fun markAsRead(threads: List<InboxThreadKey>): Result<Unit> = runCatchingExceptions {
+    override suspend fun markAsRead(threads: List<InboxThreadKey>): Result<Unit> = markSnapshotAsRead(
+        threads.map { key -> this.threads.value.dataOrNull()?.find { it.key == key } ?: return Result.failure(IllegalStateException("Thread unavailable")) }
+    )
+
+    override suspend fun markSnapshotAsRead(threads: List<InboxThread>): Result<Unit> = runCatchingExceptions {
         coroutineScope {
-            threads.forEach { key ->
+            threads.forEach { snapshot ->
+                val key = snapshot.key
                 launch {
                     receipts.withPermit {
-                        val latest = this@KotlinCrossRoomThreadsService.threads.value.dataOrNull()?.find { it.key == key }?.latestEvent
-                            ?: error("Thread is no longer available")
+                        val latest = snapshot.latestEvent ?: snapshot.rootEvent
                         val inner = (client as RustMatrixClient).innerClient.getRoom(key.roomId.value) ?: error("Room is no longer joined")
                         try {
                             inner.sendSingleReceipt(receiptType(), ReceiptThread.Thread(key.threadId.value), latest.eventId.value)
                             rows[key.roomId] = rows[key.roomId].orEmpty().map {
-                                if (it.key == key) it.copy(numUnread = 0, readReceiptEventId = latest.eventId) else it
+                                if (it.key == key && it.latestEvent?.eventId == snapshot.latestEvent?.eventId) {
+                                    it.copy(numUnread = 0, numUnreadMentions = 0, readReceiptEventId = latest.eventId)
+                                } else {
+                                    it
+                                }
                             }
                             publish()
                         } finally {
@@ -170,19 +213,7 @@ class KotlinCrossRoomThreadsService(
         if (!item.isUnread) return@runCatchingExceptions null
         val room = client.getJoinedRoom(key.roomId) ?: error("Room is no longer joined")
         try {
-            room.createTimeline(CreateTimelineParams.Threaded(key.threadId)).getOrThrow().use { timeline ->
-                var events = timeline.timelineItems.first().filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
-                while (item.readReceiptEventId != null && events.none { it.eventId == item.readReceiptEventId } &&
-                    timeline.backwardPaginationStatus.value.hasMoreToLoad
-                ) {
-                    timeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
-                    events = timeline.timelineItems.first().filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
-                }
-                val ordered = events.sortedBy { it.timestamp }
-                val receiptIndex = ordered.indexOfFirst { it.eventId == item.readReceiptEventId }
-                if (item.readReceiptEventId != null && receiptIndex < 0) error("Thread receipt could not be loaded")
-                ordered.drop(receiptIndex + 1).firstOrNull { it.eventId?.value != key.threadId.value }?.eventId
-            }
+            loadHistory(room, key.threadId.value, item.readReceiptEventId).firstUnread
         } finally {
             room.close()
         }
