@@ -155,6 +155,8 @@ fun MessagesView(
     modifier: Modifier = Modifier,
     forceJumpToBottomVisibility: Boolean = false,
     triageBar: @Composable () -> Unit = {},
+    threadReplyCount: Long? = null,
+    onOpenThreadInRoom: (() -> Unit)? = null,
     customReactionBottomSheet: @Composable () -> Unit,
 ) {
     val eventContentValidationState = LocalEventContentValidationState.current
@@ -242,6 +244,8 @@ fun MessagesView(
                             heroes = state.heroes,
                             isTombstoned = state.isTombstoned,
                             onBackClick = onBackClick,
+                            replyCount = threadReplyCount,
+                            onOpenInRoom = onOpenThreadInRoom,
                         )
                     } else {
                         MessagesViewTopBar(

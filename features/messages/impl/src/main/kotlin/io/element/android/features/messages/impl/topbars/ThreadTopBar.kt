@@ -52,11 +52,20 @@ internal fun ThreadTopBar(
     isTombstoned: Boolean,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
+    replyCount: Long? = null,
+    onOpenInRoom: (() -> Unit)? = null,
 ) {
     TopAppBar(
         modifier = modifier,
         navigationIcon = {
             BackButton(onClick = onBackClick)
+        },
+        actions = {
+            if (onOpenInRoom != null) {
+                androidx.compose.material3.TextButton(onClick = onOpenInRoom) {
+                Text(stringResource(CommonStrings.screen_threads_inbox_open_in_room))
+            }
+            }
         },
         title = {
             val name = roomName ?: stringResource(CommonStrings.common_no_room_name)
@@ -84,11 +93,11 @@ internal fun ThreadTopBar(
                         .padding(horizontal = 8.dp),
                 ) {
                     Text(
-                        text = stringResource(CommonStrings.common_thread),
+                        text = if (replyCount == null) stringResource(CommonStrings.common_thread) else name,
                         style = ElementTheme.typography.fontBodyLgMedium,
                     )
                     Text(
-                        text = name,
+                        text = if (replyCount == null) name else stringResource(CommonStrings.screen_threads_inbox_thread_subtitle, replyCount),
                         style = ElementTheme.typography.fontBodySmRegular,
                         fontStyle = FontStyle.Italic.takeIf { roomName == null },
                         color = ElementTheme.colors.textSecondary,

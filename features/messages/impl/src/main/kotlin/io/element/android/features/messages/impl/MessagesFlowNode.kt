@@ -218,6 +218,7 @@ class MessagesFlowNode(
     }
 
     private val callback: MessagesEntryPoint.Callback = callback()
+    private val restoringNavigation = buildContext.savedStateMap != null
 
     private var displayVulkanNotSupportedError by mutableStateOf(false)
 
@@ -229,7 +230,7 @@ class MessagesFlowNode(
             }
         )
         val initialThread = plugins.filterIsInstance<MessagesEntryPoint.Params>().first().initialTarget as? MessagesEntryPoint.InitialTarget.Thread
-        if (initialThread != null && !initialThread.triage) {
+        if (initialThread != null && !initialThread.triage && !restoringNavigation) {
             backstack.newRoot(NavTarget.Messages(null))
             lifecycleScope.launch { attachThread(initialThread.threadId, initialThread.focusedEventId) }
         }

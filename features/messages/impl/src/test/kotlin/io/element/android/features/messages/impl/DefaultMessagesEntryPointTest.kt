@@ -116,6 +116,11 @@ class DefaultMessagesEntryPointTest {
     fun `test initial target to nav target mapping`() {
         assertThat(MessagesEntryPoint.InitialTarget.Messages(focusedEventId = AN_EVENT_ID).toNavTarget())
             .isEqualTo(MessagesFlowNode.NavTarget.Messages(focusedEventId = AN_EVENT_ID))
+        val thread = io.element.android.libraries.matrix.api.core.ThreadId("\$thread")
+        assertThat(MessagesEntryPoint.InitialTarget.Thread(thread, AN_EVENT_ID, triage = true).toNavTarget())
+            .isEqualTo(MessagesFlowNode.NavTarget.Thread(thread, AN_EVENT_ID, true))
+        assertThat(MessagesEntryPoint.InitialTarget.Thread(thread, null, triage = false).toNavTarget())
+            .isEqualTo(MessagesFlowNode.NavTarget.Thread(thread, null, false))
         assertThat(MessagesEntryPoint.InitialTarget.PinnedMessages.toNavTarget())
             .isEqualTo(MessagesFlowNode.NavTarget.PinnedMessagesList)
     }
