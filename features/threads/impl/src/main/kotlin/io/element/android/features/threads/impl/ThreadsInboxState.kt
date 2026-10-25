@@ -25,6 +25,7 @@ data class ThreadsInboxState(
     val otherUnreadCount: Int,
     val latestUnread: InboxThread?,
     val failed: Boolean,
+    val summaries: Map<InboxThreadKey, Pair<String, String>> = emptyMap(),
     val eventSink: (ThreadsInboxEvent) -> Unit,
 )
 
@@ -32,9 +33,12 @@ sealed interface ThreadsInboxEvent {
     data class SelectTab(val tab: ThreadsInboxTab) : ThreadsInboxEvent
     data class SelectFilter(val filter: ThreadsInboxFilter) : ThreadsInboxEvent
     data class MarkAsRead(val key: InboxThreadKey) : ThreadsInboxEvent
+    data class MarkAsUnread(val key: InboxThreadKey) : ThreadsInboxEvent
+    data class Touch(val key: InboxThreadKey, val pressed: Boolean) : ThreadsInboxEvent
     data object MarkAllAsRead : ThreadsInboxEvent
     data object Undo : ThreadsInboxEvent
     data object Retry : ThreadsInboxEvent
+    data object RetryLoad : ThreadsInboxEvent
     data object LoadMore : ThreadsInboxEvent
 }
 
@@ -42,5 +46,6 @@ internal fun visibleThreads(
     threads: List<InboxThread>, tab: ThreadsInboxTab, filter: ThreadsInboxFilter, visited: Set<InboxThreadKey>,
 ): List<InboxThread> = threads.filter {
     it.isMine == (tab == ThreadsInboxTab.Mine) &&
-        (filter == ThreadsInboxFilter.All || it.isUnread || it.key in visited)
+        (filter == ThreadsInboxFilter.All || it.isUnread || it.key in visited) &&
+        (filter == ThreadsInboxFilter.All || it.isMine || it.roomNotificationMode != io.element.android.libraries.matrix.api.room.RoomNotificationMode.MUTE)
 }.sortedByDescending { it.timestamp }
