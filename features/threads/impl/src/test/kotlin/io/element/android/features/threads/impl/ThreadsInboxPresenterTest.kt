@@ -27,10 +27,17 @@ class ThreadsInboxPresenterTest {
     fun `mark all undo sends no receipts`() = runTest {
         val service = FakeCrossRoomThreadsService()
         service.threads.value = AsyncData.Success(persistentListOf(previewThread()))
-        val presenter = ThreadsInboxPresenter(service, FakeThreadsTriageQueue(), FakeMatrixClient(sessionCoroutineScope = backgroundScope))
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope)
+        val presenter = ThreadsInboxPresenter(
+            service,
+            FakeThreadsTriageQueue(),
+            ThreadsInboxSession(service, client),
+            InboxThreadSummaryFormatter(io.element.android.libraries.eventformatter.test.FakeRoomLatestEventFormatter())
+        )
         presenter.test {
             awaitItem().eventSink(ThreadsInboxEvent.MarkAllAsRead)
-            val pending = awaitItem()
+            var pending = awaitItem()
+            while (pending.pending.isEmpty()) pending = awaitItem()
             assertThat(pending.pending).hasSize(1)
             pending.eventSink(ThreadsInboxEvent.Undo)
             assertThat(awaitItem().mineUnreadCount).isEqualTo(1)
@@ -44,10 +51,17 @@ class ThreadsInboxPresenterTest {
     fun `mark all commits after five seconds and retains dimmed row`() = runTest {
         val service = FakeCrossRoomThreadsService()
         service.threads.value = AsyncData.Success(persistentListOf(previewThread()))
-        val presenter = ThreadsInboxPresenter(service, FakeThreadsTriageQueue(), FakeMatrixClient(sessionCoroutineScope = backgroundScope))
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope)
+        val presenter = ThreadsInboxPresenter(
+            service,
+            FakeThreadsTriageQueue(),
+            ThreadsInboxSession(service, client),
+            InboxThreadSummaryFormatter(io.element.android.libraries.eventformatter.test.FakeRoomLatestEventFormatter())
+        )
         presenter.test {
             awaitItem().eventSink(ThreadsInboxEvent.MarkAllAsRead)
-            val pending = awaitItem()
+            var pending = awaitItem()
+            while (pending.mineUnreadCount != 0) pending = awaitItem()
             assertThat(pending.mineUnreadCount).isEqualTo(0)
             assertThat(pending.rows.dataOrNull()).hasSize(1)
             advanceTimeBy(4_999)
