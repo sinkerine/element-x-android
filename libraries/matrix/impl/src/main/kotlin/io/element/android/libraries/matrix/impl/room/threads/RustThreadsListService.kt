@@ -41,6 +41,7 @@ class RustThreadsListService(
 
     override fun subscribeToItemUpdates(): Flow<List<ThreadListItem>> {
         if (itemSubscriptionJob?.isActive != true) {
+            items.value = inner.items().map { it.map(contentMapper) }
             itemSubscriptionJob = doSubscribeToItemUpdates()
         }
 
