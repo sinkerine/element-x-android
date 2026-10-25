@@ -167,14 +167,7 @@ fun ThreadsInboxView(
                 Text(stringResource(CommonStrings.screen_threads_inbox_load_failed))
                 TextButton(onClick = { state.eventSink(ThreadsInboxEvent.RetryLoad) }) { Text(stringResource(CommonStrings.action_retry)) }
             }
-            state.rows.dataOrNull() == null -> Column {
-                repeat(3) {
-                    io.element.android.libraries.designsystem.atomic.molecules.IconTitlePlaceholdersRowMolecule(
-                        iconSize = 52.dp,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                    )
-                }
-            }
+            state.rows.dataOrNull() == null -> ThreadsInboxLoading()
             state.rows.dataOrNull().isNullOrEmpty() -> {
                 Text(stringResource(if (state.filter ==
                     ThreadsInboxFilter.Unread) {
