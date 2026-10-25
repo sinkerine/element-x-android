@@ -120,6 +120,7 @@ class ThreadedMessagesNode(
     private val openedAtNanos = System.nanoTime()
     private var focusTimingRecorded = false
     private var effectiveFocus: EventId? by mutableStateOf(inputs.focusedEventId)
+    private var focusUnavailable by mutableStateOf(false)
 
     private fun loadThread() {
         lifecycleScope.launch {
@@ -148,6 +149,7 @@ class ThreadedMessagesNode(
         val focused = inputs.focusedEventId
         if (focused != null && !loadThreadFocus(threadedTimeline, focused)) {
             effectiveFocus = null
+            focusUnavailable = true
             snackbar.post(io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage(
                 io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed,
             ))
@@ -361,21 +363,10 @@ class ThreadedMessagesNode(
                         timber.log.Timber.d("Thread focus rendered after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
                     }
                 }
-                val state = if (inputs.triage && effectiveFocus != null) {
-                    val items = presentedState.timelineState.timelineItems
-                        .filterNot {
-                            it is TimelineItem.Virtual &&
-                            it.model is io.element.android.features.messages.impl.timeline.model.virtual.TimelineItemReadMarkerModel
-                        }
-                        .toMutableList()
-                    val index = items.indexOfFirst { it is TimelineItem.Event && it.eventId == effectiveFocus }
-                    if (index >= 0) {
-                        items.add(index + 1, TimelineItem.Virtual(
-                        io.element.android.libraries.matrix.api.core.UniqueId("triage-new-divider"),
-                        io.element.android.features.messages.impl.timeline.model.virtual.TimelineItemReadMarkerModel,
+                val state = if (inputs.triage || focusUnavailable) {
+                    presentedState.copy(timelineState = presentedState.timelineState.copy(
+                        timelineItems = withTriageUnreadBoundary(presentedState.timelineState.timelineItems, effectiveFocus),
                     ))
-                    }
-                    presentedState.copy(timelineState = presentedState.timelineState.copy(timelineItems = items.toImmutableList()))
                 } else {
                     presentedState
                 }
