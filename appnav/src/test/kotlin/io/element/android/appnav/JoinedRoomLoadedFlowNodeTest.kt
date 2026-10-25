@@ -164,6 +164,21 @@ class JoinedRoomLoadedFlowNodeTest : RobolectricTest() {
     }
 
     @Test
+    fun `thread target preserves unread focus and triage mode through room routing`() = runTest {
+        val room = FakeJoinedRoom(baseRoom = FakeBaseRoom(updateMembersResult = {}))
+        val messages = FakeMessagesEntryPoint()
+        val thread = io.element.android.libraries.matrix.api.core.ThreadId("\$thread")
+        val focus = io.element.android.libraries.matrix.api.core.EventId("\$unread")
+        val target = RoomNavigationTarget.Thread(thread, focus, triage = true)
+        val node = createJoinedRoomLoadedFlowNode(
+            plugins = listOf(JoinedRoomLoadedFlowNode.Inputs(room, target), FakeJoinedRoomLoadedFlowNodeCallback()),
+            messagesEntryPoint = messages,
+        )
+        node.parentNodeTestHelper()
+        assertThat(messages.parameters?.initialTarget).isEqualTo(MessagesEntryPoint.InitialTarget.Thread(thread, focus, true))
+    }
+
+    @Test
     fun `given a room flow node when initialized then it loads space entry point if room is space`() = runTest {
         // GIVEN
         val room = FakeJoinedRoom(baseRoom = FakeBaseRoom(updateMembersResult = {}, initialRoomInfo = aRoomInfo(isSpace = true)))

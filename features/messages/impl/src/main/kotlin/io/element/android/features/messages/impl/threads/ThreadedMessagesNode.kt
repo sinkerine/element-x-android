@@ -80,6 +80,8 @@ import io.element.android.services.analytics.api.AnalyticsService
 import io.element.android.services.appnavstate.api.AppNavigationStateService
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @ContributesNode(RoomScope::class)
@@ -100,6 +102,7 @@ class ThreadedMessagesNode(
     private val emojiPickerRenderer: EmojiPickerRenderer,
     private val dispatchers: CoroutineDispatchers,
     private val triageQueue: io.element.android.features.threads.api.ThreadsTriageQueue,
+    private val snackbar: io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher,
 ) : Node(buildContext, plugins = plugins), MessagesNavigator {
     data class Inputs(
         val threadRootEventId: ThreadId,
@@ -112,6 +115,16 @@ class ThreadedMessagesNode(
 
     private var timelineController: TimelineController? by mutableStateOf(null)
     private var presenter: Presenter<MessagesState>? by mutableStateOf(null)
+    private var loadFailed by mutableStateOf(false)
+
+    private fun loadThread() {
+        lifecycleScope.launch {
+            loadFailed = false
+            io.element.android.libraries.core.extensions.runCatchingExceptions { createPresenter() }
+                .onSuccess { presenter = it }
+                .onFailure { loadFailed = true }
+        }
+    }
 
     /**
      * This should be fast to load, but not faster than several UI frames, which will cause ANRs.
@@ -119,6 +132,33 @@ class ThreadedMessagesNode(
      */
     private suspend fun createPresenter(): Presenter<MessagesState> {
         val threadedTimeline = room.createTimeline(CreateTimelineParams.Threaded(threadRootEventId = inputs.threadRootEventId)).getOrThrow()
+        if (inputs.focusedEventId != null) {
+            kotlinx.coroutines.coroutineScope {
+                val subscription = kotlinx.coroutines.Job(coroutineContext[kotlinx.coroutines.Job])
+                val items = threadedTimeline.timelineItems.stateIn(
+                    kotlinx.coroutines.CoroutineScope(coroutineContext + subscription),
+                    kotlinx.coroutines.flow.SharingStarted.Eagerly,
+                    emptyList(),
+                )
+                try {
+                    kotlinx.coroutines.withTimeout(30_000) {
+                        while (!threadedTimeline.isEventLoaded(inputs.focusedEventId)) {
+                            val status = threadedTimeline.backwardPaginationStatus.first { !it.isPaginating }
+                            check(status.hasMoreToLoad) { "Focused thread event could not be loaded" }
+                            threadedTimeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
+                        }
+                        items.first { page ->
+                            page.any {
+                                it is io.element.android.libraries.matrix.api.timeline.MatrixTimelineItem.Event &&
+                            it.eventId == inputs.focusedEventId
+                            }
+                        }
+                    }
+                } finally {
+                    subscription.cancel()
+                }
+            }
+        }
         val timelineController = TimelineController(
             room,
             liveTimeline = threadedTimeline,
@@ -163,12 +203,24 @@ class ThreadedMessagesNode(
 
     override fun onBuilt() {
         super.onBuilt()
+        if (inputs.triage) {
+            lifecycleScope.launch {
+            room.roomInfoFlow.collect { info ->
+                if (info.currentUserMembership == io.element.android.libraries.matrix.api.room.CurrentUserMembership.LEFT ||
+                    info.currentUserMembership == io.element.android.libraries.matrix.api.room.CurrentUserMembership.BANNED
+                ) {
+                    snackbar.post(io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage(
+                        io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_room_left,
+                    ))
+                    navigateUp()
+                }
+            }
+        }
+        }
         lifecycle.subscribe(
             onCreate = {
                 analyticsService.capture(room.toAnalyticsViewRoom())
-                lifecycleScope.launch {
-                    presenter = createPresenter()
-                }
+                loadThread()
             },
             onStart = {
                 appNavigationStateService.onNavigateToThread(id, inputs.threadRootEventId)
@@ -176,6 +228,7 @@ class ThreadedMessagesNode(
             onStop = {
                 appNavigationStateService.onLeavingThread(id)
             },
+            onDestroy = { timelineController?.close() },
         )
     }
 
@@ -274,6 +327,23 @@ class ThreadedMessagesNode(
 
     @Composable
     override fun View(modifier: Modifier) {
+        if (presenter == null) {
+            androidx.compose.foundation.layout.Column(modifier) {
+                if (loadFailed) {
+                    io.element.android.libraries.designsystem.theme.components.Text(
+                        androidx.compose.ui.res.stringResource(io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_thread_failed),
+                    )
+                    androidx.compose.material3.TextButton(onClick = ::loadThread) {
+                        io.element.android.libraries.designsystem.theme.components.Text(
+                            androidx.compose.ui.res.stringResource(io.element.android.libraries.ui.strings.CommonStrings.action_retry),
+                        )
+                    }
+                } else {
+                    androidx.compose.material3.CircularProgressIndicator()
+                }
+            }
+            return
+        }
         val activity = requireNotNull(LocalActivity.current)
         val isDark = ElementTheme.isLightTheme.not()
         val canUseOverlay = !isTalkbackActive() && !hasExternalKeyboard()
@@ -367,36 +437,28 @@ class ThreadedMessagesNode(
                         )
                     },
                     onThreadsListClick = {},
+                    threadReplyCount = if (inputs.triage) {
+                        triageQueue.thread(
+                        io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(room.roomId, inputs.threadRootEventId),
+                    )?.numberOfReplies
+                    } else {
+                        null
+                    },
+                    onOpenThreadInRoom = if (inputs.triage) callback::openInRoom else null,
                     triageBar = {
                         if (inputs.triage) {
                             val next by triageQueue.upNext.collectAsState()
                             val unreadCount by triageQueue.unreadCount.collectAsState()
                             androidx.compose.foundation.layout.Column {
-                                androidx.compose.material3.TextButton(onClick = callback::openInRoom) {
-                                    io.element.android.libraries.designsystem.theme.components.Text(
-                                        androidx.compose.ui.res.stringResource(
-                                            io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_open_in_room
-                                        )
-                                    )
-                                }
-                                io.element.android.libraries.designsystem.theme.components.Text(
-                                    next?.roomName
-                                        ?: androidx.compose.ui.res.stringResource(
-                                            io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_caught_up_title
-                                        )
+                                UpNextBar(
+                                    preview = next?.let { thread ->
+                                        thread.roomName.orEmpty() + " · " +
+                                            (thread.latestEvent?.content as? io.element.android.libraries.matrix.api.timeline.item.event.MessageContent)
+                                                ?.body.orEmpty()
+                                    },
+                                    count = unreadCount,
+                                    onNext = callback::navigateToNextTriageThread,
                                 )
-                                androidx.compose.material3.TextButton(onClick = callback::navigateToNextTriageThread, enabled = next != null) {
-                                    io.element.android.libraries.designsystem.theme.components.Text(
-                                        androidx.compose.ui.res.stringResource(
-                                            if (next == null) {
-                                                io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_all_read
-                                            } else {
-                                                io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_next
-                                            },
-                                            unreadCount,
-                                        )
-                                    )
-                                }
                             }
                         }
                     },
@@ -421,12 +483,13 @@ class ThreadedMessagesNode(
                 var focusedEventId by rememberSaveable {
                     mutableStateOf(inputs.focusedEventId)
                 }
-                LaunchedEffect(Unit) {
-                    focusedEventId?.also { eventId ->
+                LaunchedEffect(state.timelineState.timelineItems, focusedEventId) {
+                    val eventId = focusedEventId ?: return@LaunchedEffect
+                    if (state.timelineState.timelineItems.any { it is TimelineItem.Event && it.eventId == eventId }) {
                         state.timelineState.eventSink(TimelineEvent.FocusOnEvent(eventId))
+                        // Only consume the request when the UI's indexer can resolve the captured event.
+                        focusedEventId = null
                     }
-                    // Reset the focused event id to null to avoid refocusing when restoring node.
-                    focusedEventId = null
                 }
             }
         }
