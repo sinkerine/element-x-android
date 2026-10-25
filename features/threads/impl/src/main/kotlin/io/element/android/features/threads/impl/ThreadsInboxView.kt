@@ -27,6 +27,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -86,14 +87,14 @@ fun ThreadsInboxView(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = state.tab == ThreadsInboxTab.Mine,
-                modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = mineDescription },
+                modifier = Modifier.minimumInteractiveComponentSize().semantics(mergeDescendants = true) { contentDescription = mineDescription },
                 onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Mine)) },
                 label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_mine)) },
                 trailingIcon = { io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.mineUnreadCount) },
             )
             FilterChip(
                 selected = state.tab == ThreadsInboxTab.Other,
-                modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = otherDescription },
+                modifier = Modifier.minimumInteractiveComponentSize().semantics(mergeDescendants = true) { contentDescription = otherDescription },
                 onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Other)) },
                 label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_other)) },
                 trailingIcon = { io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.otherUnreadCount) },
@@ -103,6 +104,7 @@ fun ThreadsInboxView(
             ThreadsInboxFilter.entries.forEach { filter ->
                 FilterChip(
                     selected = state.filter == filter,
+                    modifier = Modifier.minimumInteractiveComponentSize(),
                     onClick = { state.eventSink(ThreadsInboxEvent.SelectFilter(filter)) },
                     label = {
                         Text(stringResource(if (filter ==

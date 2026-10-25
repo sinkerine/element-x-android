@@ -29,7 +29,7 @@ internal fun aggregateThreadHistory(
     receiptId: EventId?,
     ownUserId: UserId,
 ): InboxThreadHistory {
-    val ordered = events.distinctBy { it.eventId }.sortedBy { it.timestamp }
+    val ordered = events.distinctBy { it.eventId }
     val receiptIndex = ordered.indexOfFirst { it.eventId == receiptId }
     check(receiptId == null || receiptIndex >= 0) { "Thread receipt is outside loaded history" }
     val unread = ordered.drop(receiptIndex + 1).filter { it.eventId?.value != rootId && !it.isOwn }
