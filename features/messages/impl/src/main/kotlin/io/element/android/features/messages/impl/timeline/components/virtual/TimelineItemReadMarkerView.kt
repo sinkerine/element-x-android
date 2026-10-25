@@ -26,8 +26,10 @@ import io.element.android.libraries.designsystem.theme.components.Text
 
 @Composable
 internal fun TimelineItemReadMarkerView(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCritical: Boolean = false,
 ) {
+    val markerColor = if (isCritical) ElementTheme.colors.textCriticalPrimary else ElementTheme.colors.textActionAccent
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -38,13 +40,13 @@ internal fun TimelineItemReadMarkerView(
         Text(
             text = stringResource(id = R.string.screen_room_timeline_read_marker_title).uppercase(),
             style = ElementTheme.typography.fontBodySmMedium,
-            color = ElementTheme.colors.textActionAccent,
+            color = markerColor,
         )
         HorizontalDivider(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 2.dp),
-            color = ElementTheme.colors.textActionAccent,
+            color = markerColor,
         )
     }
 }
