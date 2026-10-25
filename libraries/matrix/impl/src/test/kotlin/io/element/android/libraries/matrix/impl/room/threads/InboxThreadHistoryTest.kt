@@ -26,7 +26,7 @@ class InboxThreadHistoryTest {
 
     @Test
     fun `no receipt counts replies from root and recognizes earlier participation and mention`() {
-        val result = aggregateThreadHistory(listOf(mention, root, first), "\$root", null, own)
+        val result = aggregateThreadHistory(listOf(root, first, mention), "\$root", null, own)
         assertThat(result.unreadCount).isEqualTo(2)
         assertThat(result.mentionCount).isEqualTo(1)
         assertThat(result.participating).isTrue()
@@ -35,10 +35,18 @@ class InboxThreadHistoryTest {
 
     @Test
     fun `receipt excludes earlier replies and preserves event ordering`() {
-        val result = aggregateThreadHistory(listOf(mention, root, first), "\$root", first.eventId, own)
+        val result = aggregateThreadHistory(listOf(root, first, mention), "\$root", first.eventId, own)
         assertThat(result.unreadCount).isEqualTo(1)
         assertThat(result.firstUnread).isEqualTo(mention.eventId)
         assertThat(aggregateThreadHistory(listOf(root, first, mention), "\$root", mention.eventId, own).unreadCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `clock skew does not move unread replies before their receipt`() {
+        val skewed = mention.copy(timestamp = 0)
+        val result = aggregateThreadHistory(listOf(root, first, skewed), "\$root", first.eventId, own)
+        assertThat(result.unreadCount).isEqualTo(1)
+        assertThat(result.firstUnread).isEqualTo(skewed.eventId)
     }
 
     @Test(expected = IllegalStateException::class)
