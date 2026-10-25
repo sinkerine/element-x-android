@@ -103,6 +103,22 @@ class InboxThreadHistoryLoaderTest {
         assertThat(result.firstUnread).isEqualTo(EventId("\$new"))
     }
 
+    @Test
+    fun `empty cached first page advances before any visible events arrive`() = runTest {
+        val items = MutableStateFlow<List<MatrixTimelineItem>>(emptyList())
+        val timeline = FakeTimeline(timelineItems = items)
+        var calls = 0
+        timeline.paginateLambda = {
+            calls++
+            if (calls == 2) items.value = listOf(event("root", 0, true), event("reply", 1))
+            timeline.backwardPaginationStatus.value = Timeline.PaginationStatus(false, calls < 2)
+            Result.success(calls == 2)
+        }
+        val result = loadInboxThreadHistory(timeline, "\$root", null, UserId("@own:example.org"))
+        assertThat(calls).isEqualTo(2)
+        assertThat(result.firstUnread).isEqualTo(EventId("\$reply"))
+    }
+
     @Test(expected = IllegalStateException::class)
     fun `failed pagination fails capture instead of inventing a divider`() = runTest {
         val timeline = FakeTimeline()

@@ -12,94 +12,145 @@ import io.element.android.libraries.featureflag.api.FeatureFlags
 import io.element.android.libraries.featureflag.test.FakeFeatureFlagService
 import io.element.android.libraries.matrix.api.roomlist.RoomListService
 import io.element.android.libraries.matrix.test.FakeMatrixClient
-import io.element.android.libraries.matrix.test.room.aRoomSummary
-import io.element.android.libraries.matrix.test.roomlist.FakeDynamicRoomList
 import io.element.android.libraries.matrix.test.roomlist.FakeRoomListService
 import io.element.android.libraries.preferences.test.InMemorySessionPreferencesStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import org.matrix.rustcomponents.sdk.ThreadInboxRoom
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class KotlinCrossRoomThreadsServiceTest {
+    private class Source : ThreadInboxSource {
+        val invalidations = Channel<List<String>?>(Channel.UNLIMITED)
+        override val updates = invalidations.receiveAsFlow()
+        val requests = mutableListOf<List<String>?>()
+        var failure = false
+        var gate: CompletableDeferred<Unit>? = null
+        override suspend fun load(roomIds: List<String>?): List<ThreadInboxRoom> {
+            requests.add(roomIds)
+            gate?.await()
+            check(!failure) { "Discovery failed" }
+            return List(30) { ThreadInboxRoom("!quiet$it:example.org", emptyList()) }
+        }
+    }
+
     @Test
-    fun `startup holds unread state until first running sync`() = runTest {
-        val list = FakeDynamicRoomList()
-        val roomList = FakeRoomListService(allRooms = list)
-        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList)
-        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), FakeFeatureFlagService())
+    fun `startup holds unread state until first running sync then scans full account`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source()
+        val service = KotlinCrossRoomThreadsService(
+            client,
+            InMemorySessionPreferencesStore(),
+            InboxThreadUnreadStore(client),
+            FakeFeatureFlagService(),
+            source,
+        )
         service.startVisit()
         runCurrent()
+        assertThat(source.requests).isEmpty()
         assertThat(service.threads.value.isUninitialized()).isTrue()
         roomList.postState(RoomListService.State.Running)
         runCurrent()
+        assertThat(source.requests).containsExactly(null)
         assertThat(service.threads.value.dataOrNull()).isEmpty()
-        service.endVisit()
+        assertThat(service.threads.value.isSuccess()).isTrue()
     }
 
     @Test
-    fun `ending visit destroys pending room subscriptions`() = runTest {
-        val summary = aRoomSummary(roomId = io.element.android.libraries.matrix.api.core.RoomId("!lifecycle:example.org"))
-        val list = FakeDynamicRoomList(summaries = MutableStateFlow(listOf(summary)))
-        val roomList = FakeRoomListService(allRooms = list)
-        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList)
-        var destroyed = 0
-        val threads = io.element.android.libraries.matrix.test.room.threads.FakeThreadsListService(
-            paginate = { kotlinx.coroutines.awaitCancellation() },
-            destroy = { destroyed++ },
+    fun `failed account refresh preserves complete cached snapshot and retry scans all rooms`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source()
+        val service = KotlinCrossRoomThreadsService(
+            client,
+            InMemorySessionPreferencesStore(),
+            InboxThreadUnreadStore(client),
+            FakeFeatureFlagService(),
+            source,
         )
-        client.givenGetRoomResult(summary.roomId, io.element.android.libraries.matrix.test.room.FakeJoinedRoom(threadsListService = threads))
-        val flags = FakeFeatureFlagService(initialState = mapOf(FeatureFlags.CrossRoomThreads.key to false))
-        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), flags)
         roomList.postState(RoomListService.State.Running)
+        runCurrent()
+        source.failure = true
+        source.invalidations.send(listOf("!quiet29:example.org"))
+        runCurrent()
+        assertThat(source.requests.last()).containsExactly("!quiet29:example.org")
+        assertThat(service.threads.value.isFailure()).isTrue()
+        assertThat(service.threads.value.dataOrNull()).isEmpty()
+        source.failure = false
         service.startVisit()
         runCurrent()
-        assertThat(destroyed).isEqualTo(0)
-        service.endVisit()
-        runCurrent()
-        assertThat(destroyed).isEqualTo(1)
+        assertThat(source.requests.last()).isNull()
+        assertThat(service.threads.value.isSuccess()).isTrue()
     }
 
     @Test
-    fun `leaving room destroys its pending subscription on next summary update`() = runTest {
-        val summary = aRoomSummary(roomId = io.element.android.libraries.matrix.api.core.RoomId("!left:example.org"))
-        val list = FakeDynamicRoomList(summaries = MutableStateFlow(listOf(summary)))
-        val roomList = FakeRoomListService(allRooms = list)
-        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList)
-        var destroyed = 0
-        val threads = io.element.android.libraries.matrix.test.room.threads.FakeThreadsListService(
-            paginate = { kotlinx.coroutines.awaitCancellation() },
-            destroy = { destroyed++ },
+    fun `receipt update during initial discovery is processed after complete snapshot`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source().apply { gate = CompletableDeferred() }
+        val service = KotlinCrossRoomThreadsService(
+            client,
+            InMemorySessionPreferencesStore(),
+            InboxThreadUnreadStore(client),
+            FakeFeatureFlagService(),
+            source,
         )
-        client.givenGetRoomResult(summary.roomId, io.element.android.libraries.matrix.test.room.FakeJoinedRoom(threadsListService = threads))
-        val flags = FakeFeatureFlagService(initialState = mapOf(FeatureFlags.CrossRoomThreads.key to false))
-        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), flags)
-        roomList.postState(RoomListService.State.Running)
-        service.startVisit()
-        runCurrent()
-        list.summaries.value = listOf(summary.copy(info = summary.info.copy(
-            currentUserMembership = io.element.android.libraries.matrix.api.room.CurrentUserMembership.LEFT,
-        )))
-        runCurrent()
-        assertThat(destroyed).isEqualTo(1)
-        assertThat(service.threads.value.dataOrNull()).isEmpty()
-        service.endVisit()
-    }
-
-    @Test
-    fun `disabled cross room flag does not start background room discovery`() = runTest {
-        val list =
-            FakeDynamicRoomList(
-                summaries = MutableStateFlow(listOf(aRoomSummary(roomId = io.element.android.libraries.matrix.api.core.RoomId("!candidate:example.org"))))
-            )
-        val roomList = FakeRoomListService(allRooms = list)
-        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList)
-        val flags = FakeFeatureFlagService(initialState = mapOf(FeatureFlags.CrossRoomThreads.key to false))
-        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), flags)
         roomList.postState(RoomListService.State.Running)
         runCurrent()
         assertThat(service.threads.value.isUninitialized()).isTrue()
+        source.invalidations.send(listOf("!quiet29:example.org"))
+        runCurrent()
+        source.gate!!.complete(Unit)
+        runCurrent()
+        // A concurrent full invalidation can subsume the changed-room request.
+        assertThat(source.requests).hasSize(2)
+        assertThat(source.requests.first()).isNull()
+        assertThat(source.requests.last() == null || source.requests.last() == listOf("!quiet29:example.org")).isTrue()
+        assertThat(service.threads.value.isSuccess()).isTrue()
+    }
+
+    @Test
+    fun `warm visit and scrolling do not repeat exhaustive discovery`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source()
+        val service = KotlinCrossRoomThreadsService(
+            client,
+            InMemorySessionPreferencesStore(),
+            InboxThreadUnreadStore(client),
+            FakeFeatureFlagService(),
+            source,
+        )
+        roomList.postState(RoomListService.State.Running)
+        runCurrent()
+        source.requests.clear()
+        service.startVisit()
+        service.paginate().getOrThrow()
+        service.endVisit()
+        runCurrent()
+        assertThat(source.requests).isEmpty()
+    }
+
+    @Test
+    fun `disabled cross room flag does not start discovery and enabling triggers full scan`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val flags = FakeFeatureFlagService(initialState = mapOf(FeatureFlags.CrossRoomThreads.key to false))
+        val source = Source()
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), flags, source)
+        roomList.postState(RoomListService.State.Running)
+        service.startVisit()
+        runCurrent()
+        assertThat(source.requests).isEmpty()
+        assertThat(service.threads.value.isUninitialized()).isTrue()
+        flags.setFeatureEnabled(FeatureFlags.CrossRoomThreads, true)
+        runCurrent()
+        assertThat(source.requests).containsExactly(null)
     }
 }

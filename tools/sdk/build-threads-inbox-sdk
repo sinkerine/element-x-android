@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Build the authorized SDK main checkout and package its Kotlin bindings locally.
+set -euo pipefail
+android_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+sdk_checkout=${THREADS_INBOX_SDK_CHECKOUT:-/home/sinkerine/orca/matrix-rust-sdk}
+target=${1:-x86_64-linux-android}
+components="$android_root/build/threads-inbox/sdk/components"
+staging="$android_root/build/threads-inbox/sdk"
+if [[ $(git -C "$sdk_checkout" branch --show-current) != main ]]; then
+    echo 'The Threads Inbox SDK checkout must be on main.' >&2
+    exit 1
+fi
+if [[ ! -d "$components/.git" ]]; then
+    git clone https://github.com/matrix-org/matrix-rust-components-kotlin.git "$components"
+    git -C "$components" checkout 917946f48c904750a6ab4b2a9d66f94513db0c99
+fi
+if [[ $(git -C "$components" rev-parse HEAD) != 917946f48c904750a6ab4b2a9d66f94513db0c99 ]]; then
+    echo 'Kotlin components must use verified revision 917946f48c904750a6ab4b2a9d66f94513db0c99.' >&2
+    exit 1
+fi
+: "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME to an installed Android NDK}"
+export NDK_VERSION=${NDK_VERSION:-$(basename "$ANDROID_NDK_HOME")}
+cd "$sdk_checkout"
+cargo ndk -t "$target" -o "$staging/jniLibs" build -p matrix-sdk-ffi --features sentry
+cargo run -p uniffi-bindgen -- generate --library "target/$target/debug/libmatrix_sdk_ffi.so" \
+    --language kotlin --out-dir "$components/sdk/sdk-android/src/main/kotlin"
+mkdir -p "$components/sdk/sdk-android/src/main/jniLibs"
+cp -R "$staging/jniLibs/." "$components/sdk/sdk-android/src/main/jniLibs/"
+cd "$components"
+./gradlew :sdk:sdk-android:assembleDebug
+cp sdk/sdk-android/build/outputs/aar/sdk-android-debug.aar "$android_root/libraries/rustsdk/matrix-rust-sdk.aar"
+echo 'Local SDK AAR built. Rebuild the app before testing.'
