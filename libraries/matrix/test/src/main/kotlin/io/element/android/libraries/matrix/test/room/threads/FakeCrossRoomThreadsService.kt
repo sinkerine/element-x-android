@@ -20,6 +20,8 @@ class FakeCrossRoomThreadsService : CrossRoomThreadsService {
     override val threads = MutableStateFlow<AsyncData<ImmutableList<InboxThread>>>(AsyncData.Success(persistentListOf()))
     val marked = mutableListOf<List<InboxThreadKey>>()
     var markResult: Result<Unit> = Result.success(Unit)
+    var markHandler: ((List<InboxThreadKey>) -> Result<Unit>)? = null
+    val snapshots = mutableListOf<List<InboxThread>>()
     var firstUnreadResult: Result<EventId?> = Result.success(null)
     var visiting = false
     override fun startVisit() {
@@ -31,7 +33,12 @@ class FakeCrossRoomThreadsService : CrossRoomThreadsService {
     override suspend fun paginate(): Result<Unit> = Result.success(Unit)
     override suspend fun markAsRead(threads: List<InboxThreadKey>): Result<Unit> {
         marked.add(threads)
-        return markResult
+        return markHandler?.invoke(threads) ?: markResult
     }
+    override suspend fun markSnapshotAsRead(threads: List<InboxThread>): Result<Unit> {
+        snapshots.add(threads)
+        return markAsRead(threads.map { it.key })
+    }
+    override suspend fun markAsUnread(key: InboxThreadKey): Result<Unit> = markResult
     override suspend fun firstUnreadEventId(key: InboxThreadKey): Result<EventId?> = firstUnreadResult
 }
