@@ -115,6 +115,8 @@ fun HorizontalFloatingToolbarItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     counter: Int? = null,
+    counterIsCritical: Boolean = false,
+    counterOverflowText: String = "+99",
     forceRenderingTooltip: Boolean = false,
 ) {
     TooltipBox(
@@ -157,6 +159,8 @@ fun HorizontalFloatingToolbarItem(
                         .align(Alignment.TopEnd)
                         .padding(top = 6.dp, end = 3.dp),
                     count = counter,
+                    isCritical = counterIsCritical,
+                    overflowText = counterOverflowText,
                     textStyle = ElementTheme.typography.fontBodyXsMedium,
                 )
             }
