@@ -28,7 +28,20 @@ internal fun previewThread() = InboxThread(
     key = InboxThreadKey(RoomId("!test:example.org"), ThreadId("\$thread")),
     roomName = "Android team",
     roomAvatarUrl = null,
-    rootEvent = ThreadListItemEvent(EventId("\$thread"), UserId("@test:example.org"), ProfileDetails.Unavailable, true, null, 0),
+    rootEvent = ThreadListItemEvent(
+        EventId("\$thread"),
+        UserId("@test:example.org"),
+        ProfileDetails.Unavailable,
+        true,
+        io.element.android.libraries.matrix.api.timeline.item.event.MessageContent(
+            "Where should we meet?",
+            null,
+            false,
+            null,
+            io.element.android.libraries.matrix.api.timeline.item.event.TextMessageType("Where should we meet?", null),
+        ),
+        0,
+    ),
     latestEvent = null,
     numberOfReplies = 2,
     numUnread = 1,
@@ -52,6 +65,7 @@ internal class ThreadsInboxStatePreviewParam : PreviewParameterProvider<ThreadsI
                 otherUnreadCount = 0,
                 latestUnread = thread,
                 failed = false,
+                summaries = mapOf(thread.key to ("Where should we meet?" to "Lena: Could you mock this up?")),
                 eventSink = {},
             )
             return sequenceOf(
@@ -62,6 +76,9 @@ internal class ThreadsInboxStatePreviewParam : PreviewParameterProvider<ThreadsI
                 state.copy(pending = setOf(thread.key)),
                 state.copy(failed = true),
                 state.copy(rows = AsyncData.Failure(IllegalStateException())),
+                state.copy(rows = AsyncData.Success(persistentListOf(thread.copy(numUnreadMentions = 2)))),
+                state.copy(rows = AsyncData.Success(persistentListOf(thread.copy(numUnread = 0))), visited = setOf(thread.key)),
+                state.copy(rows = AsyncData.Failure(IllegalStateException(), persistentListOf(thread))),
             )
         }
 }

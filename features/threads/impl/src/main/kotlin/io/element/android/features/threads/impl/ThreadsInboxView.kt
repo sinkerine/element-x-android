@@ -40,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import io.element.android.compound.theme.ElementTheme
@@ -63,6 +65,10 @@ fun ThreadsInboxView(
     val clipboard = LocalClipboardManager.current
     val markReadLabel = stringResource(CommonStrings.screen_threads_inbox_mark_read)
     val listState = rememberLazyListState()
+    val mineDescription = stringResource(CommonStrings.screen_threads_inbox_tab_mine) + ", " +
+        pluralStringResource(io.element.android.libraries.ui.strings.R.plurals.a11y_threads_inbox_unread, state.mineUnreadCount, state.mineUnreadCount)
+    val otherDescription = stringResource(CommonStrings.screen_threads_inbox_tab_other) + ", " +
+        pluralStringResource(io.element.android.libraries.ui.strings.R.plurals.a11y_threads_inbox_unread, state.otherUnreadCount, state.otherUnreadCount)
     LaunchedEffect(listState, state.tab, state.filter) {
         snapshotFlow {
             val layout = listState.layoutInfo
@@ -70,22 +76,28 @@ fun ThreadsInboxView(
         }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) state.eventSink(ThreadsInboxEvent.LoadMore) }
     }
     Column(modifier.padding(16.dp)) {
+        TextButton(onClick = { state.eventSink(ThreadsInboxEvent.MarkAllAsRead) }) {
+            Box(Modifier.padding(end = 8.dp)) {
+                Icon(CompoundIcons.Check(), null)
+                Icon(CompoundIcons.Check(), null, modifier = Modifier.padding(start = 8.dp))
+            }
+            Text(stringResource(CommonStrings.screen_threads_inbox_mark_all_read))
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = state.tab == ThreadsInboxTab.Mine,
+                modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = mineDescription },
                 onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Mine)) },
-                label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_mine) + " (${state.mineUnreadCount})") },
+                label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_mine)) },
+                trailingIcon = { io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.mineUnreadCount) },
             )
             FilterChip(
                 selected = state.tab == ThreadsInboxTab.Other,
+                modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = otherDescription },
                 onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Other)) },
-                label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_other) + " (${state.otherUnreadCount})") },
+                label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_other)) },
+                trailingIcon = { io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.otherUnreadCount) },
             )
-        }
-        TextButton(onClick = { state.eventSink(ThreadsInboxEvent.MarkAllAsRead) }) {
-            Icon(CompoundIcons.Check(), null)
-            Icon(CompoundIcons.Check(), null)
-            Text(stringResource(CommonStrings.screen_threads_inbox_mark_all_read))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ThreadsInboxFilter.entries.forEach { filter ->
@@ -114,7 +126,11 @@ fun ThreadsInboxView(
                         Icon(CompoundIcons.ArrowRight(), null)
                         Text(stringResource(CommonStrings.screen_threads_inbox_open_latest_unread))
                     }
-                    Text(thread.roomName.orEmpty() + " · " + state.summaries[thread.key]?.second.orEmpty(), maxLines = 1)
+                    Text(
+                        thread.roomName.orEmpty() + " · " + state.summaries[thread.key]?.second.orEmpty(),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
                     Text((state.mineUnreadCount + state.otherUnreadCount).toString())
                 }
             }

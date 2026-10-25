@@ -46,6 +46,7 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
     private var timer: Job? = null
     private var expiry: Job? = null
     private var active = false
+    private var openedAtNanos: Long? = null
     private val sends = Semaphore(4)
     private var selected = false
     private val touched = mutableSetOf<InboxThreadKey>()
@@ -107,7 +108,14 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         selected = true
         if (active) return
         active = true
+        openedAtNanos = System.nanoTime()
         service.startVisit()
+    }
+
+    fun rowsDisplayed() {
+        val start = openedAtNanos ?: return
+        openedAtNanos = null
+        timber.log.Timber.d("Threads inbox rows displayed after %d ms", (System.nanoTime() - start) / 1_000_000)
     }
 
     fun endVisit() {

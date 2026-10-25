@@ -37,6 +37,7 @@ class ThreadsInboxPresenter(
         val next by queue.upNext.collectAsState()
         val orderRevision by session.orderRevision.collectAsState()
         val scope = rememberCoroutineScope()
+        val pagination = androidx.compose.runtime.remember { kotlinx.coroutines.sync.Mutex() }
         DisposableEffect(Unit) {
             queue.startVisit()
             onDispose { session.commit() }
@@ -60,8 +61,19 @@ class ThreadsInboxPresenter(
                     service.endVisit()
                     service.startVisit()
                 }
-                ThreadsInboxEvent.LoadMore -> scope.launch { service.paginate() }
+                ThreadsInboxEvent.LoadMore -> scope.launch {
+                    if (pagination.tryLock()) {
+                        try {
+                        service.paginate()
+                    } finally {
+                        pagination.unlock()
+                    }
+                    }
+                }
             }
+        }
+        androidx.compose.runtime.LaunchedEffect(rows) {
+            if (!rows.dataOrNull().isNullOrEmpty()) session.rowsDisplayed()
         }
         return ThreadsInboxState(
             rows = rows,
