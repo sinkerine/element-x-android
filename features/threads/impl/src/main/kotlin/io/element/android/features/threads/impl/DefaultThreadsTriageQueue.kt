@@ -41,7 +41,7 @@ class DefaultThreadsTriageQueue(private val service: CrossRoomThreadsService, cl
     }
     override suspend fun open(key: InboxThreadKey): Result<EventId?> {
         visited.value += key
-        return service.firstUnreadEventId(key)
+        return service.firstUnreadEventId(key).onFailure { timber.log.Timber.w(it, "Could not capture first unread thread event") }
     }
     override fun startVisit() = service.startVisit()
     override fun endVisit() {

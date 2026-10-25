@@ -33,9 +33,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -139,8 +141,17 @@ class KotlinCrossRoomThreadsService(
 
     private suspend fun loadHistory(room: JoinedRoom, rootId: String, receiptId: EventId?): InboxThreadHistory =
         kotlinx.coroutines.withTimeout(30_000) {
+            coroutineScope {
             room.createTimeline(CreateTimelineParams.Threaded(io.element.android.libraries.matrix.api.core.ThreadId(rootId))).getOrThrow().use { timeline ->
-                var events = timeline.timelineItems.first { it.any { item -> item is MatrixTimelineItem.Event } }
+                val subscription = kotlinx.coroutines.Job(coroutineContext[Job])
+                val historyItems = timeline.timelineItems.stateIn(
+                    kotlinx.coroutines.CoroutineScope(coroutineContext + subscription),
+                    SharingStarted.Eagerly,
+                    emptyList(),
+                )
+                try {
+                timeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
+                var events = historyItems.first { it.any { item -> item is MatrixTimelineItem.Event } }
                     .filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
                 while (timeline.backwardPaginationStatus.value.hasMoreToLoad &&
                     events.none { it.eventId?.value == rootId }
@@ -149,12 +160,16 @@ class KotlinCrossRoomThreadsService(
                     if (!timeline.backwardPaginationStatus.value.hasMoreToLoad) break
                     val previous = events.map { it.eventId }
                     val reachedEnd = timeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
-                    events = timeline.timelineItems.first { items ->
+                    events = historyItems.first { items ->
                         reachedEnd || items.filterIsInstance<MatrixTimelineItem.Event>().map { it.eventId } != previous
                     }.filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
                     if (reachedEnd) break
                 }
                 aggregateThreadHistory(events, rootId, receiptId, client.sessionId)
+                } finally {
+                    subscription.cancel()
+                }
+            }
             }
         }
 
