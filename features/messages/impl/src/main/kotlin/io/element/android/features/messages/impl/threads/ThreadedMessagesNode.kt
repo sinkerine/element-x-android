@@ -80,6 +80,7 @@ import io.element.android.services.analytics.api.AnalyticsService
 import io.element.android.services.appnavstate.api.AppNavigationStateService
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @ContributesNode(RoomScope::class)
@@ -113,15 +114,21 @@ class ThreadedMessagesNode(
     private val callback: Callback = callback()
 
     private var timelineController: TimelineController? by mutableStateOf(null)
+    private var ownedThreadTimeline: Timeline? = null
     private var presenter: Presenter<MessagesState>? by mutableStateOf(null)
     private var loadFailed by mutableStateOf(false)
+    private val openedAtNanos = System.nanoTime()
+    private var focusTimingRecorded = false
     private var effectiveFocus: EventId? by mutableStateOf(inputs.focusedEventId)
 
     private fun loadThread() {
         lifecycleScope.launch {
             loadFailed = false
             io.element.android.libraries.core.extensions.runCatchingExceptions { createPresenter() }
-                .onSuccess { presenter = it }
+                .onSuccess {
+                    timber.log.Timber.d("Thread presenter created after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
+                    presenter = it
+                }
                 .onFailure { loadFailed = true }
         }
     }
@@ -132,6 +139,12 @@ class ThreadedMessagesNode(
      */
     private suspend fun createPresenter(): Presenter<MessagesState> {
         val threadedTimeline = room.createTimeline(CreateTimelineParams.Threaded(threadRootEventId = inputs.threadRootEventId)).getOrThrow()
+        timber.log.Timber.d("Thread timeline created after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
+        try {
+        if (inputs.focusedEventId == null) {
+            val status = threadedTimeline.backwardPaginationStatus.first { !it.isPaginating }
+            if (status.hasMoreToLoad) threadedTimeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
+        }
         val focused = inputs.focusedEventId
         if (focused != null && !loadThreadFocus(threadedTimeline, focused)) {
             effectiveFocus = null
@@ -139,6 +152,7 @@ class ThreadedMessagesNode(
                 io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed,
             ))
         }
+        timber.log.Timber.d("Thread history prepared after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
         val timelineController = TimelineController(
             room,
             liveTimeline = threadedTimeline,
@@ -146,6 +160,7 @@ class ThreadedMessagesNode(
             dispatchers = dispatchers,
         )
         this.timelineController = timelineController
+        ownedThreadTimeline = threadedTimeline
         return presenterFactory.create(
             navigator = this,
             composerPresenter = messageComposerPresenterFactory.create(timelineController, this, threadRoot = inputs.threadRootEventId),
@@ -157,6 +172,10 @@ class ThreadedMessagesNode(
             ),
             timelineController = timelineController,
         )
+        } catch (error: Throwable) {
+            threadedTimeline.close()
+            throw error
+        }
     }
 
     interface Callback : Plugin {
@@ -208,7 +227,10 @@ class ThreadedMessagesNode(
             onStop = {
                 appNavigationStateService.onLeavingThread(id)
             },
-            onDestroy = { timelineController?.close() },
+            onDestroy = {
+                timelineController?.close()
+                ownedThreadTimeline?.close()
+            },
         )
     }
 
@@ -332,6 +354,13 @@ class ThreadedMessagesNode(
         ) {
             // Only display the actual UI and lifecycle logic if the presenter is loaded
             presenter?.present()?.let { presentedState ->
+                val focus = presentedState.timelineState.focusRequestState
+                LaunchedEffect(focus) {
+                    if (!focusTimingRecorded && focus is io.element.android.features.messages.impl.timeline.FocusRequestState.Success && focus.rendered) {
+                        focusTimingRecorded = true
+                        timber.log.Timber.d("Thread focus rendered after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
+                    }
+                }
                 val state = if (inputs.triage && effectiveFocus != null) {
                     val items = presentedState.timelineState.timelineItems
                         .filterNot {
