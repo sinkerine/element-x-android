@@ -225,7 +225,7 @@ class HomeFlowNode(
                 threadsView = { inboxModifier ->
                     threadsInbox.Render(
                         onOpen = { key, event -> callback.navigateToThread(key.roomId, key.threadId, event) },
-                        onOpenInRoom = { key -> callback.navigateToThread(key.roomId, key.threadId, null) },
+                        onOpenInRoom = { key -> callback.openThreadInRoom(key.roomId, key.threadId) },
                         modifier = inboxModifier,
                     )
                 },

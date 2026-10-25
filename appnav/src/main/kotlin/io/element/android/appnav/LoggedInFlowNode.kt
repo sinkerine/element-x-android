@@ -346,6 +346,13 @@ class LoggedInFlowNode(
                         }
                     }
 
+                    override fun openThreadInRoom(roomId: RoomId, threadId: ThreadId) {
+                        backstack.push(NavTarget.Room(
+                            roomIdOrAlias = roomId.toRoomIdOrAlias(),
+                            initialElement = RoomNavigationTarget.Thread(threadId, null, triage = false),
+                        ))
+                    }
+
                     override fun navigateToThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {
                         backstack.push(NavTarget.Room(
                             roomIdOrAlias = roomId.toRoomIdOrAlias(),

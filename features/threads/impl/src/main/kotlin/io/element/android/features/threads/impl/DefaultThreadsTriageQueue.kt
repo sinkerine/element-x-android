@@ -32,7 +32,7 @@ class DefaultThreadsTriageQueue(private val service: CrossRoomThreadsService, cl
         client.sessionCoroutineScope.launch {
             combine(service.threads, visited) { data, opened ->
                 val unread = data.dataOrNull().orEmpty().filter { it.isUnread }
-                unreadCount.value = unread.size
+                unreadCount.value = unread.count { it.key !in opened }
                 upNext.value = unread.filter { it.key !in opened }.sortedWith(
                     compareByDescending<InboxThread> { it.isMine }.thenByDescending { it.timestamp }
                 ).firstOrNull()
