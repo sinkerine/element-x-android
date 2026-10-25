@@ -80,8 +80,6 @@ import io.element.android.services.analytics.api.AnalyticsService
 import io.element.android.services.appnavstate.api.AppNavigationStateService
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @ContributesNode(RoomScope::class)
@@ -103,6 +101,7 @@ class ThreadedMessagesNode(
     private val dispatchers: CoroutineDispatchers,
     private val triageQueue: io.element.android.features.threads.api.ThreadsTriageQueue,
     private val snackbar: io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher,
+    private val previewFormatter: io.element.android.libraries.eventformatter.api.RoomLatestEventFormatter,
 ) : Node(buildContext, plugins = plugins), MessagesNavigator {
     data class Inputs(
         val threadRootEventId: ThreadId,
@@ -116,6 +115,7 @@ class ThreadedMessagesNode(
     private var timelineController: TimelineController? by mutableStateOf(null)
     private var presenter: Presenter<MessagesState>? by mutableStateOf(null)
     private var loadFailed by mutableStateOf(false)
+    private var effectiveFocus: EventId? by mutableStateOf(inputs.focusedEventId)
 
     private fun loadThread() {
         lifecycleScope.launch {
@@ -132,32 +132,12 @@ class ThreadedMessagesNode(
      */
     private suspend fun createPresenter(): Presenter<MessagesState> {
         val threadedTimeline = room.createTimeline(CreateTimelineParams.Threaded(threadRootEventId = inputs.threadRootEventId)).getOrThrow()
-        if (inputs.focusedEventId != null) {
-            kotlinx.coroutines.coroutineScope {
-                val subscription = kotlinx.coroutines.Job(coroutineContext[kotlinx.coroutines.Job])
-                val items = threadedTimeline.timelineItems.stateIn(
-                    kotlinx.coroutines.CoroutineScope(coroutineContext + subscription),
-                    kotlinx.coroutines.flow.SharingStarted.Eagerly,
-                    emptyList(),
-                )
-                try {
-                    kotlinx.coroutines.withTimeout(30_000) {
-                        while (!threadedTimeline.isEventLoaded(inputs.focusedEventId)) {
-                            val status = threadedTimeline.backwardPaginationStatus.first { !it.isPaginating }
-                            check(status.hasMoreToLoad) { "Focused thread event could not be loaded" }
-                            threadedTimeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
-                        }
-                        items.first { page ->
-                            page.any {
-                                it is io.element.android.libraries.matrix.api.timeline.MatrixTimelineItem.Event &&
-                            it.eventId == inputs.focusedEventId
-                            }
-                        }
-                    }
-                } finally {
-                    subscription.cancel()
-                }
-            }
+        val focused = inputs.focusedEventId
+        if (focused != null && !loadThreadFocus(threadedTimeline, focused)) {
+            effectiveFocus = null
+            snackbar.post(io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage(
+                io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed,
+            ))
         }
         val timelineController = TimelineController(
             room,
@@ -352,14 +332,14 @@ class ThreadedMessagesNode(
         ) {
             // Only display the actual UI and lifecycle logic if the presenter is loaded
             presenter?.present()?.let { presentedState ->
-                val state = if (inputs.triage && inputs.focusedEventId != null) {
+                val state = if (inputs.triage && effectiveFocus != null) {
                     val items = presentedState.timelineState.timelineItems
                         .filterNot {
                             it is TimelineItem.Virtual &&
                             it.model is io.element.android.features.messages.impl.timeline.model.virtual.TimelineItemReadMarkerModel
                         }
                         .toMutableList()
-                    val index = items.indexOfFirst { it is TimelineItem.Event && it.eventId == inputs.focusedEventId }
+                    val index = items.indexOfFirst { it is TimelineItem.Event && it.eventId == effectiveFocus }
                     if (index >= 0) {
                         items.add(index + 1, TimelineItem.Virtual(
                         io.element.android.libraries.matrix.api.core.UniqueId("triage-new-divider"),
@@ -452,9 +432,17 @@ class ThreadedMessagesNode(
                             androidx.compose.foundation.layout.Column {
                                 UpNextBar(
                                     preview = next?.let { thread ->
-                                        thread.roomName.orEmpty() + " · " +
-                                            (thread.latestEvent?.content as? io.element.android.libraries.matrix.api.timeline.item.event.MessageContent)
-                                                ?.body.orEmpty()
+                                        val latest = thread.latestEvent
+                                        val summary = latest?.content?.let { content ->
+                                            previewFormatter.format(io.element.android.libraries.matrix.api.roomlist.LatestEventValue.Remote(
+                                                latest.timestamp,
+                                                content,
+                                                latest.senderId,
+                                                latest.senderProfile,
+                                                latest.isOwn,
+                                            ), isDmRoom = false)?.toString().orEmpty()
+                                        }.orEmpty()
+                                        thread.roomName.orEmpty() + " · " + summary
                                     },
                                     count = unreadCount,
                                     onNext = callback::navigateToNextTriageThread,
@@ -481,7 +469,7 @@ class ThreadedMessagesNode(
                 )
 
                 var focusedEventId by rememberSaveable {
-                    mutableStateOf(inputs.focusedEventId)
+                    mutableStateOf(effectiveFocus)
                 }
                 LaunchedEffect(state.timelineState.timelineItems, focusedEventId) {
                     val eventId = focusedEventId ?: return@LaunchedEffect
