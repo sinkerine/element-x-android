@@ -52,6 +52,9 @@
     <string name="screen_threads_inbox_focus_failed">Couldn’t load the first unread reply. Showing the latest replies.</string>
     <string name="screen_threads_inbox_thread_failed">Couldn’t load this thread</string>
     <string name="screen_threads_inbox_room_left">You no longer have access to this room.</string>
-    <string name="screen_threads_inbox_thread_subtitle">Thread · %1$d replies</string>
+    <plurals name="screen_threads_inbox_thread_subtitle">
+        <item quantity="one">Thread · %1$d reply</item>
+        <item quantity="other">Thread · %1$d replies</item>
+    </plurals>
     <string name="screen_threads_inbox_start_thread_hint">Reply in a thread to keep the conversation together.</string>
 </resources>

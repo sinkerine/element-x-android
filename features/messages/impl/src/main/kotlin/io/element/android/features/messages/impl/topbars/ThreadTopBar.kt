@@ -97,7 +97,15 @@ internal fun ThreadTopBar(
                         style = ElementTheme.typography.fontBodyLgMedium,
                     )
                     Text(
-                        text = if (replyCount == null) name else stringResource(CommonStrings.screen_threads_inbox_thread_subtitle, replyCount),
+                        text = if (replyCount == null) {
+                            name
+                        } else {
+                            androidx.compose.ui.res.pluralStringResource(
+                            io.element.android.libraries.ui.strings.R.plurals.screen_threads_inbox_thread_subtitle,
+                                replyCount.toInt(),
+                                replyCount,
+                        )
+                        },
                         style = ElementTheme.typography.fontBodySmRegular,
                         fontStyle = FontStyle.Italic.takeIf { roomName == null },
                         color = ElementTheme.colors.textSecondary,
