@@ -70,7 +70,8 @@ class KotlinCrossRoomThreadsServiceTest {
         val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList)
         var destroyed = 0
         val threads = io.element.android.libraries.matrix.test.room.threads.FakeThreadsListService(
-            paginate = { kotlinx.coroutines.awaitCancellation() }, destroy = { destroyed++ },
+            paginate = { kotlinx.coroutines.awaitCancellation() },
+            destroy = { destroyed++ },
         )
         client.givenGetRoomResult(summary.roomId, io.element.android.libraries.matrix.test.room.FakeJoinedRoom(threadsListService = threads))
         val flags = FakeFeatureFlagService(initialState = mapOf(FeatureFlags.CrossRoomThreads.key to false))

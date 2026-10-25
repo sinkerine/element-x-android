@@ -9,9 +9,9 @@
 
 package io.element.android.features.threads.impl
 
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.v2.runAndroidComposeUiTest
 import com.google.common.truth.Truth.assertThat
@@ -27,8 +27,13 @@ class ThreadsInboxAccessibilityTest : RobolectricTest() {
             ElementPreview {
                 ThreadsInboxRow(
                     thread = previewThread().copy(numUnreadMentions = 1),
-                    rootPreview = "Where should we meet?", replyPreview = "Lena: Here", visited = false,
-                    onOpen = {}, onLongClick = {}, onMarkRead = { marked = true }, onTouch = {},
+                    rootPreview = "Where should we meet?",
+                    replyPreview = "Lena: Here",
+                    visited = false,
+                    onOpen = {},
+                    onLongClick = {},
+                    onMarkRead = { marked = true },
+                    onTouch = {},
                 )
             }
         }
@@ -36,6 +41,15 @@ class ThreadsInboxAccessibilityTest : RobolectricTest() {
             .assertHasClickAction()
             .performCustomAccessibilityActionWithLabel("Mark as read")
         runOnIdle { assertThat(marked).isTrue() }
+    }
+
+    @Test
+    fun `loading shows three shimmer placeholders`() = runAndroidComposeUiTest<androidx.activity.ComponentActivity> {
+        mainClock.autoAdvance = false
+        setContent { ElementPreview { ThreadsInboxLoading() } }
+        onNodeWithTag("inbox-placeholder-0").assertExists()
+        onNodeWithTag("inbox-placeholder-1").assertExists()
+        onNodeWithTag("inbox-placeholder-2").assertExists()
     }
 
     @Test
