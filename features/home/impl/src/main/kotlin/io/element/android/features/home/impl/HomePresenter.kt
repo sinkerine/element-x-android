@@ -87,6 +87,11 @@ class HomePresenter(
         fun handleEvent(event: HomeEvent) {
             when (event) {
                 is HomeEvent.SelectHomeNavigationBarItem -> {
+                    if (event.item == HomeNavigationBarItem.Threads) {
+                        threadsQueue.startVisit()
+                    } else if (currentHomeNavigationBarItem == HomeNavigationBarItem.Threads) {
+                        threadsQueue.endVisit()
+                    }
                     currentHomeNavigationBarItemOrdinal = event.item.ordinal
                 }
                 is HomeEvent.SwitchToAccount -> coroutineState.launch {

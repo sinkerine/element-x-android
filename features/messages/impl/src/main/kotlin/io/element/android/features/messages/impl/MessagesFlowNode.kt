@@ -228,6 +228,11 @@ class MessagesFlowNode(
                 timelineController.close()
             }
         )
+        val initialThread = plugins.filterIsInstance<MessagesEntryPoint.Params>().first().initialTarget as? MessagesEntryPoint.InitialTarget.Thread
+        if (initialThread != null && !initialThread.triage) {
+            backstack.newRoot(NavTarget.Messages(null))
+            lifecycleScope.launch { attachThread(initialThread.threadId, initialThread.focusedEventId) }
+        }
         setupCacheUpdaters()
 
         pinnedEventsTimelineProvider.launchIn(lifecycleScope)

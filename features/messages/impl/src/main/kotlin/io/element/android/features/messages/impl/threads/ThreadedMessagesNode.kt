@@ -370,7 +370,8 @@ class ThreadedMessagesNode(
                     triageBar = {
                         if (inputs.triage) {
                             val next by triageQueue.upNext.collectAsState()
-                            androidx.compose.foundation.layout.Row {
+                            val unreadCount by triageQueue.unreadCount.collectAsState()
+                            androidx.compose.foundation.layout.Column {
                                 androidx.compose.material3.TextButton(onClick = callback::openInRoom) {
                                     io.element.android.libraries.designsystem.theme.components.Text(
                                         androidx.compose.ui.res.stringResource(
@@ -387,7 +388,12 @@ class ThreadedMessagesNode(
                                 androidx.compose.material3.TextButton(onClick = callback::navigateToNextTriageThread, enabled = next != null) {
                                     io.element.android.libraries.designsystem.theme.components.Text(
                                         androidx.compose.ui.res.stringResource(
-                                            io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_up_next
+                                            if (next == null) {
+                                                io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_all_read
+                                            } else {
+                                                io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_next
+                                            },
+                                            unreadCount,
                                         )
                                     )
                                 }

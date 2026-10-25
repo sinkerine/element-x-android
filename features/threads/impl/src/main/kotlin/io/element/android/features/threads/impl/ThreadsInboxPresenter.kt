@@ -44,6 +44,7 @@ class ThreadsInboxPresenter(
         var pending by remember { mutableStateOf<Set<InboxThreadKey>>(emptySet()) }
         var marked by remember { mutableStateOf<Set<InboxThreadKey>>(emptySet()) }
         var failedBatch by remember { mutableStateOf<Set<InboxThreadKey>>(emptySet()) }
+        val snapshots = remember { mutableMapOf<InboxThreadKey, io.element.android.libraries.matrix.api.room.threads.InboxThread>() }
         var timer by remember { mutableStateOf<Job?>(null) }
 
         fun commit() {
@@ -52,7 +53,7 @@ class ThreadsInboxPresenter(
             pending = emptySet()
             if (batch.isEmpty()) return
             client.sessionCoroutineScope.launch {
-                service.markAsRead(batch.toList()).onFailure {
+                service.markSnapshotAsRead(batch.mapNotNull { snapshots[it] }).onFailure {
                     marked -= batch
                     failedBatch = batch
                 }
@@ -62,14 +63,16 @@ class ThreadsInboxPresenter(
             queue.startVisit()
             onDispose {
                 commit()
-                // Navigation to triage keeps the Home node alive; switching Home items ends the visit.
-                queue.endVisit()
+                // Home selection owns the visit; the list also disposes when a triage room covers Home.
             }
         }
         val all = data.dataOrNull().orEmpty()
-        val effective = all.map { if (it.key in marked) it.copy(numUnread = 0, numUnreadMentions = 0) else it }
+        val effective = all.map {
+            if (it.key in marked && snapshots[it.key]?.latestEvent?.eventId == it.latestEvent?.eventId) it.copy(numUnread = 0, numUnreadMentions = 0) else it
+        }
         fun mark(keys: Set<InboxThreadKey>) {
             commit()
+            keys.forEach { key -> all.find { it.key == key }?.let { snapshots[key] = it } }
             pending = keys
             marked += keys
             timer = scope.launch {
