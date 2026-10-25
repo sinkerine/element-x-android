@@ -15,12 +15,31 @@ import io.element.android.libraries.matrix.test.FakeMatrixClient
 import io.element.android.libraries.matrix.test.room.threads.FakeCrossRoomThreadsService
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DefaultThreadsTriageQueueTest {
+    @Test
+    fun `failed first unread capture skips opened thread and posts fallback feedback`() = runTest {
+        val service = FakeCrossRoomThreadsService()
+        val mine = previewThread()
+        service.threads.value = AsyncData.Success(persistentListOf(mine))
+        service.firstUnreadResult = Result.failure(IllegalStateException("history unavailable"))
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope)
+        val snackbar = io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher()
+        val queue = DefaultThreadsTriageQueue(service, client, ThreadsInboxSession(service, client), snackbar)
+        runCurrent()
+        assertThat(queue.open(mine.key).isFailure).isTrue()
+        runCurrent()
+        assertThat(queue.upNext.value).isNull()
+        assertThat(queue.visited.value).containsExactly(mine.key)
+        assertThat(snackbar.snackbarMessage.first()?.messageResId)
+            .isEqualTo(io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed)
+    }
+
     @Test
     fun `mine precedes newer other and opening skips current thread`() = runTest {
         val service = FakeCrossRoomThreadsService()

@@ -83,6 +83,42 @@ class ThreadsInboxPresenterTest {
     }
 
     @Test
+    fun `mark all applies to selected tab and leaves other unread threads untouched`() = runTest {
+        val mine = previewThread()
+        val other = mine.copy(key = mine.key.copy(threadId = io.element.android.libraries.matrix.api.core.ThreadId("\$other")), isParticipating = false)
+        val service = FakeCrossRoomThreadsService()
+        service.threads.value = AsyncData.Success(persistentListOf(mine, other))
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope)
+        val session = ThreadsInboxSession(service, client)
+        session.tab.value = ThreadsInboxTab.Other
+        ThreadsInboxPresenter(
+            service,
+            FakeThreadsTriageQueue(),
+            session,
+            InboxThreadSummaryFormatter(io.element.android.libraries.eventformatter.test.FakeRoomLatestEventFormatter())
+        ).test {
+            val first = awaitItem()
+            first.eventSink(ThreadsInboxEvent.MarkAllAsRead)
+            var state = awaitItem()
+            while (state.pending.isEmpty() || state.otherUnreadCount != 0) state = awaitItem()
+            assertThat(state.pending).containsExactly(other.key)
+            assertThat(state.mineUnreadCount).isEqualTo(1)
+            assertThat(state.otherUnreadCount).isEqualTo(0)
+            state.eventSink(ThreadsInboxEvent.Undo)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `muted other threads are only shown in All while own muted threads remain available`() {
+        val mine = previewThread().copy(roomNotificationMode = RoomNotificationMode.MUTE)
+        val other = mine.copy(isParticipating = false)
+        assertThat(visibleThreads(listOf(other), ThreadsInboxTab.Other, ThreadsInboxFilter.Unread, setOf(other.key))).isEmpty()
+        assertThat(visibleThreads(listOf(other), ThreadsInboxTab.Other, ThreadsInboxFilter.All, emptySet())).containsExactly(other)
+        assertThat(visibleThreads(listOf(mine), ThreadsInboxTab.Mine, ThreadsInboxFilter.All, emptySet())).containsExactly(mine)
+    }
+
+    @Test
     fun `mentions qualify as mine and notification modes gate unread`() {
         val other = previewThread().copy(isParticipating = false)
         assertThat(other.isMine).isFalse()

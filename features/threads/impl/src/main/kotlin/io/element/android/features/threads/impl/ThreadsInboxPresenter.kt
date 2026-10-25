@@ -35,12 +35,17 @@ class ThreadsInboxPresenter(
         val tab by session.tab.collectAsState()
         val filter by session.filter.collectAsState()
         val next by queue.upNext.collectAsState()
+        val orderRevision by session.orderRevision.collectAsState()
         val scope = rememberCoroutineScope()
         DisposableEffect(Unit) {
             queue.startVisit()
             onDispose { session.commit() }
         }
         val all = data.dataOrNull().orEmpty()
+        // Reading the revision recomposes the released ordering even without a new SDK update.
+        val rows = androidx.compose.runtime.remember(data, tab, filter, visited, read.retained, orderRevision) {
+            data.map { session.ordered(visibleThreads(it, tab, filter, visited + read.retained)).toImmutableList() }
+        }
         fun handle(event: ThreadsInboxEvent) {
             when (event) {
                 is ThreadsInboxEvent.SelectTab -> session.tab.value = event.tab
@@ -59,7 +64,7 @@ class ThreadsInboxPresenter(
             }
         }
         return ThreadsInboxState(
-            rows = data.map { session.ordered(visibleThreads(it, tab, filter, visited + read.retained)).toImmutableList() },
+            rows = rows,
             tab = tab,
             filter = filter,
             visited = visited,
