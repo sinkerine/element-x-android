@@ -40,6 +40,54 @@ class KotlinCrossRoomThreadsServiceTest {
     }
 
     @Test
+    fun `ending visit destroys pending room subscriptions`() = runTest {
+        val summary = aRoomSummary(roomId = io.element.android.libraries.matrix.api.core.RoomId("!lifecycle:example.org"))
+        val list = FakeDynamicRoomList(summaries = MutableStateFlow(listOf(summary)))
+        val roomList = FakeRoomListService(allRooms = list)
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList)
+        var destroyed = 0
+        val threads = io.element.android.libraries.matrix.test.room.threads.FakeThreadsListService(
+            paginate = { kotlinx.coroutines.awaitCancellation() },
+            destroy = { destroyed++ },
+        )
+        client.givenGetRoomResult(summary.roomId, io.element.android.libraries.matrix.test.room.FakeJoinedRoom(threadsListService = threads))
+        val flags = FakeFeatureFlagService(initialState = mapOf(FeatureFlags.CrossRoomThreads.key to false))
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), flags)
+        roomList.postState(RoomListService.State.Running)
+        service.startVisit()
+        runCurrent()
+        assertThat(destroyed).isEqualTo(0)
+        service.endVisit()
+        runCurrent()
+        assertThat(destroyed).isEqualTo(1)
+    }
+
+    @Test
+    fun `leaving room destroys its pending subscription on next summary update`() = runTest {
+        val summary = aRoomSummary(roomId = io.element.android.libraries.matrix.api.core.RoomId("!left:example.org"))
+        val list = FakeDynamicRoomList(summaries = MutableStateFlow(listOf(summary)))
+        val roomList = FakeRoomListService(allRooms = list)
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList)
+        var destroyed = 0
+        val threads = io.element.android.libraries.matrix.test.room.threads.FakeThreadsListService(
+            paginate = { kotlinx.coroutines.awaitCancellation() }, destroy = { destroyed++ },
+        )
+        client.givenGetRoomResult(summary.roomId, io.element.android.libraries.matrix.test.room.FakeJoinedRoom(threadsListService = threads))
+        val flags = FakeFeatureFlagService(initialState = mapOf(FeatureFlags.CrossRoomThreads.key to false))
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), flags)
+        roomList.postState(RoomListService.State.Running)
+        service.startVisit()
+        runCurrent()
+        list.summaries.value = listOf(summary.copy(info = summary.info.copy(
+            currentUserMembership = io.element.android.libraries.matrix.api.room.CurrentUserMembership.LEFT,
+        )))
+        runCurrent()
+        assertThat(destroyed).isEqualTo(1)
+        assertThat(service.threads.value.dataOrNull()).isEmpty()
+        service.endVisit()
+    }
+
+    @Test
     fun `disabled cross room flag does not start background room discovery`() = runTest {
         val list =
             FakeDynamicRoomList(
