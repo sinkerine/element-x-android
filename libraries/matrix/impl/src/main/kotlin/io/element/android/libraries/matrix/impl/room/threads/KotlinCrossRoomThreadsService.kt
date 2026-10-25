@@ -57,6 +57,7 @@ class KotlinCrossRoomThreadsService(
     private val roomJobs = mutableMapOf<io.element.android.libraries.matrix.api.core.RoomId, Job>()
     private val rooms = mutableMapOf<io.element.android.libraries.matrix.api.core.RoomId, JoinedRoom>()
     private val rows = mutableMapOf<io.element.android.libraries.matrix.api.core.RoomId, List<InboxThread>>()
+    private val roomFailures = mutableMapOf<io.element.android.libraries.matrix.api.core.RoomId, Throwable>()
     private val receipts = Semaphore(4)
     private val recentRooms = mutableListOf<io.element.android.libraries.matrix.api.core.RoomId>()
     private val roomMetadata = mutableMapOf<io.element.android.libraries.matrix.api.core.RoomId, io.element.android.libraries.matrix.api.room.RoomInfo>()
@@ -92,6 +93,7 @@ class KotlinCrossRoomThreadsService(
                 }
                 val joined = summaries.filter { it.info.currentUserMembership == CurrentUserMembership.JOINED }.map { it.roomId }.toSet()
                 rows.keys.retainAll(joined)
+                roomFailures.keys.retainAll(joined)
                 summaries.forEach { summary ->
                     val cached = rows[summary.roomId] ?: return@forEach
                     val inner = (client as RustMatrixClient).innerClient.getRoom(summary.roomId.value) ?: return@forEach
@@ -153,6 +155,7 @@ class KotlinCrossRoomThreadsService(
                     )
                 }
                 rows[summary.roomId] = mapped
+                roomFailures.remove(summary.roomId)
                 publish()
             } finally {
                 inner.close()
@@ -187,6 +190,7 @@ class KotlinCrossRoomThreadsService(
                     }
                     val joined = summaries.filter { it.info.currentUserMembership == CurrentUserMembership.JOINED }.map { it.roomId }.toSet()
                     rows.keys.retainAll(joined)
+                    roomFailures.keys.retainAll(joined)
                     summaries.forEach { roomMetadata[it.roomId] = it.info }
                     val ids = candidates.map { it.roomId }.toSet()
                     roomJobs.keys.filter { it !in ids }.forEach { id -> roomJobs.remove(id)?.cancelAndJoin() }
@@ -264,6 +268,7 @@ class KotlinCrossRoomThreadsService(
                                                 isMarkedUnread = InboxThreadKey(summary.roomId, item.threadId) in markedUnread,
                                             )
                                         }
+                                        roomFailures.remove(summary.roomId)
                                         publish()
                                     } finally {
                                         inner.close()
@@ -272,7 +277,8 @@ class KotlinCrossRoomThreadsService(
                             } catch (error: Exception) {
                                 if (error is CancellationException && error !is kotlinx.coroutines.TimeoutCancellationException) throw error
                                 timber.log.Timber.w(error, "Failed to load inbox thread history for room %s", summary.roomId)
-                                threads.value = AsyncData.Failure(error, threads.value.dataOrNull())
+                                roomFailures[summary.roomId] = error
+                                publish()
                             } finally {
                                 if (rooms[summary.roomId] === room) rooms.remove(summary.roomId)
                                 room.threadsListService.destroy()
@@ -300,7 +306,8 @@ class KotlinCrossRoomThreadsService(
         }
 
     private fun publish() {
-        threads.value = AsyncData.Success(rows.values.flatten().sortedByDescending { it.timestamp }.toImmutableList())
+        val loaded = rows.values.flatten().sortedByDescending { it.timestamp }.toImmutableList()
+        threads.value = roomFailures.values.firstOrNull()?.let { AsyncData.Failure(it, loaded) } ?: AsyncData.Success(loaded)
     }
 
     override fun endVisit() {
