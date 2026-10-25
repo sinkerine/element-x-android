@@ -114,7 +114,7 @@ class RustMatrixClientTest {
     @Test
     fun `getDatabaseSizes returns the database sizes`() = runTest {
         val client = createRustMatrixClient(
-            client = FakeFfiClient(getStoreSizesResult = { StoreSizes(null, 10uL, 11uL, 12uL) })
+            client = FakeFfiClient(getStoreSizesResult = { StoreSizes(null, 10uL, 11uL, 12uL, null) })
         )
 
         client.getDatabaseSizes().getOrThrow().run {

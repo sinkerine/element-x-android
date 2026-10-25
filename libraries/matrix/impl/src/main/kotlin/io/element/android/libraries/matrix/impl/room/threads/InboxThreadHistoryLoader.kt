@@ -36,9 +36,16 @@ internal suspend fun loadInboxThreadHistory(
                 page.filterIsInstance<MatrixTimelineItem.Event>().let { events ->
                     events.any { it.eventId?.value == rootId } && (receiptId == null || events.any { it.eventId == receiptId })
                 }
-            var events = items.first { page ->
-                if (initialEnd) completeBoundary(page) else page.any { it is MatrixTimelineItem.Event }
-            }.filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
+            val initialPage = if (initialEnd) {
+                items.first { completeBoundary(it) }
+            } else {
+                // A cached first page can contain only a gap/deduplicated events.
+                // It advances the cursor without producing a visible item.
+                kotlinx.coroutines.withTimeoutOrNull(250) {
+                    items.first { page -> page.any { it is MatrixTimelineItem.Event } }
+                } ?: items.value
+            }
+            var events = initialPage.filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
             while (events.none { it.eventId?.value == rootId } ||
                 (receiptId != null && events.none { it.eventId == receiptId })
             ) {

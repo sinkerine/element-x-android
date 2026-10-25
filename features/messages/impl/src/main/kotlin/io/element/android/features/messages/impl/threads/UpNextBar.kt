@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -27,20 +28,27 @@ import io.element.android.libraries.ui.strings.CommonStrings
 
 @Composable
 internal fun UpNextBar(preview: String?, count: Int, onNext: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp).semantics { liveRegion = LiveRegionMode.Polite }) {
-        Text(stringResource(CommonStrings.screen_threads_inbox_up_next), style = ElementTheme.typography.fontBodySmMedium)
+    val label = stringResource(CommonStrings.screen_threads_inbox_up_next)
+    val summary = preview ?: stringResource(CommonStrings.screen_threads_inbox_caught_up_title)
+    val action = if (preview == null) {
+        stringResource(CommonStrings.screen_threads_inbox_all_read)
+    } else {
+        stringResource(CommonStrings.screen_threads_inbox_next, count)
+    }
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Text(label, style = ElementTheme.typography.fontBodySmMedium)
         Text(
-            preview ?: stringResource(CommonStrings.screen_threads_inbox_caught_up_title),
+            summary,
+            modifier = Modifier.semantics {
+                liveRegion = LiveRegionMode.Polite
+                contentDescription = "$label, $summary, $action"
+            },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = ElementTheme.typography.fontBodyMdRegular,
         )
         TextButton(onClick = onNext, enabled = preview != null) {
-            Text(if (preview == null) {
-                stringResource(CommonStrings.screen_threads_inbox_all_read)
-            } else {
-                stringResource(CommonStrings.screen_threads_inbox_next, count)
-            })
+            Text(action)
         }
     }
 }
