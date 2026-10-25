@@ -11,109 +11,64 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import dev.zacsweers.metro.Inject
 import io.element.android.features.threads.api.ThreadsTriageQueue
-import io.element.android.libraries.architecture.AsyncData
 import io.element.android.libraries.architecture.Presenter
-import io.element.android.libraries.matrix.api.MatrixClient
+import io.element.android.libraries.architecture.map
 import io.element.android.libraries.matrix.api.room.threads.CrossRoomThreadsService
-import io.element.android.libraries.matrix.api.room.threads.InboxThreadKey
 import kotlinx.collections.immutable.toImmutableList
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Inject
 class ThreadsInboxPresenter(
     private val service: CrossRoomThreadsService,
     private val queue: ThreadsTriageQueue,
-    private val client: MatrixClient,
+    private val session: ThreadsInboxSession,
+    private val summaryFormatter: InboxThreadSummaryFormatter,
 ) : Presenter<ThreadsInboxState> {
     @Composable
     override fun present(): ThreadsInboxState {
-        val data by service.threads.collectAsState()
-        val visited by queue.visited.collectAsState()
+        val data by session.threads.collectAsState()
+        val read by session.readState.collectAsState()
+        val visited by session.visited.collectAsState()
+        val tab by session.tab.collectAsState()
+        val filter by session.filter.collectAsState()
         val next by queue.upNext.collectAsState()
         val scope = rememberCoroutineScope()
-        var tab by remember { mutableStateOf(ThreadsInboxTab.Mine) }
-        var filter by remember { mutableStateOf(ThreadsInboxFilter.Unread) }
-        var pending by remember { mutableStateOf<Set<InboxThreadKey>>(emptySet()) }
-        var marked by remember { mutableStateOf<Set<InboxThreadKey>>(emptySet()) }
-        var failedBatch by remember { mutableStateOf<Set<InboxThreadKey>>(emptySet()) }
-        val snapshots = remember { mutableMapOf<InboxThreadKey, io.element.android.libraries.matrix.api.room.threads.InboxThread>() }
-        var timer by remember { mutableStateOf<Job?>(null) }
-
-        fun commit() {
-            timer?.cancel()
-            val batch = pending
-            pending = emptySet()
-            if (batch.isEmpty()) return
-            client.sessionCoroutineScope.launch {
-                service.markSnapshotAsRead(batch.mapNotNull { snapshots[it] }).onFailure {
-                    marked -= batch
-                    failedBatch = batch
-                }
-            }
-        }
         DisposableEffect(Unit) {
             queue.startVisit()
-            onDispose {
-                commit()
-                // Home selection owns the visit; the list also disposes when a triage room covers Home.
-            }
+            onDispose { session.commit() }
         }
         val all = data.dataOrNull().orEmpty()
-        val effective = all.map {
-            if (it.key in marked && snapshots[it.key]?.latestEvent?.eventId == it.latestEvent?.eventId) it.copy(numUnread = 0, numUnreadMentions = 0) else it
-        }
-        fun mark(keys: Set<InboxThreadKey>) {
-            commit()
-            keys.forEach { key -> all.find { it.key == key }?.let { snapshots[key] = it } }
-            pending = keys
-            marked += keys
-            timer = scope.launch {
-                delay(5_000)
-                commit()
-            }
-        }
-        fun handle(event: ThreadsInboxEvent) = androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+        fun handle(event: ThreadsInboxEvent) {
             when (event) {
-                is ThreadsInboxEvent.SelectTab -> tab = event.tab
-                is ThreadsInboxEvent.SelectFilter -> filter = event.filter
-                is ThreadsInboxEvent.MarkAsRead -> mark(setOf(event.key))
-                ThreadsInboxEvent.MarkAllAsRead -> mark(effective.filter { it.isUnread && it.isMine == (tab == ThreadsInboxTab.Mine) }.map { it.key }.toSet())
-                ThreadsInboxEvent.Undo -> {
-                    timer?.cancel()
-                    marked -= pending
-                    pending = emptySet()
-                }
-                ThreadsInboxEvent.Retry -> {
-                    val batch = failedBatch
-                    failedBatch = emptySet()
-                    mark(batch)
-                    commit()
+                is ThreadsInboxEvent.SelectTab -> session.tab.value = event.tab
+                is ThreadsInboxEvent.SelectFilter -> session.filter.value = event.filter
+                is ThreadsInboxEvent.MarkAsRead -> session.mark(setOf(event.key))
+                is ThreadsInboxEvent.MarkAsUnread -> session.markUnread(event.key)
+                is ThreadsInboxEvent.Touch -> session.touch(event.key, event.pressed)
+                ThreadsInboxEvent.MarkAllAsRead -> session.mark(all.filter { it.isUnread && it.isMine == (tab == ThreadsInboxTab.Mine) }.map { it.key }.toSet())
+                ThreadsInboxEvent.Undo -> session.undo()
+                ThreadsInboxEvent.Retry -> session.retry()
+                ThreadsInboxEvent.RetryLoad -> {
+                    service.endVisit()
+                    service.startVisit()
                 }
                 ThreadsInboxEvent.LoadMore -> scope.launch { service.paginate() }
             }
         }
         return ThreadsInboxState(
-            rows = when {
-                data is AsyncData.Failure -> AsyncData.Failure((data as AsyncData.Failure).error)
-                data.dataOrNull() == null -> AsyncData.Loading()
-                else -> AsyncData.Success(visibleThreads(effective, tab, filter, visited + marked).toImmutableList())
-            },
+            rows = data.map { session.ordered(visibleThreads(it, tab, filter, visited + read.retained)).toImmutableList() },
             tab = tab,
             filter = filter,
             visited = visited,
-            pending = pending,
-            mineUnreadCount = effective.count { it.isMine && it.isUnread },
-            otherUnreadCount = effective.count { !it.isMine && it.isUnread },
-            latestUnread = next?.takeIf { it.key !in marked },
-            failed = failedBatch.isNotEmpty(),
+            pending = read.pending.map { it.key }.toSet(),
+            mineUnreadCount = all.count { it.isMine && it.isUnread },
+            otherUnreadCount = all.count { !it.isMine && it.isUnread },
+            latestUnread = next,
+            failed = read.failed.isNotEmpty() || read.failedUnread.isNotEmpty(),
+            summaries = all.associate { it.key to summaryFormatter.format(it) },
             eventSink = ::handle,
         )
     }

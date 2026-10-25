@@ -31,7 +31,13 @@ class DefaultThreadsTriageQueueTest {
             rootEvent = mine.rootEvent.copy(timestamp = 100),
         )
         service.threads.value = AsyncData.Success(persistentListOf(other, mine))
-        val queue = DefaultThreadsTriageQueue(service, FakeMatrixClient(sessionCoroutineScope = backgroundScope))
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope)
+        val queue = DefaultThreadsTriageQueue(
+            service,
+            client,
+            ThreadsInboxSession(service, client),
+            io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher()
+        )
         runCurrent()
         assertThat(queue.upNext.value).isEqualTo(mine)
         assertThat(queue.unreadCount.value).isEqualTo(2)
