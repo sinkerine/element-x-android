@@ -32,6 +32,7 @@ data class HomeState(
     val directLogoutState: DirectLogoutState,
     val showThreads: Boolean = false,
     val threadsUnreadCount: Int = 0,
+    val threadsHaveMention: Boolean = false,
     val eventSink: (HomeEvent) -> Unit,
 ) {
     val isBackHandlerEnabled = currentHomeNavigationBarItem != HomeNavigationBarItem.Chats || roomListState.spaceFiltersState is SpaceFiltersState.Selected

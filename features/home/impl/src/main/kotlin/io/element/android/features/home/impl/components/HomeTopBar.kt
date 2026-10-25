@@ -139,7 +139,8 @@ fun HomeTopBar(
                             else -> stringResource(selectedNavigationItem.labelRes)
                         }
                     }
-                    HomeNavigationBarItem.Threads, HomeNavigationBarItem.Spaces -> null
+                    HomeNavigationBarItem.Threads -> stringResource(selectedNavigationItem.labelRes)
+                    HomeNavigationBarItem.Spaces -> null
                 }
                 displayTitle?.let {
                     val style = when (spaceFiltersState) {

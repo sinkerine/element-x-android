@@ -29,6 +29,8 @@ setupDependencyInjection()
 
 dependencies {
     implementation(projects.features.threads.api)
+    implementation(projects.services.appnavstate.api)
+    testImplementation(projects.services.appnavstate.test)
     implementation(projects.appconfig)
     implementation(projects.libraries.core)
     implementation(projects.libraries.androidutils)

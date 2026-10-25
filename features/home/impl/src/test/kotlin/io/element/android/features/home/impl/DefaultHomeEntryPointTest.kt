@@ -34,6 +34,8 @@ class DefaultHomeEntryPointTest : RobolectricTest() {
                 matrixClient = FakeMatrixClient(),
                 presenter = createHomePresenter(),
                 threadsInbox = io.element.android.features.threads.test.FakeThreadsInboxEntryPoint(),
+                threadsQueue = io.element.android.features.threads.test.FakeThreadsTriageQueue(),
+                foregroundState = io.element.android.services.appnavstate.test.FakeAppForegroundStateService(),
                 inviteFriendsUseCase = { lambdaError() },
                 analyticsService = FakeAnalyticsService(),
                 acceptDeclineInviteView = { _, _, _, _ -> lambdaError() },

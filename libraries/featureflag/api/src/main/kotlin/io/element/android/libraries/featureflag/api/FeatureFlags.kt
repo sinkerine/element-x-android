@@ -66,8 +66,8 @@ enum class FeatureFlags(
     CrossRoomThreads(
         key = "feature.cross_room_threads",
         title = "Cross-room threads",
-        description = "Prototype Threads Inbox. Requires Threads to be enabled.",
-        defaultValue = { false },
+        description = "Threads Inbox across rooms. Requires Threads to be enabled.",
+        defaultValue = { true },
         isFinished = false,
     ),
     Threads(

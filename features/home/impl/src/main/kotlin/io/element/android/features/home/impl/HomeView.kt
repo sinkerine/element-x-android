@@ -241,6 +241,7 @@ private fun HomeScaffold(
                 currentHomeNavigationBarItem = state.currentHomeNavigationBarItem,
                 showThreads = state.showThreads,
                 threadsUnreadCount = state.threadsUnreadCount,
+                threadsHaveMention = state.threadsHaveMention,
                 onItemClick = { item ->
                     // scroll to top if selecting the same item
                     if (item == state.currentHomeNavigationBarItem) {
@@ -359,6 +360,7 @@ private fun HomeBottomBar(
     floatingActionButton: (@Composable () -> Unit)?,
     showThreads: Boolean = false,
     threadsUnreadCount: Int = 0,
+    threadsHaveMention: Boolean = false,
 ) {
     HorizontalFloatingToolbar(
         floatingActionButton = floatingActionButton,
@@ -374,6 +376,8 @@ private fun HomeBottomBar(
                 icon = item.icon(isSelected),
                 tooltipLabel = stringResource(item.labelRes),
                 counter = threadsUnreadCount.takeIf { item == HomeNavigationBarItem.Threads && it > 0 },
+                counterIsCritical = item == HomeNavigationBarItem.Threads && threadsHaveMention,
+                counterOverflowText = if (item == HomeNavigationBarItem.Threads) "99+" else "+99",
                 isSelected = isSelected,
                 onClick = { onItemClick(item) },
             )
