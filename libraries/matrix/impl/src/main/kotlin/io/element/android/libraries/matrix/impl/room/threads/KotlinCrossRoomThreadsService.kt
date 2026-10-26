@@ -57,6 +57,8 @@ class KotlinCrossRoomThreadsService(
     private val source: ThreadInboxSource,
 ) : CrossRoomThreadsService {
     override val threads = MutableStateFlow<AsyncData<ImmutableList<InboxThread>>>(AsyncData.Uninitialized)
+    override val successfulTimelineReads get() = (client as? RustMatrixClient)?.threadReadActions?.successfulTimelineReads
+        ?: kotlinx.coroutines.flow.emptyFlow()
     private val innerClient get() = (client as RustMatrixClient).innerClient
     private val rows = mutableMapOf<RoomId, List<InboxThread>>()
     private val refreshLock = Mutex()

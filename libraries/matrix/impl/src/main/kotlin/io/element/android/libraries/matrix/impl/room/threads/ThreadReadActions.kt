@@ -13,6 +13,12 @@ import kotlinx.coroutines.sync.withLock
 
 /** Serializes receipt requests and explicit-unread writes across every entry point. */
 internal class ThreadReadActions {
+    val successfulTimelineReads = kotlinx.coroutines.flow.MutableSharedFlow<InboxThreadKey>(extraBufferCapacity = 64)
+
+    suspend fun timelineReadSucceeded(key: InboxThreadKey) {
+        successfulTimelineReads.emit(key)
+    }
+
     private val locks = mutableMapOf<InboxThreadKey, Mutex>()
 
     suspend fun <T> run(key: InboxThreadKey, action: suspend () -> T): T {

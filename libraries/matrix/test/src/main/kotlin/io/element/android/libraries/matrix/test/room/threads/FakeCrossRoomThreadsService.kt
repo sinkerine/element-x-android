@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 class FakeCrossRoomThreadsService : CrossRoomThreadsService {
     override val threads = MutableStateFlow<AsyncData<ImmutableList<InboxThread>>>(AsyncData.Success(persistentListOf()))
+    override val successfulTimelineReads = kotlinx.coroutines.flow.MutableSharedFlow<InboxThreadKey>(extraBufferCapacity = 64)
     val marked = mutableListOf<List<InboxThreadKey>>()
     var markResult: Result<Unit> = Result.success(Unit)
     var markHandler: (suspend (List<InboxThreadKey>) -> Result<Unit>)? = null

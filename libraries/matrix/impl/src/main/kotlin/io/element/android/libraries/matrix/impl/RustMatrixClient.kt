@@ -262,6 +262,7 @@ class RustMatrixClient(
         analyticsService = analyticsService,
         onThreadRead = { key ->
             inboxUnreadStore.set(key, false).getOrThrow()
+            threadReadActions.timelineReadSucceeded(key)
         },
         runThreadRead = { key, action -> threadReadActions.run(key, action) },
     )
