@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.StateFlow
 interface CrossRoomThreadsService {
     val threads: StateFlow<AsyncData<ImmutableList<InboxThread>>>
     val closedBadge: StateFlow<InboxBadgeCounts?>? get() = null
+
+    /** Successful local threaded reads from normal timeline navigation. */
+    val successfulTimelineReads: kotlinx.coroutines.flow.Flow<InboxThreadKey> get() = kotlinx.coroutines.flow.emptyFlow()
     fun startVisit()
     fun endVisit()
     suspend fun paginate(): Result<Unit>

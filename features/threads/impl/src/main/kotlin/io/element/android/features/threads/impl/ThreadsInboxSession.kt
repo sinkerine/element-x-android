@@ -95,6 +95,14 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
 
     init {
         client.sessionCoroutineScope.launch {
+            service.successfulTimelineReads.collect { key ->
+                readState.value = readState.value.copy(
+                    failedUnread = readState.value.failedUnread - key,
+                    failed = readState.value.failed.filterNot { it.key == key },
+                )
+            }
+        }
+        client.sessionCoroutineScope.launch {
             service.threads.collect { data ->
                 val items = data.dataOrNull() ?: return@collect
                 val state = readState.value
