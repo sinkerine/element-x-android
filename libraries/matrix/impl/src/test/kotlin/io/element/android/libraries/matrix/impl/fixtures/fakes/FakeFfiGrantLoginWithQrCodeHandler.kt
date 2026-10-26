@@ -10,6 +10,7 @@ package io.element.android.libraries.matrix.impl.fixtures.fakes
 import org.matrix.rustcomponents.sdk.GrantGeneratedQrLoginProgress
 import org.matrix.rustcomponents.sdk.GrantGeneratedQrLoginProgressListener
 import org.matrix.rustcomponents.sdk.GrantLoginWithQrCodeHandler
+import org.matrix.rustcomponents.sdk.GrantLoginWithQrCodeTask
 import org.matrix.rustcomponents.sdk.GrantQrLoginProgress
 import org.matrix.rustcomponents.sdk.GrantQrLoginProgressListener
 import org.matrix.rustcomponents.sdk.NoHandle
@@ -21,18 +22,26 @@ class FakeFfiGrantLoginWithQrCodeHandler(
 ) : GrantLoginWithQrCodeHandler(NoHandle) {
     private var generateProgressListener: GrantGeneratedQrLoginProgressListener? = null
     private var scanProgressListener: GrantQrLoginProgressListener? = null
-    override suspend fun generate(progressListener: GrantGeneratedQrLoginProgressListener) {
+    override fun generate(progressListener: GrantGeneratedQrLoginProgressListener): GrantLoginWithQrCodeTask {
         generateProgressListener = progressListener
-        generateResult()
+        return object : GrantLoginWithQrCodeTask(NoHandle) {
+            override suspend fun wait() = generateResult()
+            override fun cancel() = Unit
+            override fun close() = Unit
+        }
     }
 
     fun emitGenerateProgress(progress: GrantGeneratedQrLoginProgress) {
         generateProgressListener?.onUpdate(progress)
     }
 
-    override suspend fun scan(qrCodeData: QrCodeData, progressListener: GrantQrLoginProgressListener) {
+    override fun scan(qrCodeData: QrCodeData, progressListener: GrantQrLoginProgressListener): GrantLoginWithQrCodeTask {
         scanProgressListener = progressListener
-        scanResult(qrCodeData)
+        return object : GrantLoginWithQrCodeTask(NoHandle) {
+            override suspend fun wait() = scanResult(qrCodeData)
+            override fun cancel() = Unit
+            override fun close() = Unit
+        }
     }
 
     fun emitScanProgress(progress: GrantQrLoginProgress) {

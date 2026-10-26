@@ -25,9 +25,9 @@ object RustIdentityResetHandleFactory {
         return runCatchingExceptions {
             identityResetHandle?.let {
                 when (val authType = identityResetHandle.authType()) {
-                    is CrossSigningResetAuthType.OAuth -> RustIdentityOAuthResetHandle(identityResetHandle, authType.info.approvalUrl)
+                    is CrossSigningResetAuthType.OAuth -> RustIdentityOAuthResetHandle(identityResetHandle, authType.info.approvalUrl, authType.info.session)
                     // User interactive authentication (user + password)
-                    CrossSigningResetAuthType.Uiaa -> RustPasswordIdentityResetHandle(userId, identityResetHandle)
+                    is CrossSigningResetAuthType.Uiaa -> RustPasswordIdentityResetHandle(userId, identityResetHandle, authType.info.session)
                 }
             }
         }
@@ -37,9 +37,10 @@ object RustIdentityResetHandleFactory {
 class RustPasswordIdentityResetHandle(
     private val userId: UserId,
     private val identityResetHandle: org.matrix.rustcomponents.sdk.IdentityResetHandle,
+    private val session: String,
 ) : IdentityPasswordResetHandle {
     override suspend fun resetPassword(password: String): Result<Unit> {
-        return runCatchingExceptions { identityResetHandle.reset(AuthData.Password(AuthDataPasswordDetails(userId.value, password))) }
+        return runCatchingExceptions { identityResetHandle.reset(AuthData.Password(AuthDataPasswordDetails(userId.value, password, session))) }
     }
 
     override suspend fun cancel() {
@@ -50,9 +51,10 @@ class RustPasswordIdentityResetHandle(
 class RustIdentityOAuthResetHandle(
     private val identityResetHandle: org.matrix.rustcomponents.sdk.IdentityResetHandle,
     override val url: String,
+    private val session: String,
 ) : IdentityOAuthResetHandle {
     override suspend fun resetOAuth(): Result<Unit> {
-        return runCatchingExceptions { identityResetHandle.reset(null) }
+        return runCatchingExceptions { identityResetHandle.reset(AuthData.OAuth(session)) }
     }
 
     override suspend fun cancel() {

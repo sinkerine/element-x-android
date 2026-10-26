@@ -20,8 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.coroutineScope
+import com.bumble.appyx.core.composable.PermanentChild
 import com.bumble.appyx.core.lifecycle.subscribe
 import com.bumble.appyx.core.modality.BuildContext
+import com.bumble.appyx.core.navigation.model.permanent.PermanentNavModel
 import com.bumble.appyx.core.node.Node
 import com.bumble.appyx.core.node.node
 import com.bumble.appyx.core.plugin.Plugin
@@ -63,6 +65,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -80,6 +84,9 @@ class HomeFlowNode(
     @Assisted plugins: List<Plugin>,
     private val matrixClient: MatrixClient,
     private val presenter: HomePresenter,
+    private val threadsInbox: io.element.android.features.threads.api.ThreadsInboxEntryPoint,
+    private val threadsQueue: io.element.android.features.threads.api.ThreadsTriageQueue,
+    private val foregroundState: io.element.android.services.appnavstate.api.AppForegroundStateService,
     private val inviteFriendsUseCase: InviteFriendsUseCase,
     private val analyticsService: AnalyticsService,
     private val acceptDeclineInviteView: AcceptDeclineInviteView,
@@ -94,6 +101,7 @@ class HomeFlowNode(
         initialElement = NavTarget.Root,
         savedStateMap = buildContext.savedStateMap,
     ),
+    permanentNavModel = PermanentNavModel(navTargets = setOf(NavTarget.ThreadsInbox), savedStateMap = buildContext.savedStateMap),
     buildContext = buildContext,
     plugins = plugins
 ) {
@@ -102,6 +110,7 @@ class HomeFlowNode(
 
     override fun onBuilt() {
         super.onBuilt()
+        foregroundState.isInForeground.onEach(threadsQueue::setForeground).launchIn(lifecycle.coroutineScope)
         lifecycle.subscribe(
             onResume = {
                 analyticsService.screen(MobileScreen(screenName = MobileScreen.ScreenName.Home))
@@ -126,6 +135,9 @@ class HomeFlowNode(
     sealed interface NavTarget : Parcelable {
         @Parcelize
         data object Root : NavTarget
+
+        @Parcelize
+        data object ThreadsInbox : NavTarget
 
         @Parcelize
         data class ReportRoom(val roomId: RoomId) : NavTarget
@@ -221,6 +233,11 @@ class HomeFlowNode(
 
             HomeView(
                 homeState = state,
+                threadsView = { inboxModifier ->
+                    androidx.compose.foundation.layout.Box(inboxModifier) {
+                        PermanentChild(permanentNavModel = permanentNavModel, navTarget = NavTarget.ThreadsInbox)
+                    }
+                },
                 onRoomClick = ::navigateToRoom,
                 onSettingsClick = callback::navigateToSettings,
                 onStartChatClick = callback::navigateToCreateRoom,
@@ -287,6 +304,20 @@ class HomeFlowNode(
                     listType = ChangeRoomMemberRolesListType.SelectNewOwnersWhenLeaving,
                 )
             }
+            NavTarget.ThreadsInbox -> threadsInbox.createNode(
+                this,
+                buildContext,
+                object : io.element.android.features.threads.api.ThreadsInboxEntryPoint.Callback {
+                override fun openThread(
+                    key: io.element.android.libraries.matrix.api.room.threads.InboxThreadKey, focusedEventId: EventId?, focusCaptureFailed: Boolean,
+                ) {
+                    callback.navigateToThread(key.roomId, key.threadId, focusedEventId, focusCaptureFailed)
+                }
+                override fun openRoom(key: io.element.android.libraries.matrix.api.room.threads.InboxThreadKey) {
+                    callback.openThreadInRoom(key.roomId, key.threadId)
+                }
+            }
+            )
             NavTarget.Root -> rootNode(buildContext)
         }
     }

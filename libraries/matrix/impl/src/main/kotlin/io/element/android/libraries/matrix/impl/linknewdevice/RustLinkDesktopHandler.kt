@@ -53,7 +53,13 @@ class RustLinkDesktopHandler(
                         }
                     }
                 }
-            )
+            ).use { task ->
+                try {
+                    task.wait()
+                } finally {
+                    task.cancel()
+                }
+            }
             // We emit Done in case the progress listener was deallocated before scan() sent the Done
             _linkDesktopStep.emit(LinkDesktopStep.Done)
         } catch (e: QrCodeDecodeException) {

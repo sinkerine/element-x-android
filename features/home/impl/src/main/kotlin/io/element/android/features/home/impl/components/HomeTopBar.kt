@@ -139,6 +139,7 @@ fun HomeTopBar(
                             else -> stringResource(selectedNavigationItem.labelRes)
                         }
                     }
+                    HomeNavigationBarItem.Threads -> stringResource(selectedNavigationItem.labelRes)
                     HomeNavigationBarItem.Spaces -> null
                 }
                 displayTitle?.let {

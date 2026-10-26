@@ -35,6 +35,18 @@ class RustTemporaryMatrixClientFactoryTest {
     }
 
     @Test
+    fun `create preserves explicit HTTP provider URL and port`() = runTest {
+        val builder = io.element.android.libraries.matrix.impl.fixtures.fakes.FakeFfiClientBuilder()
+        val sut = createRustTemporaryMatrixClientFactory(
+            rustMatrixClientFactory = createRustMatrixClientFactory(
+                clientBuilderProvider = FakeClientBuilderProvider { builder },
+            ),
+        )
+        assertThat(sut.create("http://127.0.0.1:18008/").isSuccess).isTrue()
+        assertThat(builder.serverNameOrUrl).isEqualTo("http://127.0.0.1:18008/")
+    }
+
+    @Test
     fun `create can fail gracefully`() = runTest {
         val sut = createRustTemporaryMatrixClientFactory(
             rustMatrixClientFactory = createRustMatrixClientFactory(

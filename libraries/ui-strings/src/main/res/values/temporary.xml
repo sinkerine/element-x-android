@@ -11,4 +11,50 @@
     <string name="a11y_active">Active</string>
     <string name="a11y_inactive">Inactive</string>
     <string name="common_switch_account">Switch accounts</string>
+    <string name="screen_home_tab_threads">Threads</string>
+    <string name="screen_threads_inbox_tab_mine">My threads</string>
+    <string name="screen_threads_inbox_tab_other">Other threads</string>
+    <string name="screen_threads_inbox_filter_unread">Unread</string>
+    <string name="screen_threads_inbox_filter_all">All</string>
+    <string name="screen_threads_inbox_open_latest_unread">Open latest unread</string>
+    <string name="screen_threads_inbox_mark_all_read">Mark all as read</string>
+    <string name="screen_threads_inbox_mark_read">Mark as read</string>
+    <string name="screen_threads_inbox_open_in_room">Open in room</string>
+    <string name="screen_threads_inbox_copy_link">Copy link to thread</string>
+    <string name="screen_threads_inbox_caught_up_title">You’re all caught up</string>
+    <string name="screen_threads_inbox_empty">No threads yet</string>
+    <string name="screen_threads_inbox_no_replies">No new replies in your threads</string>
+    <string name="screen_threads_inbox_show_all">Show all threads</string>
+    <string name="screen_threads_inbox_mark_failed">Couldn’t mark threads as read</string>
+    <string name="screen_threads_inbox_load_failed">Couldn’t load threads</string>
+    <string name="screen_threads_inbox_up_next">Up next</string>
+    <string name="screen_threads_inbox_next">Next (%1$d)</string>
+    <string name="screen_threads_inbox_all_read">All read</string>
+    <plurals name="screen_threads_inbox_marked_read">
+        <item quantity="one">%1$d thread marked as read</item>
+        <item quantity="other">%1$d threads marked as read</item>
+    </plurals>
+    <string name="action_undo">Undo</string>
+    <string name="screen_threads_inbox_mark_unread">Mark as unread</string>
+    <string name="screen_threads_inbox_time_now">now</string>
+    <string name="screen_threads_inbox_time_minutes">%1$dm</string>
+    <string name="screen_threads_inbox_time_hours">%1$dh</string>
+    <string name="screen_threads_inbox_time_days">%1$dd</string>
+    <string name="a11y_threads_inbox_row">%1$s, thread: %2$s, %3$s, %4$s, %5$s, %6$s</string>
+    <plurals name="a11y_threads_inbox_unread">
+        <item quantity="one">%1$d unread</item>
+        <item quantity="other">%1$d unread</item>
+    </plurals>
+    <plurals name="a11y_threads_inbox_mentions">
+        <item quantity="one">%1$d mention</item>
+        <item quantity="other">%1$d mentions</item>
+    </plurals>
+    <string name="screen_threads_inbox_focus_failed">Couldn’t load the first unread reply. Showing the latest replies.</string>
+    <string name="screen_threads_inbox_thread_failed">Couldn’t load this thread</string>
+    <string name="screen_threads_inbox_room_left">You no longer have access to this room.</string>
+    <plurals name="screen_threads_inbox_thread_subtitle">
+        <item quantity="one">Thread · %1$d reply</item>
+        <item quantity="other">Thread · %1$d replies</item>
+    </plurals>
+    <string name="screen_threads_inbox_start_thread_hint">Reply in a thread to keep the conversation together.</string>
 </resources>

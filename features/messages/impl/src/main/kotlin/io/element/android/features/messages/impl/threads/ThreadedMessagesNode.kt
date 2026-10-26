@@ -13,6 +13,7 @@ import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -79,6 +80,7 @@ import io.element.android.services.analytics.api.AnalyticsService
 import io.element.android.services.appnavstate.api.AppNavigationStateService
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @ContributesNode(RoomScope::class)
@@ -98,17 +100,40 @@ class ThreadedMessagesNode(
     private val roomMemberModerationRenderer: RoomMemberModerationRenderer,
     private val emojiPickerRenderer: EmojiPickerRenderer,
     private val dispatchers: CoroutineDispatchers,
+    private val triageQueue: io.element.android.features.threads.api.ThreadsTriageQueue,
+    private val snackbar: io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher,
+    private val previewFormatter: io.element.android.libraries.eventformatter.api.RoomLatestEventFormatter,
 ) : Node(buildContext, plugins = plugins), MessagesNavigator {
     data class Inputs(
         val threadRootEventId: ThreadId,
         val focusedEventId: EventId?,
+        val triage: Boolean = false,
+        val focusCaptureFailed: Boolean = false,
     ) : NodeInputs
 
     private val inputs = inputs<Inputs>()
     private val callback: Callback = callback()
 
     private var timelineController: TimelineController? by mutableStateOf(null)
+    private var ownedThreadTimeline: Timeline? = null
     private var presenter: Presenter<MessagesState>? by mutableStateOf(null)
+    private var loadFailed by mutableStateOf(false)
+    private val openedAtNanos = System.nanoTime()
+    private var focusTimingRecorded = false
+    private var effectiveFocus: EventId? by mutableStateOf(inputs.focusedEventId)
+    private var focusUnavailable by mutableStateOf(inputs.focusCaptureFailed)
+
+    private fun loadThread() {
+        lifecycleScope.launch {
+            loadFailed = false
+            io.element.android.libraries.core.extensions.runCatchingExceptions { createPresenter() }
+                .onSuccess {
+                    timber.log.Timber.d("Thread presenter created after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
+                    presenter = it
+                }
+                .onFailure { loadFailed = true }
+        }
+    }
 
     /**
      * This should be fast to load, but not faster than several UI frames, which will cause ANRs.
@@ -116,6 +141,20 @@ class ThreadedMessagesNode(
      */
     private suspend fun createPresenter(): Presenter<MessagesState> {
         val threadedTimeline = room.createTimeline(CreateTimelineParams.Threaded(threadRootEventId = inputs.threadRootEventId)).getOrThrow()
+        timber.log.Timber.d("Thread timeline created after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
+        try {
+        if (inputs.focusedEventId == null) {
+            val status = threadedTimeline.backwardPaginationStatus.first { !it.isPaginating }
+            if (status.hasMoreToLoad) threadedTimeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
+        }
+        val focused = inputs.focusedEventId
+        if (focused != null && !loadThreadFocus(threadedTimeline, focused)) {
+            effectiveFocus = null
+            focusUnavailable = true
+            // Render feedback with the fallback timeline. A shared host on an
+            // underlying room can consume a posted snackbar before this view exists.
+        }
+        timber.log.Timber.d("Thread history prepared after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
         val timelineController = TimelineController(
             room,
             liveTimeline = threadedTimeline,
@@ -123,6 +162,7 @@ class ThreadedMessagesNode(
             dispatchers = dispatchers,
         )
         this.timelineController = timelineController
+        ownedThreadTimeline = threadedTimeline
         return presenterFactory.create(
             navigator = this,
             composerPresenter = messageComposerPresenterFactory.create(timelineController, this, threadRoot = inputs.threadRootEventId),
@@ -134,6 +174,10 @@ class ThreadedMessagesNode(
             ),
             timelineController = timelineController,
         )
+        } catch (error: Throwable) {
+            threadedTimeline.close()
+            throw error
+        }
     }
 
     interface Callback : Plugin {
@@ -152,24 +196,47 @@ class ThreadedMessagesNode(
         fun navigateToRoomCall(roomId: RoomId, isAudioCall: Boolean)
         fun navigateToThread(threadRootId: ThreadId, focusedEventId: EventId?)
         fun navigateToDeveloperSettings()
+        fun navigateToNextTriageThread() {}
+        fun openInRoom() {}
 
         fun navigateToAvatarPreview(username: String, avatarUrl: String)
     }
 
     override fun onBuilt() {
         super.onBuilt()
+        if (inputs.triage) {
+            lifecycleScope.launch {
+            room.roomInfoFlow.collect { info ->
+                if (info.currentUserMembership == io.element.android.libraries.matrix.api.room.CurrentUserMembership.LEFT ||
+                    info.currentUserMembership == io.element.android.libraries.matrix.api.room.CurrentUserMembership.BANNED
+                ) {
+                    snackbar.post(io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage(
+                        io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_room_left,
+                    ))
+                    navigateUp()
+                }
+            }
+        }
+        }
         lifecycle.subscribe(
             onCreate = {
                 analyticsService.capture(room.toAnalyticsViewRoom())
-                lifecycleScope.launch {
-                    presenter = createPresenter()
-                }
+                loadThread()
             },
             onStart = {
                 appNavigationStateService.onNavigateToThread(id, inputs.threadRootEventId)
             },
             onStop = {
                 appNavigationStateService.onLeavingThread(id)
+            },
+            onDestroy = {
+                if (inputs.triage) {
+                    triageQueue.onThreadClosed(
+                    io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(room.roomId, inputs.threadRootEventId),
+                )
+                }
+                timelineController?.close()
+                ownedThreadTimeline?.close()
             },
         )
     }
@@ -269,6 +336,23 @@ class ThreadedMessagesNode(
 
     @Composable
     override fun View(modifier: Modifier) {
+        if (presenter == null) {
+            androidx.compose.foundation.layout.Column(modifier) {
+                if (loadFailed) {
+                    io.element.android.libraries.designsystem.theme.components.Text(
+                        androidx.compose.ui.res.stringResource(io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_thread_failed),
+                    )
+                    androidx.compose.material3.TextButton(onClick = ::loadThread) {
+                        io.element.android.libraries.designsystem.theme.components.Text(
+                            androidx.compose.ui.res.stringResource(io.element.android.libraries.ui.strings.CommonStrings.action_retry),
+                        )
+                    }
+                } else {
+                    androidx.compose.material3.CircularProgressIndicator()
+                }
+            }
+            return
+        }
         val activity = requireNotNull(LocalActivity.current)
         val isDark = ElementTheme.isLightTheme.not()
         val canUseOverlay = !isTalkbackActive() && !hasExternalKeyboard()
@@ -276,7 +360,21 @@ class ThreadedMessagesNode(
             LocalTimelineItemPresenterFactories provides timelineItemPresenterFactories,
         ) {
             // Only display the actual UI and lifecycle logic if the presenter is loaded
-            presenter?.present()?.let { state ->
+            presenter?.present()?.let { presentedState ->
+                val focus = presentedState.timelineState.focusRequestState
+                LaunchedEffect(focus) {
+                    if (!focusTimingRecorded && focus is io.element.android.features.messages.impl.timeline.FocusRequestState.Success && focus.rendered) {
+                        focusTimingRecorded = true
+                        timber.log.Timber.d("Thread focus rendered after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
+                    }
+                }
+                val state = if (inputs.triage || focusUnavailable) {
+                    presentedState.copy(timelineState = presentedState.timelineState.copy(
+                        timelineItems = withTriageUnreadBoundary(presentedState.timelineState.timelineItems, effectiveFocus),
+                    ))
+                } else {
+                    presentedState
+                }
                 OnLifecycleEvent { _, event ->
                     when (event) {
                         Lifecycle.Event.ON_PAUSE -> state.composerState.eventSink(MessageComposerEvent.SaveDraft)
@@ -344,6 +442,48 @@ class ThreadedMessagesNode(
                         )
                     },
                     onThreadsListClick = {},
+                    threadReplyCount = if (inputs.triage) {
+                        triageQueue.thread(
+                        io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(room.roomId, inputs.threadRootEventId),
+                    )?.numberOfReplies
+                    } else {
+                        null
+                    },
+                    onOpenThreadInRoom = if (inputs.triage) callback::openInRoom else null,
+                    triageBar = {
+                        if (focusUnavailable) {
+                            androidx.compose.material3.Snackbar {
+                                io.element.android.libraries.designsystem.theme.components.Text(
+                                    androidx.compose.ui.res.stringResource(
+                                        io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed
+                                    ),
+                                )
+                            }
+                        }
+                        if (inputs.triage) {
+                            val next by triageQueue.upNext.collectAsState()
+                            val unreadCount by triageQueue.unreadCount.collectAsState()
+                            androidx.compose.foundation.layout.Column {
+                                UpNextBar(
+                                    preview = next?.let { thread ->
+                                        val latest = thread.latestEvent
+                                        val summary = latest?.content?.let { content ->
+                                            previewFormatter.format(io.element.android.libraries.matrix.api.roomlist.LatestEventValue.Remote(
+                                                latest.timestamp,
+                                                content,
+                                                latest.senderId,
+                                                latest.senderProfile,
+                                                latest.isOwn,
+                                            ), isDmRoom = false)?.toString().orEmpty()
+                                        }.orEmpty()
+                                        thread.roomName.orEmpty() + " · " + summary
+                                    },
+                                    count = unreadCount,
+                                    onNext = callback::navigateToNextTriageThread,
+                                )
+                            }
+                        }
+                    },
                 )
 
                 roomMemberModerationRenderer.Render(
@@ -363,14 +503,15 @@ class ThreadedMessagesNode(
                 )
 
                 var focusedEventId by rememberSaveable {
-                    mutableStateOf(inputs.focusedEventId)
+                    mutableStateOf(effectiveFocus)
                 }
-                LaunchedEffect(Unit) {
-                    focusedEventId?.also { eventId ->
+                LaunchedEffect(state.timelineState.timelineItems, focusedEventId) {
+                    val eventId = focusedEventId ?: return@LaunchedEffect
+                    if (state.timelineState.timelineItems.any { it is TimelineItem.Event && it.eventId == eventId }) {
                         state.timelineState.eventSink(TimelineEvent.FocusOnEvent(eventId))
+                        // Only consume the request when the UI's indexer can resolve the captured event.
+                        focusedEventId = null
                     }
-                    // Reset the focused event id to null to avoid refocusing when restoring node.
-                    focusedEventId = null
                 }
             }
         }

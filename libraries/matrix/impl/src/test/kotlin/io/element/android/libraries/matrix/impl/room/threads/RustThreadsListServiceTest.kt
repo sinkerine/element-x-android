@@ -51,6 +51,17 @@ class RustThreadsListServiceTest {
         }
     }
 
+    @Test
+    fun `first collector sees existing FFI items without waiting for subscription coroutine`() = runTest {
+        val item = aRustThreadListUpdate().values.single()
+        val inner = FakeFfiThreadListService(items = { listOf(item) })
+        val service = createThreadsListService(inner)
+        service.subscribeToItemUpdates().test {
+            assertThat(awaitItem()).hasSize(1)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     @Suppress("UnusedFlow")
     @Test
     fun `subscribing to item updates twice only calls the FFI method once`() = runTest {

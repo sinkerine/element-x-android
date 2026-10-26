@@ -192,7 +192,7 @@ class RustMatrixClientFactory(
                     // use, or left unencrypted for sessions without one, matching those stores.
                     withSearchIndexStore(
                         path = File(sessionPaths.fileDirectory, SEARCH_INDEX_DIRECTORY).absolutePath,
-                        password = clientSecret?.formattedAsString(),
+                        key = clientSecret?.formattedAsString(),
                     )
                 } else {
                     this

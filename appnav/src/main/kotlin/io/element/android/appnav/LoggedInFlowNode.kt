@@ -47,6 +47,7 @@ import io.element.android.appnav.loggedin.SendQueues
 import io.element.android.appnav.room.RoomFlowNode
 import io.element.android.appnav.room.RoomNavigationTarget
 import io.element.android.appnav.room.joined.JoinedRoomLoadedFlowNode
+import io.element.android.appnav.room.replaceTriageThread
 import io.element.android.compound.colors.SemanticColorsLightDark
 import io.element.android.features.createroom.api.CreateRoomEntryPoint
 import io.element.android.features.enterprise.api.EnterpriseService
@@ -87,6 +88,7 @@ import io.element.android.libraries.matrix.api.MatrixClient
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.RoomIdOrAlias
+import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.matrix.api.core.toRoomIdOrAlias
 import io.element.android.libraries.matrix.api.permalink.PermalinkData
@@ -345,6 +347,20 @@ class LoggedInFlowNode(
                         }
                     }
 
+                    override fun openThreadInRoom(roomId: RoomId, threadId: ThreadId) {
+                        backstack.push(NavTarget.Room(
+                            roomIdOrAlias = roomId.toRoomIdOrAlias(),
+                            initialElement = RoomNavigationTarget.Thread(threadId, null, triage = false),
+                        ))
+                    }
+
+                    override fun navigateToThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?, focusCaptureFailed: Boolean) {
+                        backstack.push(NavTarget.Room(
+                            roomIdOrAlias = roomId.toRoomIdOrAlias(),
+                            initialElement = RoomNavigationTarget.Thread(threadId, focusedEventId, focusCaptureFailed = focusCaptureFailed),
+                        ))
+                    }
+
                     override fun navigateToSettings() {
                         backstack.push(NavTarget.Settings())
                     }
@@ -387,6 +403,9 @@ class LoggedInFlowNode(
             }
             is NavTarget.Room -> {
                 val joinedRoomCallback = object : JoinedRoomLoadedFlowNode.Callback {
+                    override fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?, focusCaptureFailed: Boolean) {
+                        backstack.replaceTriageThread(roomId, threadId, focusedEventId, focusCaptureFailed)
+                    }
                     override fun onDone() {
                         backstack.pop()
                     }
