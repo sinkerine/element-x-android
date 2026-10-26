@@ -246,6 +246,7 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
                 val sameTarget = state.optimistic[target.key] == target
                 readState.value = state.copy(
                     optimistic = if (sameTarget && result.isFailure) state.optimistic - target.key else state.optimistic,
+                    failedUnread = if (result.isSuccess) state.failedUnread - target.key else state.failedUnread,
                     failed = if (result.isFailure) {
                         state.failed.filterNot {
                         it.key == target.key

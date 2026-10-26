@@ -94,6 +94,7 @@ class RustTimeline(
     private val dispatcher: CoroutineDispatcher,
     private val roomContentForwarder: RoomContentForwarder,
     private val onThreadRead: suspend () -> Unit = {},
+    private val runThreadRead: suspend (suspend () -> Unit) -> Unit = { action -> action() },
 ) : Timeline {
     private val _timelineItems: MutableSharedFlow<List<MatrixTimelineItem>> =
         MutableSharedFlow(replay = 1, extraBufferCapacity = Int.MAX_VALUE)
@@ -182,15 +183,19 @@ class RustTimeline(
 
     override suspend fun sendReadReceipt(eventId: EventId, receiptType: ReceiptType): Result<Unit> = withContext(dispatcher) {
         runCatchingExceptions {
-            inner.sendReadReceipt(receiptType.toRustReceiptType(), eventId.value)
-            if (mode is Timeline.Mode.Thread) onThreadRead()
+            runThreadRead {
+                inner.sendReadReceipt(receiptType.toRustReceiptType(), eventId.value)
+                if (mode is Timeline.Mode.Thread) onThreadRead()
+            }
         }
     }
 
     override suspend fun markAsRead(receiptType: ReceiptType): Result<Unit> = withContext(dispatcher) {
         runCatchingExceptions {
-            inner.markAsRead(receiptType.toRustReceiptType())
-            if (mode is Timeline.Mode.Thread) onThreadRead()
+            runThreadRead {
+                inner.markAsRead(receiptType.toRustReceiptType())
+                if (mode is Timeline.Mode.Thread) onThreadRead()
+            }
         }
     }
 

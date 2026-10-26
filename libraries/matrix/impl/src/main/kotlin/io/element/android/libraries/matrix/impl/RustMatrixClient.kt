@@ -240,6 +240,7 @@ class RustMatrixClient(
     )
 
     private val roomInfoMapper = RoomInfoMapper()
+    internal val threadReadActions = io.element.android.libraries.matrix.impl.room.threads.ThreadReadActions()
     internal val inboxUnreadMutex = kotlinx.coroutines.sync.Mutex()
     private val inboxUnreadStore by lazy { io.element.android.libraries.matrix.impl.room.threads.InboxThreadUnreadStore(this) }
 
@@ -262,6 +263,7 @@ class RustMatrixClient(
         onThreadRead = { key ->
             inboxUnreadStore.set(key, false).getOrThrow()
         },
+        runThreadRead = { key, action -> threadReadActions.run(key, action) },
     )
 
     override val matrixMediaLoader: MatrixMediaLoader = RustMediaLoader(

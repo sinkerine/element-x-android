@@ -80,6 +80,32 @@ class ThreadsInboxSessionTest {
     }
 
     @Test
+    fun `successful read supersedes failed unread so retry cannot replay obsolete action`() = runTest {
+        val thread = previewThread()
+        val (session, service) = session(thread)
+        var unreadCalls = 0
+        service.unreadHandler = {
+            unreadCalls++
+            Result.failure(IllegalStateException())
+        }
+        runCurrent()
+        session.markUnread(thread.key)
+        runCurrent()
+        assertThat(session.readState.value.failedUnread).contains(thread.key)
+        session.mark(setOf(thread.key))
+        session.commit()
+        runCurrent()
+        assertThat(session.readState.value.failedUnread).isEmpty()
+        service.unreadHandler = {
+            unreadCalls++
+            Result.success(Unit)
+        }
+        session.retry()
+        runCurrent()
+        assertThat(unreadCalls).isEqualTo(1)
+    }
+
+    @Test
     fun `undo preserves service receipts and restores all optimistic counts`() = runTest {
         val thread = previewThread()
         val (session, service) = session(thread)
