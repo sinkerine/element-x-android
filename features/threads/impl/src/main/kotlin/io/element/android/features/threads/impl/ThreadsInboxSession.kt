@@ -50,6 +50,7 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
     val isVisiting = MutableStateFlow(false)
     private var openedAtNanos: Long? = null
     private val sends = Semaphore(4)
+    private val readActions = mutableMapOf<InboxThreadKey, Job>()
     private var selected = false
     private val touched = mutableSetOf<InboxThreadKey>()
     private var frozenOrder: List<InboxThreadKey>? = null
@@ -186,8 +187,13 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         commit()
         if (openThread.value == key) openThread.value = null
         readState.value = readState.value.copy(optimistic = readState.value.optimistic - key)
-        client.sessionCoroutineScope.launch {
-            service.markAsUnread(key).onFailure {
+        enqueueReadAction(key) {
+            service.markAsUnread(key).onSuccess {
+                readState.value = readState.value.copy(
+                    failed = readState.value.failed.filterNot { it.key == key },
+                    failedUnread = readState.value.failedUnread - key,
+                )
+            }.onFailure {
                 readState.value = readState.value.copy(failedUnread = readState.value.failedUnread + key)
             }
         }
@@ -219,10 +225,22 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         unread.forEach(::markUnread)
     }
 
+    /** Capture the predecessor before launching so even same-turn user actions keep their order. */
+    private fun enqueueReadAction(key: InboxThreadKey, action: suspend () -> Unit) {
+        val previous = readActions[key]
+        val job = client.sessionCoroutineScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            previous?.join()
+            action()
+        }
+        readActions[key] = job
+        job.invokeOnCompletion { if (readActions[key] === job) readActions.remove(key) }
+        job.start()
+    }
+
     private fun send(targets: List<InboxThread>) {
         // Per-target results restore only failed rows; successful receipts must not be retried as a batch.
         targets.forEach { target ->
-            client.sessionCoroutineScope.launch {
+            enqueueReadAction(target.key) {
                 val result = sends.withPermit { service.markSnapshotAsRead(listOf(target)) }
                 val state = readState.value
                 val sameTarget = state.optimistic[target.key] == target
