@@ -68,6 +68,7 @@ class KotlinCrossRoomThreadsService(
     private var visiting = false
     private var listRefresh: kotlinx.coroutines.Job? = null
     private var listDirty = true
+    private var badgeDirty = true
     override val closedBadge = MutableStateFlow<io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts?>(null)
     private val badgeRows = mutableMapOf<RoomId, List<org.matrix.rustcomponents.sdk.ThreadInboxBadge>>()
     private data class HistoryBoundary(val latest: EventId, val receipt: EventId?, val history: InboxThreadHistory)
@@ -126,7 +127,7 @@ class KotlinCrossRoomThreadsService(
         runCatchingExceptions {
             // Failure preserves the last complete snapshot. Never publish the
             // first page or a partially discovered account as a successful total.
-            val selected = if (initialized) request else null
+            val selected = if (initialized && !listDirty) request else null
             // An edit, redaction or decryption update can change classification
             // without changing the latest event or receipt IDs.
             synchronized(historyCache) {
@@ -146,6 +147,8 @@ class KotlinCrossRoomThreadsService(
             listDirty = false
             publish()
         }.onFailure { error ->
+            // A later unrelated invalidation must recover this failed room too.
+            listDirty = true
             timber.log.Timber.w("Inbox discovery failed: %s", error::class.java.simpleName)
             threads.value = AsyncData.Failure(error, threads.value.dataOrNull())
         }
@@ -231,7 +234,7 @@ class KotlinCrossRoomThreadsService(
     private suspend fun refreshBadge(request: List<String>?): Result<Unit> = refreshLock.withLock {
         listDirty = true
         runCatchingExceptions {
-            val selected = if (closedBadge.value == null || badgeRows.isEmpty()) null else request
+            val selected = if (badgeDirty || closedBadge.value == null || badgeRows.isEmpty()) null else request
             val compact = source.loadBadges(selected, receiptType() == ReceiptType.READ_PRIVATE)
             if (visiting) {
                 refreshRequests.trySend(null)
@@ -260,7 +263,11 @@ class KotlinCrossRoomThreadsService(
                 }
             }
             closedBadge.value = io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts(count, mention)
-        }.onFailure { error -> timber.log.Timber.w("Inbox badge refresh failed: %s", error::class.java.simpleName) }
+            badgeDirty = false
+        }.onFailure { error ->
+            badgeDirty = true
+            timber.log.Timber.w("Inbox badge refresh failed: %s", error::class.java.simpleName)
+        }
     }
 
     // SDK discovery already exhausts every room and page; scrolling needs no rescan.

@@ -30,6 +30,23 @@ class ThreadsInboxSessionTest {
     }
 
     @Test
+    fun `opening without receipt acknowledgement stays unread after back and visit end`() = runTest {
+        val thread = previewThread()
+        val (session, service) = session(thread)
+        session.startVisit()
+        runCurrent()
+        session.opened(thread)
+        runCurrent()
+        assertThat(session.threads.value.dataOrNull()!!.single().isUnread).isTrue()
+        assertThat(session.readState.value.optimistic).isEmpty()
+        session.returnedToList()
+        session.endVisit()
+        runCurrent()
+        assertThat(session.threads.value.dataOrNull()!!.single().isUnread).isTrue()
+        assertThat(service.marked).isEmpty()
+    }
+
+    @Test
     fun `undo preserves service receipts and restores all optimistic counts`() = runTest {
         val thread = previewThread()
         val (session, service) = session(thread)

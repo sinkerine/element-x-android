@@ -156,7 +156,9 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
     fun opened(thread: InboxThread) {
         openThread.value = thread.key
         readState.value = readState.value.copy(
-            optimistic = readState.value.optimistic + (thread.key to thread),
+            // Opening excludes the current thread from triage, but only an
+            // acknowledged receipt may change unread state. Offline timeline
+            // receipts must not leave a permanent optimistic read target.
             retainedMine = if (thread.isMine) readState.value.retainedMine + thread.key else readState.value.retainedMine,
         )
         visited.value += thread.key

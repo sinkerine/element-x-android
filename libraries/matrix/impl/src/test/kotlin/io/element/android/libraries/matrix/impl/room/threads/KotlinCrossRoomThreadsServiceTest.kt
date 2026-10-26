@@ -32,6 +32,7 @@ class KotlinCrossRoomThreadsServiceTest {
         val badgeRequests = mutableListOf<List<String>?>()
         override suspend fun loadBadges(roomIds: List<String>?, private: Boolean): List<org.matrix.rustcomponents.sdk.ThreadInboxBadge> {
             badgeRequests.add(roomIds)
+            check(!failure) { "Badge discovery failed" }
             return emptyList()
         }
         var failure = false
@@ -136,6 +137,49 @@ class KotlinCrossRoomThreadsServiceTest {
         runCurrent()
         assertThat(source.requests.last()).isNull()
         assertThat(service.threads.value.isSuccess()).isTrue()
+    }
+
+    @Test
+    fun `failed room A is reconciled by unrelated room B invalidation`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source()
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), FakeFeatureFlagService(), source)
+        service.startVisit()
+        roomList.postState(RoomListService.State.Running)
+        runCurrent()
+        source.failure = true
+        source.invalidations.send(listOf("!roomA:example.org"))
+        runCurrent()
+        assertThat(service.threads.value.isFailure()).isTrue()
+        source.invalidations.send(listOf("!roomB:example.org"))
+        runCurrent()
+        assertThat(source.requests.last()).isNull()
+        assertThat(service.threads.value.isFailure()).isTrue()
+        source.failure = false
+        source.invalidations.send(listOf("!roomB:example.org"))
+        runCurrent()
+        assertThat(source.requests.last()).isNull()
+        assertThat(service.threads.value.isSuccess()).isTrue()
+    }
+
+    @Test
+    fun `failed closed badge update forces complete recovery on unrelated invalidation`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source()
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), FakeFeatureFlagService(), source)
+        roomList.postState(RoomListService.State.Running)
+        runCurrent()
+        source.failure = true
+        source.invalidations.send(listOf("!roomA:example.org"))
+        runCurrent()
+        source.failure = false
+        source.invalidations.send(listOf("!roomB:example.org"))
+        runCurrent()
+        assertThat(source.badgeRequests.last()).isNull()
+        assertThat(service.closedBadge.value).isNotNull()
+        assertThat(source.requests).isEmpty()
     }
 
     @Test
