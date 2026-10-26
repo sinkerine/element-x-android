@@ -132,8 +132,8 @@ class ThreadsInboxSessionTest {
     @Test
     fun `badge follows optimistic actions and undo across the session`() = runTest {
         val thread = previewThread().copy(numUnreadMentions = 1)
-        val (session, _) = session(thread)
-        val badge = DefaultThreadsInboxBadgeProvider(session, FakeMatrixClient(sessionCoroutineScope = backgroundScope))
+        val (session, service) = session(thread)
+        val badge = DefaultThreadsInboxBadgeProvider(session, FakeMatrixClient(sessionCoroutineScope = backgroundScope), service)
         runCurrent()
         assertThat(badge.badge.value.count).isEqualTo(1)
         assertThat(badge.badge.value.hasMention).isTrue()

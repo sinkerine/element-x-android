@@ -22,6 +22,7 @@ import org.matrix.rustcomponents.sdk.ThreadInboxRoom
 interface ThreadInboxSource {
     val updates: Flow<List<String>?>
     suspend fun load(roomIds: List<String>?): List<ThreadInboxRoom>
+    suspend fun loadBadges(roomIds: List<String>?, private: Boolean): List<org.matrix.rustcomponents.sdk.ThreadInboxBadge>
 }
 
 @ContributesBinding(SessionScope::class)
@@ -37,4 +38,5 @@ class RustThreadInboxSource(private val client: MatrixClient) : ThreadInboxSourc
     }.buffer(Channel.UNLIMITED)
 
     override suspend fun load(roomIds: List<String>?): List<ThreadInboxRoom> = inner.loadThreadInbox(roomIds)
+    override suspend fun loadBadges(roomIds: List<String>?, private: Boolean) = inner.loadThreadInboxBadges(roomIds, private)
 }

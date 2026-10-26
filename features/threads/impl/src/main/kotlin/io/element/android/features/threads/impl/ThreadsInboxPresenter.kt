@@ -40,6 +40,7 @@ class ThreadsInboxPresenter(
         val pagination = androidx.compose.runtime.remember { kotlinx.coroutines.sync.Mutex() }
         DisposableEffect(Unit) {
             queue.startVisit()
+            session.returnedToList()
             onDispose { session.commit() }
         }
         val all = data.dataOrNull().orEmpty()

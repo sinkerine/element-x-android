@@ -18,6 +18,7 @@ interface ThreadsTriageQueue {
     val visited: StateFlow<Set<InboxThreadKey>>
     fun thread(key: InboxThreadKey): InboxThread? = null
     suspend fun open(key: InboxThreadKey): Result<EventId?>
+    fun onThreadClosed(key: InboxThreadKey) {}
     fun startVisit()
     fun endVisit()
     fun setForeground(foreground: Boolean) {}

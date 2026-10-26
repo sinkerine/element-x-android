@@ -65,7 +65,7 @@ internal fun ThreadsInboxRow(
             onTouch(false)
         }
     }
-    val unread = thread.isUnread && !visited
+    val unread = thread.isUnread
     val label = stringResource(CommonStrings.screen_threads_inbox_mark_read)
     val time = inboxTimeLabel(thread.timestamp)
     val unreadCount = thread.numUnread.coerceAtLeast(if (thread.isMarkedUnread) 1 else 0)

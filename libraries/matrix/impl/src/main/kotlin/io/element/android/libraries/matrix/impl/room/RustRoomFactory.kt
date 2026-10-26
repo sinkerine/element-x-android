@@ -63,6 +63,7 @@ class RustRoomFactory(
     private val roomMembershipObserver: RoomMembershipObserver,
     private val roomInfoMapper: RoomInfoMapper,
     private val analyticsService: AnalyticsService,
+    private val onThreadRead: suspend (io.element.android.libraries.matrix.api.room.threads.InboxThreadKey) -> Unit = {},
 ) {
     private val dispatcher = dispatchers.computation.limitedParallelism(1)
     private val mutex = Mutex()
@@ -155,6 +156,7 @@ class RustRoomFactory(
                             coroutineDispatchers = dispatchers,
                             systemClock = systemClock,
                             featureFlagService = featureFlagService,
+                            onThreadRead = onThreadRead,
                         )
                     )
                 }

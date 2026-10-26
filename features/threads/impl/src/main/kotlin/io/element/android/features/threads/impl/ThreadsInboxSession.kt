@@ -41,11 +41,13 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
 
     val readState = MutableStateFlow(ReadState())
     val visited = MutableStateFlow<Set<InboxThreadKey>>(emptySet())
+    val openThread = MutableStateFlow<InboxThreadKey?>(null)
     val tab = MutableStateFlow(ThreadsInboxTab.Mine)
     val filter = MutableStateFlow(ThreadsInboxFilter.Unread)
     private var timer: Job? = null
     private var expiry: Job? = null
     private var active = false
+    val isVisiting = MutableStateFlow(false)
     private var openedAtNanos: Long? = null
     private val sends = Semaphore(4)
     private var selected = false
@@ -108,6 +110,7 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         selected = true
         if (active) return
         active = true
+        isVisiting.value = true
         openedAtNanos = System.nanoTime()
         service.startVisit()
     }
@@ -123,7 +126,9 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         commit()
         expiry?.cancel()
         active = false
+        isVisiting.value = false
         visited.value = emptySet()
+        openThread.value = null
         touched.clear()
         frozenOrder = null
         // Keep in-flight optimistic targets until their individual result is known.
@@ -144,7 +149,12 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         }
     }
 
+    fun returnedToList() {
+        openThread.value = null
+    }
+
     fun opened(thread: InboxThread) {
+        openThread.value = thread.key
         readState.value = readState.value.copy(
             optimistic = readState.value.optimistic + (thread.key to thread),
             retainedMine = if (thread.isMine) readState.value.retainedMine + thread.key else readState.value.retainedMine,
@@ -172,6 +182,7 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
 
     fun markUnread(key: InboxThreadKey) {
         commit()
+        if (openThread.value == key) openThread.value = null
         readState.value = readState.value.copy(optimistic = readState.value.optimistic - key)
         client.sessionCoroutineScope.launch {
             service.markAsUnread(key).onFailure {

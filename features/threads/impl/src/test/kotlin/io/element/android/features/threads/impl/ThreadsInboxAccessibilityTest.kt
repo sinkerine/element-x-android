@@ -12,6 +12,7 @@ package io.element.android.features.threads.impl
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.v2.runAndroidComposeUiTest
 import com.google.common.truth.Truth.assertThat
@@ -41,6 +42,25 @@ class ThreadsInboxAccessibilityTest : RobolectricTest() {
             .assertHasClickAction()
             .performCustomAccessibilityActionWithLabel("Mark as read")
         runOnIdle { assertThat(marked).isTrue() }
+    }
+
+    @Test
+    fun `visited row with new unread mention displays mention badge`() = runAndroidComposeUiTest<androidx.activity.ComponentActivity> {
+        setContent {
+            ElementPreview {
+            ThreadsInboxRow(
+                thread = previewThread().copy(numUnreadMentions = 1),
+                rootPreview = "Root",
+                replyPreview = "New reply",
+                visited = true,
+                onOpen = {},
+                onLongClick = {},
+                onMarkRead = {},
+                onTouch = {},
+            )
+        }
+        }
+        onNodeWithText("@ 1").assertExists()
     }
 
     @Test

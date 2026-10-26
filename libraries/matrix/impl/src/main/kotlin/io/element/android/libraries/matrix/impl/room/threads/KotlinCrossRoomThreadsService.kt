@@ -65,6 +65,11 @@ class KotlinCrossRoomThreadsService(
     private val contentMapper = TimelineEventContentMapper()
     private val refreshRequests = Channel<List<String>?>(Channel.UNLIMITED)
     private var initialized = false
+    private var visiting = false
+    private var listRefresh: kotlinx.coroutines.Job? = null
+    private var listDirty = true
+    override val closedBadge = MutableStateFlow<io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts?>(null)
+    private val badgeRows = mutableMapOf<RoomId, List<org.matrix.rustcomponents.sdk.ThreadInboxBadge>>()
     private data class HistoryBoundary(val latest: EventId, val receipt: EventId?, val history: InboxThreadHistory)
     private val historyCache = object : LinkedHashMap<InboxThreadKey, HistoryBoundary>(100, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<InboxThreadKey, HistoryBoundary>?): Boolean = size > 100
@@ -105,7 +110,14 @@ class KotlinCrossRoomThreadsService(
                     val ids = next.getOrNull()
                     if (ids == null) full = true else changed?.addAll(ids)
                 }
-                refresh(if (full) null else changed?.toList())
+                if (visiting) {
+                    val job = launch { refresh(if (full || listDirty) null else changed?.toList()) }
+                    listRefresh = job
+                    job.join()
+                    listRefresh = null
+                } else {
+                    refreshBadge(if (full) null else changed?.toList())
+                }
             }
         }
     }
@@ -125,11 +137,13 @@ class KotlinCrossRoomThreadsService(
             val mapped = coroutineScope {
                 snapshots.map { snapshot -> async { histories.withPermit { mapRoom(snapshot, marked) } } }.awaitAll()
             }
+            if (!visiting) return@runCatchingExceptions
             if (selected == null) rows.clear() else selected.forEach { rows.remove(RoomId(it)) }
             mapped.forEach { (id, items) -> rows[id] = items }
             // Global account data can change explicit unread without room updates.
             rows.replaceAll { _, items -> items.map { it.copy(isMarkedUnread = it.key in marked) } }
             initialized = true
+            listDirty = false
             publish()
         }.onFailure { error ->
             timber.log.Timber.w("Inbox discovery failed: %s", error::class.java.simpleName)
@@ -201,10 +215,53 @@ class KotlinCrossRoomThreadsService(
     }
 
     override fun startVisit() {
-        if (!initialized || threads.value is AsyncData.Failure) refreshRequests.trySend(null)
+        visiting = true
+        if (!initialized || listDirty || threads.value is AsyncData.Failure) refreshRequests.trySend(null)
     }
 
-    override fun endVisit() = Unit
+    override fun endVisit() {
+        visiting = false
+        listRefresh?.cancel()
+        listDirty = true
+        val unread = threads.value.dataOrNull().orEmpty().filter { it.isUnread }
+        closedBadge.value = io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts(unread.size, unread.any { it.numUnreadMentions > 0 })
+        refreshRequests.trySend(null)
+    }
+
+    private suspend fun refreshBadge(request: List<String>?): Result<Unit> = refreshLock.withLock {
+        listDirty = true
+        runCatchingExceptions {
+            val selected = if (closedBadge.value == null || badgeRows.isEmpty()) null else request
+            val compact = source.loadBadges(selected, receiptType() == ReceiptType.READ_PRIVATE)
+            if (visiting) {
+                refreshRequests.trySend(null)
+                return@runCatchingExceptions
+            }
+            if (selected == null) badgeRows.clear() else selected.forEach { badgeRows.remove(RoomId(it)) }
+            compact.groupBy { RoomId(it.roomId) }.forEach { (id, badges) -> badgeRows[id] = badges }
+            val marked = unreadStore.read()
+            var count = 0
+            var mention = false
+            for ((id, badges) in badgeRows) {
+                val info = client.roomListService.allRooms.summaries.first().firstOrNull { it.roomId == id }?.info
+                    ?: error("Badge room metadata unavailable")
+                val mode = client.notificationSettingsService.getRoomNotificationSettings(id, info.isEncrypted == true, info.isDirect).getOrThrow().mode
+                for (badge in badges) {
+                    val key = InboxThreadKey(id, io.element.android.libraries.matrix.api.core.ThreadId(badge.threadId))
+                    val unread = (badge.unread > 0uL || key in marked) && when (mode) {
+                        io.element.android.libraries.matrix.api.room.RoomNotificationMode.MUTE -> false
+                        io.element.android.libraries.matrix.api.room.RoomNotificationMode.MENTIONS_AND_KEYWORDS_ONLY -> badge.mentions > 0uL
+                        io.element.android.libraries.matrix.api.room.RoomNotificationMode.ALL_MESSAGES -> true
+                    }
+                    if (unread) {
+                        count++
+                        mention = mention || badge.mentions > 0uL
+                    }
+                }
+            }
+            closedBadge.value = io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts(count, mention)
+        }.onFailure { error -> timber.log.Timber.w("Inbox badge refresh failed: %s", error::class.java.simpleName) }
+    }
 
     // SDK discovery already exhausts every room and page; scrolling needs no rescan.
     override suspend fun paginate(): Result<Unit> = if (threads.value is AsyncData.Failure) refresh(null) else Result.success(Unit)
@@ -254,6 +311,13 @@ class KotlinCrossRoomThreadsService(
     override suspend fun markAsUnread(key: InboxThreadKey): Result<Unit> = unreadStore.set(key, true).onSuccess {
         refreshLock.withLock {
             rows[key.roomId] = rows[key.roomId].orEmpty().map { if (it.key == key) it.copy(isMarkedUnread = true) else it }
+            publish()
+        }
+    }
+
+    override suspend fun consumeMarkedUnread(key: InboxThreadKey): Result<Unit> = unreadStore.set(key, false).onSuccess {
+        refreshLock.withLock {
+            rows[key.roomId] = rows[key.roomId].orEmpty().map { if (it.key == key) it.copy(isMarkedUnread = false) else it }
             publish()
         }
     }

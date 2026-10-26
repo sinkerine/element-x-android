@@ -23,6 +23,68 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class DefaultThreadsTriageQueueTest {
     @Test
+    fun `new activity in visited thread reenters queue after moving to another thread`() = runTest {
+        val service = FakeCrossRoomThreadsService()
+        val a = previewThread()
+        val b = a.copy(key = a.key.copy(threadId = ThreadId("\$b")))
+        service.threads.value = AsyncData.Success(persistentListOf(a, b))
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope)
+        val session = ThreadsInboxSession(service, client)
+        val queue = DefaultThreadsTriageQueue(service, client, session, io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher())
+        runCurrent()
+        queue.open(a.key)
+        queue.open(b.key)
+        val reply = a.rootEvent.copy(eventId = EventId("\$new"), timestamp = 100)
+        service.threads.value = AsyncData.Success(persistentListOf(a.copy(latestEvent = reply), b))
+        runCurrent()
+        assertThat(queue.upNext.value?.key).isEqualTo(a.key)
+        assertThat(session.visited.value).contains(a.key)
+        queue.onThreadClosed(a.key)
+        assertThat(session.openThread.value).isEqualTo(b.key)
+        queue.onThreadClosed(b.key)
+        runCurrent()
+        assertThat(session.openThread.value).isNull()
+        assertThat(queue.upNext.value?.key).isEqualTo(a.key)
+    }
+
+    @Test
+    fun `explicit mark unread of visited thread returns it to latest queue`() = runTest {
+        val service = FakeCrossRoomThreadsService()
+        val thread = previewThread()
+        service.threads.value = AsyncData.Success(persistentListOf(thread))
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope)
+        val session = ThreadsInboxSession(service, client)
+        val queue = DefaultThreadsTriageQueue(service, client, session, io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher())
+        runCurrent()
+        queue.open(thread.key)
+        runCurrent()
+        assertThat(queue.upNext.value).isNull()
+        session.markUnread(thread.key)
+        service.threads.value = AsyncData.Success(persistentListOf(thread.copy(isMarkedUnread = true)))
+        runCurrent()
+        assertThat(queue.upNext.value?.key).isEqualTo(thread.key)
+    }
+
+    @Test
+    fun `opening explicit unread consumes persistent flag without committing receipts`() = runTest {
+        val service = FakeCrossRoomThreadsService()
+        val thread = previewThread().copy(isMarkedUnread = true, numUnread = 0)
+        service.threads.value = AsyncData.Success(persistentListOf(thread))
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope)
+        val queue =
+            DefaultThreadsTriageQueue(
+                service,
+                client,
+                ThreadsInboxSession(service, client),
+                io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher()
+            )
+        runCurrent()
+        queue.open(thread.key).getOrThrow()
+        assertThat(service.consumedUnread).containsExactly(thread.key)
+        assertThat(service.marked).isEmpty()
+    }
+
+    @Test
     fun `failed first unread capture skips opened thread and posts fallback feedback`() = runTest {
         val service = FakeCrossRoomThreadsService()
         val mine = previewThread()
