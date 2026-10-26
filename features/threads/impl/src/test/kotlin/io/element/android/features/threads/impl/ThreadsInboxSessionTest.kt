@@ -47,6 +47,39 @@ class ThreadsInboxSessionTest {
     }
 
     @Test
+    fun `later unread waits for earlier pending receipt and survives its completion`() = runTest {
+        val thread = previewThread()
+        val (session, service) = session(thread)
+        val receipt = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val actions = mutableListOf<String>()
+        service.markHandler = {
+            actions += "read-start"
+            receipt.await()
+            service.threads.value = AsyncData.Success(listOf(thread.copy(numUnread = 0, isMarkedUnread = false)).toImmutableList())
+            actions += "read-complete"
+            Result.success(Unit)
+        }
+        service.unreadHandler = {
+            service.threads.value = AsyncData.Success(listOf(thread.copy(numUnread = 0, isMarkedUnread = true)).toImmutableList())
+            actions += "unread"
+            Result.success(Unit)
+        }
+        runCurrent()
+        session.mark(setOf(thread.key))
+        session.markUnread(thread.key)
+        runCurrent()
+        assertThat(actions).containsExactly("read-start")
+        receipt.complete(Unit)
+        runCurrent()
+        assertThat(actions).containsExactly("read-start", "read-complete", "unread").inOrder()
+        assertThat(session.threads.value.dataOrNull()!!.single().isMarkedUnread).isTrue()
+        assertThat(session.threads.value.dataOrNull()!!.single().isUnread).isTrue()
+        session.endVisit()
+        runCurrent()
+        assertThat(session.threads.value.dataOrNull()!!.single().isUnread).isTrue()
+    }
+
+    @Test
     fun `undo preserves service receipts and restores all optimistic counts`() = runTest {
         val thread = previewThread()
         val (session, service) = session(thread)
