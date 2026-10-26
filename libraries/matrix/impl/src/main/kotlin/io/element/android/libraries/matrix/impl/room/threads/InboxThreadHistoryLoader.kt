@@ -25,6 +25,7 @@ internal suspend fun loadInboxThreadHistory(
     rootId: String,
     receiptId: EventId?,
     userId: UserId,
+    receiptIds: Set<EventId> = setOfNotNull(receiptId),
 ): InboxThreadHistory = withTimeout(30_000) {
     coroutineScope {
         val subscription = Job(coroutineContext[Job])
@@ -34,7 +35,7 @@ internal suspend fun loadInboxThreadHistory(
             val initialEnd = if (status.hasMoreToLoad) timeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow() else true
             fun completeBoundary(page: List<MatrixTimelineItem>): Boolean =
                 page.filterIsInstance<MatrixTimelineItem.Event>().let { events ->
-                    events.any { it.eventId?.value == rootId } && (receiptId == null || events.any { it.eventId == receiptId })
+                    events.any { it.eventId?.value == rootId } && receiptIds.all { id -> events.any { it.eventId == id } }
                 }
             val initialPage = if (initialEnd) {
                 items.first { completeBoundary(it) }
@@ -47,7 +48,7 @@ internal suspend fun loadInboxThreadHistory(
             }
             var events = initialPage.filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
             while (events.none { it.eventId?.value == rootId } ||
-                (receiptId != null && events.none { it.eventId == receiptId })
+                receiptIds.any { id -> events.none { it.eventId == id } }
             ) {
                 status = timeline.backwardPaginationStatus.first { !it.isPaginating }
                 if (!status.hasMoreToLoad) break
@@ -73,7 +74,7 @@ internal suspend fun loadInboxThreadHistory(
                     events.map { it.eventId }
                 )
             }
-            aggregateThreadHistory(events, rootId, receiptId, userId)
+            aggregateThreadHistory(events, rootId, receiptId, userId, receiptIds)
         } finally {
             subscription.cancel()
         }
