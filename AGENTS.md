@@ -76,6 +76,12 @@ Common Gradle tasks:
 - Use the same signing certificate for both APKs and every later APK release. Before publishing, verify each APK with `apksigner` and confirm their signer SHA-256 digests match. Never rotate or regenerate the key for an installed package unless planning a user migration.
 - Keep the keystore and passwords local. Never stage, commit, print, or upload them. Back them up securely; losing the key prevents signing compatible updates.
 
+### Installing APKs on a Device
+
+- Always install with `adb install -r --no-incremental`. Incremental install (adb's default) keeps streaming the APK from the host after the install commits. If the connection drops, Android uninstalls the package and its data is wiped.
+- Install only once `adb devices` shows the device steadily connected. Never retry a failed install in a loop.
+- Afterwards, confirm it was an in-place update: in `adb shell dumpsys package <package>`, `firstInstallTime` must be older than `lastUpdateTime`.
+
 ### Gradle Modules
 
 Features follow a 3-module structure:
