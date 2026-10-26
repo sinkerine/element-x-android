@@ -127,9 +127,11 @@ class DefaultThreadsTriageQueueTest {
         assertThat(queue.open(mine.key).getOrThrow()).isEqualTo(firstUnread)
         runCurrent()
         assertThat(queue.upNext.value).isEqualTo(other)
+        // No receipt acknowledgement was emitted by the fake: mine remains
+        // unread and becomes eligible again when another thread is opened.
         queue.open(other.key)
         runCurrent()
-        assertThat(queue.upNext.value).isNull()
+        assertThat(queue.upNext.value).isEqualTo(mine)
         queue.endVisit()
         runCurrent()
         assertThat(queue.visited.value).isEmpty()
