@@ -27,6 +27,7 @@ import io.element.android.tests.testutils.testCoroutineDispatchers
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -36,6 +37,33 @@ import uniffi.matrix_sdk.PaginationStatus
 import org.matrix.rustcomponents.sdk.Timeline as InnerTimeline
 
 class RustTimelineTest {
+    @Test
+    fun `delayed timeline receipt cannot clear newer explicit unread`() = runTest {
+        val actions = io.element.android.libraries.matrix.impl.room.threads.ThreadReadActions()
+        val key = io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(
+            io.element.android.libraries.matrix.api.core.RoomId("!room:example.org"),
+            io.element.android.libraries.matrix.api.core.ThreadId("\$root"),
+        )
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var unread = false
+        val timeline = createRustTimeline(
+            FakeFfiTimeline { release.await() },
+            mode = Timeline.Mode.Thread(key.threadId),
+            onThreadRead = { unread = false },
+            runThreadRead = { action -> actions.run(key, action) },
+        )
+        val receipt = backgroundScope.launch { timeline.markAsRead(io.element.android.libraries.matrix.api.timeline.ReceiptType.READ).getOrThrow() }
+        runCurrent()
+        val markUnread = backgroundScope.launch { actions.run(key) { unread = true } }
+        runCurrent()
+        assertThat(markUnread.isCompleted).isFalse()
+        release.complete(Unit)
+        runCurrent()
+        assertThat(receipt.isCompleted).isTrue()
+        assertThat(markUnread.isCompleted).isTrue()
+        assertThat(unread).isTrue()
+    }
+
     @Test
     fun `successful threaded receipts consume explicit unread while main receipts do not`() = runTest {
         var consumed = 0
@@ -118,6 +146,7 @@ private fun TestScope.createRustTimeline(
     dispatcher: CoroutineDispatcher = testCoroutineDispatchers().io,
     roomContentForwarder: RoomContentForwarder = RoomContentForwarder(FakeFfiRoomListService()),
     onThreadRead: suspend () -> Unit = {},
+    runThreadRead: suspend (suspend () -> Unit) -> Unit = { action -> action() },
 ): RustTimeline {
     return RustTimeline(
         inner = inner,
@@ -128,5 +157,6 @@ private fun TestScope.createRustTimeline(
         dispatcher = dispatcher,
         roomContentForwarder = roomContentForwarder,
         onThreadRead = onThreadRead,
+        runThreadRead = runThreadRead,
     )
 }

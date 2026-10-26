@@ -285,6 +285,7 @@ class KotlinCrossRoomThreadsService(
                 async {
                     receipts.withPermit {
                         val key = snapshot.key
+                        (client as RustMatrixClient).threadReadActions.run(key) {
                         val inner = innerClient.getRoom(key.roomId.value) ?: error("Room is no longer joined")
                         try {
                             sendCapturedThreadReceipt(snapshot, preferences.isSendPublicReadReceiptsEnabled().first()) { type, thread, event ->
@@ -309,13 +310,18 @@ class KotlinCrossRoomThreadsService(
                         } finally {
                             inner.close()
                         }
+                        }
                     }
                 }
             }.awaitAll()
         }
     }
 
-    override suspend fun markAsUnread(key: InboxThreadKey): Result<Unit> = unreadStore.set(key, true).onSuccess {
+    override suspend fun markAsUnread(key: InboxThreadKey): Result<Unit> = (client as RustMatrixClient).threadReadActions.run(key) {
+        persistUnread(key)
+    }
+
+    private suspend fun persistUnread(key: InboxThreadKey): Result<Unit> = unreadStore.set(key, true).onSuccess {
         refreshLock.withLock {
             rows[key.roomId] = rows[key.roomId].orEmpty().map { if (it.key == key) it.copy(isMarkedUnread = true) else it }
             publish()
