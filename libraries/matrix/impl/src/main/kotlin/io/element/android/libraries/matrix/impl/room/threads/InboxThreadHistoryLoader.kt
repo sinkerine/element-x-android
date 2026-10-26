@@ -38,7 +38,7 @@ internal suspend fun loadInboxThreadHistory(
                     events.any { it.eventId?.value == rootId } && receiptIds.all { id -> events.any { it.eventId == id } }
                 }
             val initialPage = if (initialEnd) {
-                items.first { completeBoundary(it) }
+                kotlinx.coroutines.withTimeoutOrNull(250) { items.first { completeBoundary(it) } } ?: items.value
             } else {
                 // A cached first page can contain only a gap/deduplicated events.
                 // It advances the cursor without producing a visible item.
@@ -55,7 +55,7 @@ internal suspend fun loadInboxThreadHistory(
                 val previous = events.map { it.eventId }
                 val end = timeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
                 val page = if (end) {
-                    items.first { completeBoundary(it) }
+                    kotlinx.coroutines.withTimeoutOrNull(250) { items.first { completeBoundary(it) } } ?: items.value
                 } else {
                     // Cached gap/dedup pages can advance the SDK cursor without changing visible events.
                     // Give the diff processor a bounded opportunity, then continue pagination.

@@ -75,5 +75,8 @@
 # Keep Metro classes
 -keep,allowoptimization,allowshrinking class dev.zacsweers.metro.** { *; }
 
+# The Rust SDK resolves this Android initialization entry point by its JNI name.
+-keep class org.matrix.rustsdk.Android { *; }
+
 # Rustls Platform Verifier
 -keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }

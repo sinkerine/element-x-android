@@ -119,6 +119,30 @@ class InboxThreadHistoryLoaderTest {
         assertThat(result.firstUnread).isEqualTo(EventId("\$reply"))
     }
 
+    @Test
+    fun `exhausted history without a visible root does not wait forever`() = runTest {
+        val items = MutableStateFlow<List<MatrixTimelineItem>>(listOf(event("reply", 1)))
+        val timeline = FakeTimeline(timelineItems = items)
+        timeline.paginateLambda = {
+            timeline.backwardPaginationStatus.value = Timeline.PaginationStatus(false, false)
+            Result.success(true)
+        }
+        val result = loadInboxThreadHistory(timeline, "\$root", null, UserId("@own:example.org"))
+        assertThat(result.unreadCount).isEqualTo(1)
+        assertThat(result.firstUnread).isEqualTo(EventId("\$reply"))
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun `missing receipt fails promptly after exhausted history`() = runTest {
+        val items = MutableStateFlow<List<MatrixTimelineItem>>(listOf(event("root", 0, true), event("reply", 1)))
+        val timeline = FakeTimeline(timelineItems = items)
+        timeline.paginateLambda = {
+            timeline.backwardPaginationStatus.value = Timeline.PaginationStatus(false, false)
+            Result.success(true)
+        }
+        loadInboxThreadHistory(timeline, "\$root", EventId("\$missing"), UserId("@own:example.org"))
+    }
+
     @Test(expected = IllegalStateException::class)
     fun `failed pagination fails capture instead of inventing a divider`() = runTest {
         val timeline = FakeTimeline()

@@ -149,6 +149,7 @@ class KotlinCrossRoomThreadsService(
             threads.value = AsyncData.Loading(threads.value.dataOrNull())
             val marked = unreadStore.read()
             val discovered = mutableMapOf<RoomId, MutableMap<InboxThreadKey, InboxThread>>()
+            val failures = java.util.concurrent.ConcurrentLinkedQueue<Throwable>()
             // Classify independent roots concurrently: a slow history must not
             // hold back other roots on the same server page.
             source.pages(selected).transform { page ->
@@ -158,7 +159,11 @@ class KotlinCrossRoomThreadsService(
                     page.threads.forEach { emit(ThreadInboxRoom(page.roomId, listOf(it))) }
                 }
             }.flatMapMerge(concurrency = 4) { page ->
-                flow { emit(mapRoom(page, marked)) }
+                flow {
+                    runCatchingExceptions { mapRoom(page, marked) }
+                        .onSuccess { emit(it) }
+                        .onFailure { failures.add(it) }
+                }
             }.collect { (id, items) ->
                 val roomRows = discovered.getOrPut(id) { mutableMapOf() }
                 items.forEach { roomRows[it.key] = it }
@@ -172,6 +177,7 @@ class KotlinCrossRoomThreadsService(
                     (System.nanoTime() - started) / 1_000_000
                 )
             }
+            failures.firstOrNull()?.let { throw it }
             if (!visiting) return@runCatchingExceptions
             if (selected == null) rows.clear() else selected.forEach { rows.remove(RoomId(it)) }
             discovered.forEach { (id, items) -> rows[id] = items.values.toList() }
