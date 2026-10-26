@@ -14,16 +14,21 @@ import io.element.android.features.threads.api.ThreadsBadge
 import io.element.android.features.threads.api.ThreadsInboxBadgeProvider
 import io.element.android.libraries.di.SessionScope
 import io.element.android.libraries.matrix.api.MatrixClient
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
 @Inject
-class DefaultThreadsInboxBadgeProvider(session: ThreadsInboxSession, client: MatrixClient) : ThreadsInboxBadgeProvider {
-    override val badge = session.threads.map { data ->
+class DefaultThreadsInboxBadgeProvider(
+    session: ThreadsInboxSession,
+    client: MatrixClient,
+    service: io.element.android.libraries.matrix.api.room.threads.CrossRoomThreadsService,
+) : ThreadsInboxBadgeProvider {
+    override val badge = combine(session.threads, session.isVisiting, service.closedBadge ?: MutableStateFlow(null)) { data, visiting, closed ->
         val unread = data.dataOrNull().orEmpty().filter { it.isUnread }
-        ThreadsBadge(unread.size, unread.any { it.numUnreadMentions > 0 })
+        if (!visiting && closed != null) ThreadsBadge(closed.count, closed.hasMention) else ThreadsBadge(unread.size, unread.any { it.numUnreadMentions > 0 })
     }.stateIn(client.sessionCoroutineScope, SharingStarted.Eagerly, ThreadsBadge())
 }

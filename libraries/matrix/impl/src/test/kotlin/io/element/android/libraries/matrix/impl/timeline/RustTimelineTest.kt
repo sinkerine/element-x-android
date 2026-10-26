@@ -37,6 +37,26 @@ import org.matrix.rustcomponents.sdk.Timeline as InnerTimeline
 
 class RustTimelineTest {
     @Test
+    fun `successful threaded receipts consume explicit unread while main receipts do not`() = runTest {
+        var consumed = 0
+        val thread =
+            createRustTimeline(
+                FakeFfiTimeline(),
+                mode = Timeline.Mode.Thread(io.element.android.libraries.matrix.api.core.ThreadId("\$thread")),
+                onThreadRead = { consumed++ }
+            )
+        thread.sendReadReceipt(
+            io.element.android.libraries.matrix.api.core.EventId("\$event"),
+            io.element.android.libraries.matrix.api.timeline.ReceiptType.READ
+        ).getOrThrow()
+        thread.markAsRead(io.element.android.libraries.matrix.api.timeline.ReceiptType.READ).getOrThrow()
+        assertThat(consumed).isEqualTo(2)
+        val main = createRustTimeline(FakeFfiTimeline(), onThreadRead = { consumed++ })
+        main.markAsRead(io.element.android.libraries.matrix.api.timeline.ReceiptType.READ).getOrThrow()
+        assertThat(consumed).isEqualTo(2)
+    }
+
+    @Test
     fun `ensure that the timeline emits new loading item when pagination does not bring new events`() = runTest {
         val inner = FakeFfiTimeline()
         val systemClock = FakeSystemClock()
@@ -97,6 +117,7 @@ private fun TestScope.createRustTimeline(
     coroutineScope: CoroutineScope = backgroundScope,
     dispatcher: CoroutineDispatcher = testCoroutineDispatchers().io,
     roomContentForwarder: RoomContentForwarder = RoomContentForwarder(FakeFfiRoomListService()),
+    onThreadRead: suspend () -> Unit = {},
 ): RustTimeline {
     return RustTimeline(
         inner = inner,
@@ -106,5 +127,6 @@ private fun TestScope.createRustTimeline(
         coroutineScope = coroutineScope,
         dispatcher = dispatcher,
         roomContentForwarder = roomContentForwarder,
+        onThreadRead = onThreadRead,
     )
 }

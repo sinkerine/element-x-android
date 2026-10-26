@@ -29,6 +29,11 @@ class KotlinCrossRoomThreadsServiceTest {
         val invalidations = Channel<List<String>?>(Channel.UNLIMITED)
         override val updates = invalidations.receiveAsFlow()
         val requests = mutableListOf<List<String>?>()
+        val badgeRequests = mutableListOf<List<String>?>()
+        override suspend fun loadBadges(roomIds: List<String>?, private: Boolean): List<org.matrix.rustcomponents.sdk.ThreadInboxBadge> {
+            badgeRequests.add(roomIds)
+            return emptyList()
+        }
         var failure = false
         var gate: CompletableDeferred<Unit>? = null
         override suspend fun load(roomIds: List<String>?): List<ThreadInboxRoom> {
@@ -37,6 +42,49 @@ class KotlinCrossRoomThreadsServiceTest {
             check(!failure) { "Discovery failed" }
             return List(30) { ThreadInboxRoom("!quiet$it:example.org", emptyList()) }
         }
+    }
+
+    @Test
+    fun `closed inbox refreshes only compact badge source and defers list work until open`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source()
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), FakeFeatureFlagService(), source)
+        roomList.postState(RoomListService.State.Running)
+        runCurrent()
+        assertThat(source.requests).isEmpty()
+        assertThat(source.badgeRequests).isNotEmpty()
+        service.startVisit()
+        runCurrent()
+        assertThat(source.requests).hasSize(1)
+        service.endVisit()
+        runCurrent()
+        source.requests.clear()
+        source.invalidations.send(listOf("!quiet29:example.org"))
+        runCurrent()
+        assertThat(source.requests).isEmpty()
+        service.startVisit()
+        runCurrent()
+        assertThat(source.requests).containsExactly(null)
+    }
+
+    @Test
+    fun `closing inbox cancels in flight full discovery and switches to badge updates`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source().apply { gate = CompletableDeferred() }
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), FakeFeatureFlagService(), source)
+        service.startVisit()
+        roomList.postState(RoomListService.State.Running)
+        runCurrent()
+        assertThat(source.requests).hasSize(1)
+        service.endVisit()
+        runCurrent()
+        assertThat(source.badgeRequests).isNotEmpty()
+        assertThat(service.threads.value.isUninitialized()).isTrue()
+        source.gate!!.complete(Unit)
+        runCurrent()
+        assertThat(service.threads.value.isUninitialized()).isTrue()
     }
 
     @Test
@@ -74,6 +122,7 @@ class KotlinCrossRoomThreadsServiceTest {
             FakeFeatureFlagService(),
             source,
         )
+        service.startVisit()
         roomList.postState(RoomListService.State.Running)
         runCurrent()
         source.failure = true
@@ -101,6 +150,7 @@ class KotlinCrossRoomThreadsServiceTest {
             FakeFeatureFlagService(),
             source,
         )
+        service.startVisit()
         roomList.postState(RoomListService.State.Running)
         runCurrent()
         assertThat(service.threads.value.isUninitialized()).isTrue()
@@ -127,6 +177,7 @@ class KotlinCrossRoomThreadsServiceTest {
             FakeFeatureFlagService(),
             source,
         )
+        service.startVisit()
         roomList.postState(RoomListService.State.Running)
         runCurrent()
         source.requests.clear()

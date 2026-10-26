@@ -15,9 +15,10 @@ import io.element.android.libraries.matrix.api.room.RoomNotificationMode
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.flow.StateFlow
 
-/** Session aggregate. Counts in the Kotlin fallback are approximate, never room-level counters. */
+/** Complete session thread aggregate; unread classification uses threaded history and receipts. */
 interface CrossRoomThreadsService {
     val threads: StateFlow<AsyncData<ImmutableList<InboxThread>>>
+    val closedBadge: StateFlow<InboxBadgeCounts?>? get() = null
     fun startVisit()
     fun endVisit()
     suspend fun paginate(): Result<Unit>
@@ -26,8 +27,13 @@ interface CrossRoomThreadsService {
 
     /** Persists a thread-specific unread flag without moving a read receipt backwards. */
     suspend fun markAsUnread(key: InboxThreadKey): Result<Unit>
+
+    /** Consume explicit unread on opening without sending or rewinding receipts. */
+    suspend fun consumeMarkedUnread(key: InboxThreadKey): Result<Unit> = Result.success(Unit)
     suspend fun firstUnreadEventId(key: InboxThreadKey): Result<EventId?>
 }
+
+data class InboxBadgeCounts(val count: Int, val hasMention: Boolean)
 
 data class InboxThreadKey(val roomId: RoomId, val threadId: ThreadId)
 

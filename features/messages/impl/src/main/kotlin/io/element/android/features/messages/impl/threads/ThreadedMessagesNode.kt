@@ -230,6 +230,11 @@ class ThreadedMessagesNode(
                 appNavigationStateService.onLeavingThread(id)
             },
             onDestroy = {
+                if (inputs.triage) {
+                    triageQueue.onThreadClosed(
+                    io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(room.roomId, inputs.threadRootEventId),
+                )
+                }
                 timelineController?.close()
                 ownedThreadTimeline?.close()
             },

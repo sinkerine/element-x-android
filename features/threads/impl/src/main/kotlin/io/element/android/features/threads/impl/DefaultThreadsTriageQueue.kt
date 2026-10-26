@@ -35,10 +35,10 @@ class DefaultThreadsTriageQueue(
     override val visited = session.visited
     init {
         client.sessionCoroutineScope.launch {
-            combine(session.threads, visited) { data, opened ->
+            combine(session.threads, session.openThread) { data, opened ->
                 val unread = data.dataOrNull().orEmpty().filter { it.isUnread }
                 unreadCount.value = unread.size
-                upNext.value = unread.filter { it.key !in opened }.sortedWith(
+                upNext.value = unread.filter { it.key != opened }.sortedWith(
                     compareByDescending<InboxThread> { it.isMine }.thenByDescending { it.timestamp }
                 ).firstOrNull()
             }.collect {}
@@ -50,12 +50,20 @@ class DefaultThreadsTriageQueue(
         val thread = session.threads.value.dataOrNull()?.find { it.key == key }
             ?: return Result.failure(IllegalStateException("Thread unavailable"))
         session.opened(thread)
-        return service.firstUnreadEventId(key).onFailure {
+        val captured = service.firstUnreadEventId(key)
+        if (thread.isMarkedUnread) {
+            val consumed = service.consumeMarkedUnread(key)
+            if (consumed.isFailure) return Result.failure(requireNotNull(consumed.exceptionOrNull()))
+        }
+        return captured.onFailure {
             timber.log.Timber.w(it, "Could not capture first unread thread event")
             snackbar.post(io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage(
                 io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed,
             ))
         }
+    }
+    override fun onThreadClosed(key: InboxThreadKey) {
+        if (session.openThread.value == key) session.returnedToList()
     }
     override fun startVisit() = session.startVisit()
     override fun endVisit() = session.endVisit()

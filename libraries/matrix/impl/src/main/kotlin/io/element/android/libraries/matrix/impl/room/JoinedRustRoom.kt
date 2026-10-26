@@ -105,6 +105,7 @@ class JoinedRustRoom(
     private val systemClock: SystemClock,
     private val roomContentForwarder: RoomContentForwarder,
     private val featureFlagService: FeatureFlagService,
+    private val onThreadRead: suspend (io.element.android.libraries.matrix.api.room.threads.InboxThreadKey) -> Unit = {},
 ) : JoinedRoom, BaseRoom by baseRoom {
     // Create a dispatcher for all room methods...
     private val roomDispatcher = coroutineDispatchers.io.limitedParallelism(32)
@@ -584,6 +585,11 @@ class JoinedRustRoom(
             coroutineScope = timelineCoroutineScope,
             dispatcher = roomDispatcher,
             roomContentForwarder = roomContentForwarder,
+            onThreadRead = {
+                if (mode is Timeline.Mode.Thread) {
+                    onThreadRead(io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(roomId, mode.threadRootId))
+                }
+            },
         )
     }
 }

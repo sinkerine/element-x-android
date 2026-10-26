@@ -42,4 +42,6 @@ class FakeFfiTimeline : Timeline(NoHandle) {
     }
 
     override suspend fun fetchMembers() = Unit
+    override suspend fun sendReadReceipt(receiptType: org.matrix.rustcomponents.sdk.ReceiptType, eventId: String) = Unit
+    override suspend fun markAsRead(receiptType: org.matrix.rustcomponents.sdk.ReceiptType) = Unit
 }

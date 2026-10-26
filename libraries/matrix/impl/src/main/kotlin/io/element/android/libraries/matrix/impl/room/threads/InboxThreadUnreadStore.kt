@@ -29,7 +29,8 @@ import kotlinx.serialization.json.put
 @SingleIn(SessionScope::class)
 @Inject
 class InboxThreadUnreadStore(private val client: MatrixClient) {
-    private val mutex = Mutex()
+    private val localMutex = Mutex()
+    private val mutex get() = (client as? io.element.android.libraries.matrix.impl.RustMatrixClient)?.inboxUnreadMutex ?: localMutex
     private val type = "io.element.android.threads_inbox.unread"
 
     suspend fun read(): Set<InboxThreadKey> = decode(client.getAccountData(type).getOrThrow())
@@ -37,7 +38,8 @@ class InboxThreadUnreadStore(private val client: MatrixClient) {
     suspend fun set(key: InboxThreadKey, unread: Boolean): Result<Unit> = runCatchingExceptions {
         mutex.withLock {
             val keys = read().toMutableSet()
-            if (unread) keys.add(key) else keys.remove(key)
+            val changed = if (unread) keys.add(key) else keys.remove(key)
+            if (!changed) return@withLock
             val content = buildJsonObject {
                 put("threads", buildJsonArray {
                     keys.forEach { item ->
