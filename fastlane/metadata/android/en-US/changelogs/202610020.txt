@@ -1,0 +1,5 @@
+Threads Inbox
+
+Review unread threads from one inbox, track room badges, and triage threads with focused unread navigation and read actions.
+
+Full changelog: https://github.com/element-hq/element-x-android/releases
