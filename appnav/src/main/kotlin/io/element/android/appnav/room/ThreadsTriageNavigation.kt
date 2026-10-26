@@ -16,9 +16,11 @@ import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.toRoomIdOrAlias
 
 /** A triage visit owns one outer room slot, regardless of how many threads are opened. */
-internal fun BackStack<LoggedInFlowNode.NavTarget>.replaceTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {
+internal fun BackStack<LoggedInFlowNode.NavTarget>.replaceTriageThread(
+    roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?, focusCaptureFailed: Boolean = false,
+) {
     replace(LoggedInFlowNode.NavTarget.Room(
         roomIdOrAlias = roomId.toRoomIdOrAlias(),
-        initialElement = RoomNavigationTarget.Thread(threadId, focusedEventId),
+        initialElement = RoomNavigationTarget.Thread(threadId, focusedEventId, focusCaptureFailed = focusCaptureFailed),
     ))
 }

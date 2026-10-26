@@ -22,6 +22,14 @@ import org.junit.Test
 
 class ThreadsTriageNavigationTest : RobolectricTest() {
     @Test
+    fun `capture failure survives Next replacement into room navigation`() {
+        val backstack = BackStack<LoggedInFlowNode.NavTarget>(initialElement = LoggedInFlowNode.NavTarget.Home, savedStateMap = null)
+        backstack.replaceTriageThread(RoomId("!room:example.org"), ThreadId("\$root"), null, focusCaptureFailed = true)
+        val room = backstack.activeElement as LoggedInFlowNode.NavTarget.Room
+        assertThat(room.initialElement).isEqualTo(RoomNavigationTarget.Thread(ThreadId("\$root"), null, focusCaptureFailed = true))
+    }
+
+    @Test
     fun `Next replaces two threads and one Back returns directly to Home`() {
         val home = LoggedInFlowNode.NavTarget.Home
         val backstack = BackStack<LoggedInFlowNode.NavTarget>(initialElement = home, savedStateMap = null)

@@ -82,7 +82,7 @@ class JoinedRoomLoadedFlowNode(
     plugins = plugins,
 ), DependencyInjectionGraphOwner {
     interface Callback : Plugin {
-        fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {}
+        fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?, focusCaptureFailed: Boolean = false) {}
         fun onDone()
         fun navigateToRoom(roomId: RoomId, serverNames: List<String>, clearBackStack: Boolean = false)
         fun handlePermalinkClick(data: PermalinkData, pushToBackstack: Boolean)
@@ -269,12 +269,12 @@ class JoinedRoomLoadedFlowNode(
             }
         }
         val triageCallback = object : MessagesEntryPoint.Callback by callback {
-            override fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {
-                this@JoinedRoomLoadedFlowNode.callback.navigateToTriageThread(roomId, threadId, focusedEventId)
+            override fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?, focusCaptureFailed: Boolean) {
+                this@JoinedRoomLoadedFlowNode.callback.navigateToTriageThread(roomId, threadId, focusedEventId, focusCaptureFailed)
             }
         }
         val params = MessagesEntryPoint.Params(
-            navTarget.thread?.let { MessagesEntryPoint.InitialTarget.Thread(it.threadId, it.focusedEventId, it.triage) }
+            navTarget.thread?.let { MessagesEntryPoint.InitialTarget.Thread(it.threadId, it.focusedEventId, it.triage, it.focusCaptureFailed) }
                 ?: MessagesEntryPoint.InitialTarget.Messages(navTarget.focusedEventId)
         )
         return messagesEntryPoint.createNode(

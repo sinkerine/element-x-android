@@ -14,5 +14,5 @@ class FakeThreadsInboxEntryPoint : ThreadsInboxEntryPoint {
     ): com.bumble.appyx.core.node.Node = com.bumble.appyx.core.node.node(buildContext) {}
 
     @Composable
-    override fun Render(onOpen: (InboxThreadKey, EventId?) -> Unit, onOpenInRoom: (InboxThreadKey) -> Unit, modifier: Modifier) = Unit
+    override fun Render(onOpen: (InboxThreadKey, EventId?, Boolean) -> Unit, onOpenInRoom: (InboxThreadKey) -> Unit, modifier: Modifier) = Unit
 }

@@ -14,7 +14,7 @@ import io.element.android.libraries.matrix.api.room.threads.InboxThreadKey
 
 interface ThreadsInboxEntryPoint {
     interface Callback : com.bumble.appyx.core.plugin.Plugin {
-        fun openThread(key: InboxThreadKey, focusedEventId: EventId?)
+        fun openThread(key: InboxThreadKey, focusedEventId: EventId?, focusCaptureFailed: Boolean = false)
         fun openRoom(key: InboxThreadKey)
     }
 
@@ -25,5 +25,5 @@ interface ThreadsInboxEntryPoint {
     ): com.bumble.appyx.core.node.Node
 
     @Composable
-    fun Render(onOpen: (InboxThreadKey, EventId?) -> Unit, onOpenInRoom: (InboxThreadKey) -> Unit, modifier: Modifier = Modifier)
+    fun Render(onOpen: (InboxThreadKey, EventId?, Boolean) -> Unit, onOpenInRoom: (InboxThreadKey) -> Unit, modifier: Modifier = Modifier)
 }

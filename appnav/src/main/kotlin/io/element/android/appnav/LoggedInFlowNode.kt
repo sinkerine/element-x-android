@@ -354,10 +354,10 @@ class LoggedInFlowNode(
                         ))
                     }
 
-                    override fun navigateToThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {
+                    override fun navigateToThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?, focusCaptureFailed: Boolean) {
                         backstack.push(NavTarget.Room(
                             roomIdOrAlias = roomId.toRoomIdOrAlias(),
-                            initialElement = RoomNavigationTarget.Thread(threadId, focusedEventId),
+                            initialElement = RoomNavigationTarget.Thread(threadId, focusedEventId, focusCaptureFailed = focusCaptureFailed),
                         ))
                     }
 
@@ -403,8 +403,8 @@ class LoggedInFlowNode(
             }
             is NavTarget.Room -> {
                 val joinedRoomCallback = object : JoinedRoomLoadedFlowNode.Callback {
-                    override fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?) {
-                        backstack.replaceTriageThread(roomId, threadId, focusedEventId)
+                    override fun navigateToTriageThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?, focusCaptureFailed: Boolean) {
+                        backstack.replaceTriageThread(roomId, threadId, focusedEventId, focusCaptureFailed)
                     }
                     override fun onDone() {
                         backstack.pop()

@@ -37,7 +37,12 @@ class ThreadsInboxNode(
         val scope = rememberCoroutineScope()
         ThreadsInboxView(
             state = presenter.present(),
-            onOpen = { key -> scope.launch { callback.openThread(key, queue.open(key).getOrNull()) } },
+            onOpen = { key ->
+                scope.launch {
+                val captured = queue.open(key)
+                callback.openThread(key, captured.getOrNull(), captured.isFailure)
+            }
+            },
             onOpenInRoom = callback::openRoom,
             modifier = modifier,
         )

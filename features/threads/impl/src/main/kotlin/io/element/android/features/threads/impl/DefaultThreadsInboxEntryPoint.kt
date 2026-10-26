@@ -30,11 +30,16 @@ class DefaultThreadsInboxEntryPoint(private val presenter: ThreadsInboxPresenter
     ): com.bumble.appyx.core.node.Node = parentNode.createNode<ThreadsInboxNode>(buildContext, listOf(callback))
 
     @Composable
-    override fun Render(onOpen: (InboxThreadKey, EventId?) -> Unit, onOpenInRoom: (InboxThreadKey) -> Unit, modifier: Modifier) {
+    override fun Render(onOpen: (InboxThreadKey, EventId?, Boolean) -> Unit, onOpenInRoom: (InboxThreadKey) -> Unit, modifier: Modifier) {
         val scope = rememberCoroutineScope()
         ThreadsInboxView(
             state = presenter.present(),
-            onOpen = { key -> scope.launch { onOpen(key, queue.open(key).getOrNull()) } },
+            onOpen = { key ->
+                scope.launch {
+                val captured = queue.open(key)
+                onOpen(key, captured.getOrNull(), captured.isFailure)
+            }
+            },
             onOpenInRoom = onOpenInRoom,
             modifier = modifier,
         )

@@ -208,7 +208,9 @@ class MessagesFlowNode(
         data object KnockRequestsList : NavTarget
 
         @Parcelize
-        data class Thread(val threadRootId: ThreadId, val focusedEventId: EventId?, val triage: Boolean = false) : NavTarget
+        data class Thread(
+            val threadRootId: ThreadId, val focusedEventId: EventId?, val triage: Boolean = false, val focusCaptureFailed: Boolean = false,
+        ) : NavTarget
 
         @Parcelize
         data object ThreadsList : NavTarget
@@ -577,6 +579,7 @@ class MessagesFlowNode(
                     threadRootEventId = navTarget.threadRootId,
                     triage = navTarget.triage,
                     focusedEventId = navTarget.focusedEventId,
+                    focusCaptureFailed = navTarget.focusCaptureFailed,
                 )
                 val callback = object : ThreadedMessagesNode.Callback {
                     override fun openInRoom() {
@@ -586,8 +589,8 @@ class MessagesFlowNode(
                     override fun navigateToNextTriageThread() {
                         val next = triageQueue.upNext.value ?: return
                         lifecycleScope.launch {
-                            val focused = triageQueue.open(next.key).getOrNull()
-                            callback.navigateToTriageThread(next.key.roomId, next.key.threadId, focused)
+                            val captured = triageQueue.open(next.key)
+                            callback.navigateToTriageThread(next.key.roomId, next.key.threadId, captured.getOrNull(), captured.isFailure)
                         }
                     }
                     override fun handleEventClick(
