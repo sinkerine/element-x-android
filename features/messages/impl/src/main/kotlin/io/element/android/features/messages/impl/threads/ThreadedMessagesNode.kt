@@ -108,6 +108,7 @@ class ThreadedMessagesNode(
         val threadRootEventId: ThreadId,
         val focusedEventId: EventId?,
         val triage: Boolean = false,
+        val focusCaptureFailed: Boolean = false,
     ) : NodeInputs
 
     private val inputs = inputs<Inputs>()
@@ -120,7 +121,7 @@ class ThreadedMessagesNode(
     private val openedAtNanos = System.nanoTime()
     private var focusTimingRecorded = false
     private var effectiveFocus: EventId? by mutableStateOf(inputs.focusedEventId)
-    private var focusUnavailable by mutableStateOf(false)
+    private var focusUnavailable by mutableStateOf(inputs.focusCaptureFailed)
 
     private fun loadThread() {
         lifecycleScope.launch {

@@ -308,8 +308,10 @@ class HomeFlowNode(
                 this,
                 buildContext,
                 object : io.element.android.features.threads.api.ThreadsInboxEntryPoint.Callback {
-                override fun openThread(key: io.element.android.libraries.matrix.api.room.threads.InboxThreadKey, focusedEventId: EventId?) {
-                    callback.navigateToThread(key.roomId, key.threadId, focusedEventId)
+                override fun openThread(
+                    key: io.element.android.libraries.matrix.api.room.threads.InboxThreadKey, focusedEventId: EventId?, focusCaptureFailed: Boolean,
+                ) {
+                    callback.navigateToThread(key.roomId, key.threadId, focusedEventId, focusCaptureFailed)
                 }
                 override fun openRoom(key: io.element.android.libraries.matrix.api.room.threads.InboxThreadKey) {
                     callback.openThreadInRoom(key.roomId, key.threadId)

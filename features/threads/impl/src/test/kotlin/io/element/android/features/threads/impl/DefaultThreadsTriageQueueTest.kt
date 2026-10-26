@@ -85,7 +85,7 @@ class DefaultThreadsTriageQueueTest {
     }
 
     @Test
-    fun `failed first unread capture skips opened thread and posts fallback feedback`() = runTest {
+    fun `failed first unread capture returns navigation failure without shared snackbar`() = runTest {
         val service = FakeCrossRoomThreadsService()
         val mine = previewThread()
         service.threads.value = AsyncData.Success(persistentListOf(mine))
@@ -98,8 +98,7 @@ class DefaultThreadsTriageQueueTest {
         runCurrent()
         assertThat(queue.upNext.value).isNull()
         assertThat(queue.visited.value).containsExactly(mine.key)
-        assertThat(snackbar.snackbarMessage.first()?.messageResId)
-            .isEqualTo(io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed)
+        assertThat(snackbar.snackbarMessage.first()).isNull()
     }
 
     @Test

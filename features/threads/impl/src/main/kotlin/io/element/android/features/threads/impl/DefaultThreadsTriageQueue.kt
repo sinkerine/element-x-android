@@ -57,9 +57,8 @@ class DefaultThreadsTriageQueue(
         }
         return captured.onFailure {
             timber.log.Timber.w(it, "Could not capture first unread thread event")
-            snackbar.post(io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage(
-                io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed,
-            ))
+            // The caller carries capture failure through navigation so the
+            // destination renders feedback alongside its fallback timeline.
         }
     }
     override fun onThreadClosed(key: InboxThreadKey) {
