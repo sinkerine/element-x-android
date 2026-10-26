@@ -249,6 +249,20 @@ class ThreadsInboxSessionTest {
     }
 
     @Test
+    fun `partial list suppresses numeric badge until complete`() = runTest {
+        val thread = previewThread().copy(numUnreadMentions = 1)
+        val (session, service) = session(thread)
+        service.threads.value = AsyncData.Loading(listOf(thread).toImmutableList())
+        val badge = DefaultThreadsInboxBadgeProvider(session, FakeMatrixClient(sessionCoroutineScope = backgroundScope), service)
+        runCurrent()
+        assertThat(badge.badge.value.count).isEqualTo(0)
+        assertThat(badge.badge.value.hasMention).isTrue()
+        service.threads.value = AsyncData.Success(listOf(thread).toImmutableList())
+        runCurrent()
+        assertThat(badge.badge.value.count).isEqualTo(1)
+    }
+
+    @Test
     fun `new reply removes optimistic read suppression without losing retained row`() = runTest {
         val thread = previewThread()
         val (session, service) = session(thread)

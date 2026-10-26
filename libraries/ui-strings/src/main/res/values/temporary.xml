@@ -57,4 +57,5 @@
         <item quantity="other">Thread · %1$d replies</item>
     </plurals>
     <string name="screen_threads_inbox_start_thread_hint">Reply in a thread to keep the conversation together.</string>
+    <string name="screen_threads_inbox_loading_more">Loading threads… Unread counts will update when loading finishes.</string>
 </resources>

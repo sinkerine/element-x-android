@@ -23,6 +23,12 @@ interface ThreadInboxSource {
     val updates: Flow<List<String>?>
     suspend fun load(roomIds: List<String>?): List<ThreadInboxRoom>
     suspend fun loadBadges(roomIds: List<String>?, private: Boolean): List<org.matrix.rustcomponents.sdk.ThreadInboxBadge>
+    fun pages(roomIds: List<String>?): Flow<ThreadInboxRoom> = kotlinx.coroutines.flow.flow {
+        load(roomIds).forEach { emit(it) }
+    }
+    fun badgePages(roomIds: List<String>?, private: Boolean): Flow<org.matrix.rustcomponents.sdk.ThreadInboxBadge> = kotlinx.coroutines.flow.flow {
+        loadBadges(roomIds, private).forEach { emit(it) }
+    }
 }
 
 @ContributesBinding(SessionScope::class)
@@ -33,6 +39,25 @@ class RustThreadInboxSource(private val client: MatrixClient) : ThreadInboxSourc
         inner.subscribeToThreadInboxUpdates(object : ThreadInboxListener {
             override fun onUpdate(roomIds: List<String>?) {
                 trySend(roomIds)
+            }
+        })
+    }.buffer(Channel.UNLIMITED)
+
+    override fun pages(roomIds: List<String>?): Flow<ThreadInboxRoom> = kotlinx.coroutines.flow.channelFlow {
+        inner.loadThreadInboxPages(roomIds, object : org.matrix.rustcomponents.sdk.ThreadInboxPageListener {
+            override fun onPage(room: ThreadInboxRoom) {
+                trySend(room)
+            }
+        })
+    }.buffer(Channel.UNLIMITED)
+
+    override fun badgePages(
+        roomIds: List<String>?,
+        private: Boolean,
+    ): Flow<org.matrix.rustcomponents.sdk.ThreadInboxBadge> = kotlinx.coroutines.flow.channelFlow {
+        inner.loadThreadInboxBadgePages(roomIds, private, object : org.matrix.rustcomponents.sdk.ThreadInboxBadgeListener {
+            override fun onBadge(badge: org.matrix.rustcomponents.sdk.ThreadInboxBadge) {
+                trySend(badge)
             }
         })
     }.buffer(Channel.UNLIMITED)

@@ -71,6 +71,8 @@ internal class ThreadsInboxStatePreviewParam : PreviewParameterProvider<ThreadsI
             return sequenceOf(
                 state,
                 state.copy(rows = AsyncData.Loading()),
+                state.copy(rows = AsyncData.Loading(persistentListOf(thread))),
+                state.copy(rows = AsyncData.Loading(persistentListOf()), latestUnread = null),
                 state.copy(rows = AsyncData.Success(persistentListOf()), latestUnread = null),
                 state.copy(rows = AsyncData.Success(persistentListOf()), filter = ThreadsInboxFilter.All, latestUnread = null),
                 state.copy(pending = setOf(thread.key)),

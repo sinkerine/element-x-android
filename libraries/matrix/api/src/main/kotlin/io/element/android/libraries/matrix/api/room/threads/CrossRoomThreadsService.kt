@@ -15,7 +15,7 @@ import io.element.android.libraries.matrix.api.room.RoomNotificationMode
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.flow.StateFlow
 
-/** Complete session thread aggregate; unread classification uses threaded history and receipts. */
+/** Session thread aggregate. Loading may contain classified pages; Success indicates a complete scan. */
 interface CrossRoomThreadsService {
     val threads: StateFlow<AsyncData<ImmutableList<InboxThread>>>
     val closedBadge: StateFlow<InboxBadgeCounts?>? get() = null
@@ -36,7 +36,7 @@ interface CrossRoomThreadsService {
     suspend fun firstUnreadEventId(key: InboxThreadKey): Result<EventId?>
 }
 
-data class InboxBadgeCounts(val count: Int, val hasMention: Boolean)
+data class InboxBadgeCounts(val count: Int, val hasMention: Boolean, val isComplete: Boolean = true)
 
 data class InboxThreadKey(val roomId: RoomId, val threadId: ThreadId)
 

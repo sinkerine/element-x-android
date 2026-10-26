@@ -29,6 +29,11 @@ class DefaultThreadsInboxBadgeProvider(
 ) : ThreadsInboxBadgeProvider {
     override val badge = combine(session.threads, session.isVisiting, service.closedBadge ?: MutableStateFlow(null)) { data, visiting, closed ->
         val unread = data.dataOrNull().orEmpty().filter { it.isUnread }
-        if (!visiting && closed != null) ThreadsBadge(closed.count, closed.hasMention) else ThreadsBadge(unread.size, unread.any { it.numUnreadMentions > 0 })
+        // A partial scan is not an account-wide unread total. Show exact badges only after completion.
+        if (!visiting && closed != null) {
+            ThreadsBadge(if (closed.isComplete) closed.count else 0, closed.hasMention)
+        } else {
+            ThreadsBadge(if (data.isSuccess()) unread.size else 0, unread.any { it.numUnreadMentions > 0 })
+        }
     }.stateIn(client.sessionCoroutineScope, SharingStarted.Eagerly, ThreadsBadge())
 }

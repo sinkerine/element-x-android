@@ -20,6 +20,19 @@ if [[ $(git -C "$components" rev-parse HEAD) != 917946f48c904750a6ab4b2a9d66f945
 fi
 : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME to an installed Android NDK}"
 export NDK_VERSION=${NDK_VERSION:-$(basename "$ANDROID_NDK_HOME")}
+# The FFI x86_64 workaround expects the hyphenated variable; newer
+# cargo-ndk releases only populate its underscore spelling.
+if [[ "$target" == x86_64-linux-android && -z "${CC_x86_64_linux_android:-}" ]]; then
+    ndk_clang=$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -path '*/bin/clang' -print -quit)
+    if [[ -z "$ndk_clang" ]]; then
+        echo 'Cannot locate the Android NDK clang executable.' >&2
+        exit 1
+    fi
+    export CC_x86_64_linux_android="$ndk_clang"
+fi
+if [[ "$target" == x86_64-linux-android ]]; then
+    export "CC_x86_64-linux-android=$CC_x86_64_linux_android"
+fi
 cd "$sdk_checkout"
 cargo ndk -t "$target" -o "$staging/jniLibs" build -p matrix-sdk-ffi --features sentry
 cargo run -p uniffi-bindgen -- generate --library "target/$target/debug/libmatrix_sdk_ffi.so" \

@@ -66,10 +66,16 @@ fun ThreadsInboxView(
     val clipboard = LocalClipboardManager.current
     val markReadLabel = stringResource(CommonStrings.screen_threads_inbox_mark_read)
     val listState = rememberLazyListState()
-    val mineDescription = stringResource(CommonStrings.screen_threads_inbox_tab_mine) + ", " +
-        pluralStringResource(io.element.android.libraries.ui.strings.R.plurals.a11y_threads_inbox_unread, state.mineUnreadCount, state.mineUnreadCount)
-    val otherDescription = stringResource(CommonStrings.screen_threads_inbox_tab_other) + ", " +
-        pluralStringResource(io.element.android.libraries.ui.strings.R.plurals.a11y_threads_inbox_unread, state.otherUnreadCount, state.otherUnreadCount)
+    val mineDescription = stringResource(CommonStrings.screen_threads_inbox_tab_mine) + if (state.rows.isSuccess()) {
+        ", " + pluralStringResource(io.element.android.libraries.ui.strings.R.plurals.a11y_threads_inbox_unread, state.mineUnreadCount, state.mineUnreadCount)
+    } else {
+        ", " + stringResource(CommonStrings.screen_threads_inbox_loading_more)
+    }
+    val otherDescription = stringResource(CommonStrings.screen_threads_inbox_tab_other) + if (state.rows.isSuccess()) {
+        ", " + pluralStringResource(io.element.android.libraries.ui.strings.R.plurals.a11y_threads_inbox_unread, state.otherUnreadCount, state.otherUnreadCount)
+    } else {
+        ", " + stringResource(CommonStrings.screen_threads_inbox_loading_more)
+    }
     LaunchedEffect(listState, state.tab, state.filter) {
         snapshotFlow {
             val layout = listState.layoutInfo
@@ -77,7 +83,7 @@ fun ThreadsInboxView(
         }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) state.eventSink(ThreadsInboxEvent.LoadMore) }
     }
     Column(modifier.padding(16.dp)) {
-        TextButton(onClick = { state.eventSink(ThreadsInboxEvent.MarkAllAsRead) }) {
+        TextButton(enabled = state.rows.isSuccess(), onClick = { state.eventSink(ThreadsInboxEvent.MarkAllAsRead) }) {
             Box(Modifier.padding(end = 8.dp)) {
                 Icon(CompoundIcons.Check(), null)
                 Icon(CompoundIcons.Check(), null, modifier = Modifier.padding(start = 8.dp))
@@ -90,14 +96,18 @@ fun ThreadsInboxView(
                 modifier = Modifier.minimumInteractiveComponentSize().semantics(mergeDescendants = true) { contentDescription = mineDescription },
                 onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Mine)) },
                 label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_mine)) },
-                trailingIcon = { io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.mineUnreadCount) },
+                trailingIcon = {
+                    if (state.rows.isSuccess()) io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.mineUnreadCount)
+                },
             )
             FilterChip(
                 selected = state.tab == ThreadsInboxTab.Other,
                 modifier = Modifier.minimumInteractiveComponentSize().semantics(mergeDescendants = true) { contentDescription = otherDescription },
                 onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Other)) },
                 label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_other)) },
-                trailingIcon = { io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.otherUnreadCount) },
+                trailingIcon = {
+                    if (state.rows.isSuccess()) io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.otherUnreadCount)
+                },
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -133,7 +143,7 @@ fun ThreadsInboxView(
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
-                    Text((state.mineUnreadCount + state.otherUnreadCount).toString())
+                    if (state.rows.isSuccess()) Text((state.mineUnreadCount + state.otherUnreadCount).toString())
                 }
             }
         }
@@ -149,6 +159,10 @@ fun ThreadsInboxView(
                     )
                 )
             }
+        }
+        if (state.rows.isLoading()) {
+            androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(stringResource(CommonStrings.screen_threads_inbox_loading_more))
         }
         if (state.rows.isFailure() && !state.rows.dataOrNull().isNullOrEmpty()) {
             Snackbar(action = {
@@ -168,6 +182,7 @@ fun ThreadsInboxView(
                 TextButton(onClick = { state.eventSink(ThreadsInboxEvent.RetryLoad) }) { Text(stringResource(CommonStrings.action_retry)) }
             }
             state.rows.dataOrNull() == null -> ThreadsInboxLoading()
+            state.rows.isLoading() && state.rows.dataOrNull().isNullOrEmpty() -> ThreadsInboxLoading()
             state.rows.dataOrNull().isNullOrEmpty() -> {
                 Text(stringResource(if (state.filter ==
                     ThreadsInboxFilter.Unread) {
@@ -213,9 +228,6 @@ fun ThreadsInboxView(
                             onTouch = { state.eventSink(ThreadsInboxEvent.Touch(thread.key, it)) },
                         )
                     }
-                }
-                item {
-                    TextButton(onClick = { state.eventSink(ThreadsInboxEvent.LoadMore) }) { Text(stringResource(CommonStrings.action_load_more)) }
                 }
                 item { androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 96.dp)) }
             }

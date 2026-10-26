@@ -36,6 +36,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapMerge
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -49,6 +52,7 @@ import org.matrix.rustcomponents.sdk.ThreadInboxRoom
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
 @Inject
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class KotlinCrossRoomThreadsService(
     private val client: MatrixClient,
     private val preferences: SessionPreferencesStore,
@@ -63,12 +67,12 @@ class KotlinCrossRoomThreadsService(
     private val rows = mutableMapOf<RoomId, List<InboxThread>>()
     private val refreshLock = Mutex()
     private val receipts = Semaphore(4)
-    private val histories = Semaphore(4)
     private val contentMapper = TimelineEventContentMapper()
     private val refreshRequests = Channel<List<String>?>(Channel.UNLIMITED)
     private var initialized = false
     private var visiting = false
     private var listRefresh: kotlinx.coroutines.Job? = null
+    private var badgeRefresh: kotlinx.coroutines.Job? = null
     private var listDirty = true
     private var badgeDirty = true
     override val closedBadge = MutableStateFlow<io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts?>(null)
@@ -119,7 +123,13 @@ class KotlinCrossRoomThreadsService(
                     job.join()
                     listRefresh = null
                 } else {
-                    refreshBadge(if (full) null else changed?.toList())
+                    val job = launch { refreshBadge(if (full) null else changed?.toList()) }
+                    badgeRefresh = job
+                    // Opening the inbox cancels badge work so discovery does not wait
+                    // for an unrelated, potentially slow relations request.
+                    if (visiting) job.cancel()
+                    job.join()
+                    badgeRefresh = null
                 }
             }
         }
@@ -135,19 +145,41 @@ class KotlinCrossRoomThreadsService(
             synchronized(historyCache) {
                 if (selected == null) historyCache.clear() else historyCache.keys.removeAll { it.roomId.value in selected }
             }
-            val snapshots = source.load(selected)
+            val started = System.nanoTime()
+            threads.value = AsyncData.Loading(threads.value.dataOrNull())
             val marked = unreadStore.read()
-            val mapped = coroutineScope {
-                snapshots.map { snapshot -> async { histories.withPermit { mapRoom(snapshot, marked) } } }.awaitAll()
+            val discovered = mutableMapOf<RoomId, MutableMap<InboxThreadKey, InboxThread>>()
+            // Classify independent roots concurrently: a slow history must not
+            // hold back other roots on the same server page.
+            source.pages(selected).transform { page ->
+                if (page.threads.isEmpty()) {
+                    emit(page)
+                } else {
+                    page.threads.forEach { emit(ThreadInboxRoom(page.roomId, listOf(it))) }
+                }
+            }.flatMapMerge(concurrency = 4) { page ->
+                flow { emit(mapRoom(page, marked)) }
+            }.collect { (id, items) ->
+                val roomRows = discovered.getOrPut(id) { mutableMapOf() }
+                items.forEach { roomRows[it.key] = it }
+                val visible = rows.mapValues { it.value.associateBy { item -> item.key }.toMutableMap() }.toMutableMap()
+                discovered.forEach { (roomId, partial) -> visible.getOrPut(roomId) { mutableMapOf() }.putAll(partial) }
+                threads.value = AsyncData.Loading(visible.values.flatMap { it.values }.sortedByDescending { it.timestamp }.toImmutableList())
+                timber.log.Timber.d(
+                    "Inbox list progress: rooms=%d threads=%d elapsedMs=%d",
+                    discovered.size,
+                    discovered.values.sumOf { it.size },
+                    (System.nanoTime() - started) / 1_000_000
+                )
             }
             if (!visiting) return@runCatchingExceptions
             if (selected == null) rows.clear() else selected.forEach { rows.remove(RoomId(it)) }
-            mapped.forEach { (id, items) -> rows[id] = items }
+            discovered.forEach { (id, items) -> rows[id] = items.values.toList() }
             // Global account data can change explicit unread without room updates.
             rows.replaceAll { _, items -> items.map { it.copy(isMarkedUnread = it.key in marked) } }
             initialized = true
             listDirty = false
-            publish()
+            publish(complete = true)
         }.onFailure { error ->
             // A later unrelated invalidation must recover this failed room too.
             listDirty = true
@@ -222,12 +254,27 @@ class KotlinCrossRoomThreadsService(
             throw IllegalStateException("Thread history discovery timed out", error)
         }
 
-    private fun publish() {
-        threads.value = AsyncData.Success(rows.values.flatten().sortedByDescending { it.timestamp }.toImmutableList())
+    private fun currentRoomRows(id: RoomId): List<InboxThread> = threads.value.dataOrNull().orEmpty().filter { it.key.roomId == id }
+
+    private fun publish(complete: Boolean = false) {
+        val current = threads.value
+        val items = if (complete || current.isSuccess()) {
+            rows.values.flatten()
+        } else {
+            // Local read actions during discovery must retain the streamed rows
+            // and must not turn a partial account into a successful total.
+            (current.dataOrNull().orEmpty() + rows.values.flatten()).associateBy { it.key }.values.toList()
+        }.sortedByDescending { it.timestamp }.toImmutableList()
+        threads.value = when {
+            complete || current.isSuccess() -> AsyncData.Success(items)
+            current is AsyncData.Failure -> AsyncData.Failure(current.error, items)
+            else -> AsyncData.Loading(items)
+        }
     }
 
     override fun startVisit() {
         visiting = true
+        badgeRefresh?.cancel()
         if (!initialized || listDirty || threads.value is AsyncData.Failure) refreshRequests.trySend(null)
     }
 
@@ -236,7 +283,11 @@ class KotlinCrossRoomThreadsService(
         listRefresh?.cancel()
         listDirty = true
         val unread = threads.value.dataOrNull().orEmpty().filter { it.isUnread }
-        closedBadge.value = io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts(unread.size, unread.any { it.numUnreadMentions > 0 })
+        closedBadge.value = io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts(
+            unread.size,
+            unread.any { it.numUnreadMentions > 0 },
+            isComplete = threads.value.isSuccess()
+        )
         refreshRequests.trySend(null)
     }
 
@@ -244,20 +295,50 @@ class KotlinCrossRoomThreadsService(
         listDirty = true
         runCatchingExceptions {
             val selected = if (badgeDirty || closedBadge.value == null || badgeRows.isEmpty()) null else request
-            val compact = source.loadBadges(selected, receiptType() == ReceiptType.READ_PRIVATE)
+            val started = System.nanoTime()
+            val staged = badgeRows.filterKeys { selected != null && it.value !in selected }.toMutableMap()
+            val modes = mutableMapOf<RoomId, io.element.android.libraries.matrix.api.room.RoomNotificationMode>()
+            val marked = unreadStore.read()
+            closedBadge.value = closedBadge.value?.copy(isComplete = false)
+            source.badgePages(selected, receiptType() == ReceiptType.READ_PRIVATE).collect { badge ->
+                val id = RoomId(badge.roomId)
+                staged[id] = staged[id].orEmpty().filterNot { it.threadId == badge.threadId } + badge
+                closedBadge.value = countBadges(staged, marked, modes, isComplete = false)
+                timber.log.Timber.d(
+                    "Inbox badge progress: rooms=%d threads=%d elapsedMs=%d",
+                    staged.size,
+                    staged.values.sumOf { it.size },
+                    (System.nanoTime() - started) / 1_000_000
+                )
+            }
             if (visiting) {
                 refreshRequests.trySend(null)
                 return@runCatchingExceptions
             }
-            if (selected == null) badgeRows.clear() else selected.forEach { badgeRows.remove(RoomId(it)) }
-            compact.groupBy { RoomId(it.roomId) }.forEach { (id, badges) -> badgeRows[id] = badges }
-            val marked = unreadStore.read()
+            badgeRows.clear()
+            badgeRows.putAll(staged)
+            closedBadge.value = countBadges(badgeRows, marked, modes, isComplete = true)
+            badgeDirty = false
+        }.onFailure { error ->
+            badgeDirty = true
+            timber.log.Timber.w("Inbox badge refresh failed: %s", error::class.java.simpleName)
+        }
+    }
+
+    private suspend fun countBadges(
+        snapshots: Map<RoomId, List<org.matrix.rustcomponents.sdk.ThreadInboxBadge>>,
+        marked: Set<InboxThreadKey>,
+        modes: MutableMap<RoomId, io.element.android.libraries.matrix.api.room.RoomNotificationMode>,
+        isComplete: Boolean,
+    ): io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts {
             var count = 0
             var mention = false
-            for ((id, badges) in badgeRows) {
-                val info = client.roomListService.allRooms.summaries.first().firstOrNull { it.roomId == id }?.info
-                    ?: error("Badge room metadata unavailable")
-                val mode = client.notificationSettingsService.getRoomNotificationSettings(id, info.isEncrypted == true, info.isDirect).getOrThrow().mode
+            for ((id, badges) in snapshots) {
+                val mode = modes.getOrPut(id) {
+                    val info = client.roomListService.allRooms.summaries.first().firstOrNull { it.roomId == id }?.info
+                        ?: error("Badge room metadata unavailable")
+                    client.notificationSettingsService.getRoomNotificationSettings(id, info.isEncrypted == true, info.isDirect).getOrThrow().mode
+                }
                 for (badge in badges) {
                     val key = InboxThreadKey(id, io.element.android.libraries.matrix.api.core.ThreadId(badge.threadId))
                     val unread = (badge.unread > 0uL || key in marked) && when (mode) {
@@ -271,15 +352,10 @@ class KotlinCrossRoomThreadsService(
                     }
                 }
             }
-            closedBadge.value = io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts(count, mention)
-            badgeDirty = false
-        }.onFailure { error ->
-            badgeDirty = true
-            timber.log.Timber.w("Inbox badge refresh failed: %s", error::class.java.simpleName)
-        }
+            return io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts(count, mention, isComplete)
     }
 
-    // SDK discovery already exhausts every room and page; scrolling needs no rescan.
+    // Discovery streams every room and page automatically; scrolling needs no rescan.
     override suspend fun paginate(): Result<Unit> = if (threads.value is AsyncData.Failure) refresh(null) else Result.success(Unit)
 
     private suspend fun receiptType() = if (preferences.isSendPublicReadReceiptsEnabled().first()) ReceiptType.READ else ReceiptType.READ_PRIVATE
@@ -302,7 +378,7 @@ class KotlinCrossRoomThreadsService(
                             }
                             unreadStore.set(key, false).getOrThrow()
                             refreshLock.withLock {
-                                rows[key.roomId] = rows[key.roomId].orEmpty().map {
+                                rows[key.roomId] = currentRoomRows(key.roomId).map {
                                     if (it.key == key && it.latestEvent?.eventId == snapshot.latestEvent?.eventId) {
                                         it.copy(
                                             numUnread = 0,
@@ -332,14 +408,14 @@ class KotlinCrossRoomThreadsService(
 
     private suspend fun persistUnread(key: InboxThreadKey): Result<Unit> = unreadStore.set(key, true).onSuccess {
         refreshLock.withLock {
-            rows[key.roomId] = rows[key.roomId].orEmpty().map { if (it.key == key) it.copy(isMarkedUnread = true) else it }
+            rows[key.roomId] = currentRoomRows(key.roomId).map { if (it.key == key) it.copy(isMarkedUnread = true) else it }
             publish()
         }
     }
 
     override suspend fun consumeMarkedUnread(key: InboxThreadKey): Result<Unit> = unreadStore.set(key, false).onSuccess {
         refreshLock.withLock {
-            rows[key.roomId] = rows[key.roomId].orEmpty().map { if (it.key == key) it.copy(isMarkedUnread = false) else it }
+            rows[key.roomId] = currentRoomRows(key.roomId).map { if (it.key == key) it.copy(isMarkedUnread = false) else it }
             publish()
         }
     }

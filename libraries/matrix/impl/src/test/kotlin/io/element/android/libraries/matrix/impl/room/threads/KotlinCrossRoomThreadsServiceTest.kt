@@ -30,10 +30,21 @@ class KotlinCrossRoomThreadsServiceTest {
         override val updates = invalidations.receiveAsFlow()
         val requests = mutableListOf<List<String>?>()
         val badgeRequests = mutableListOf<List<String>?>()
+        var badgeGate: CompletableDeferred<Unit>? = null
         override suspend fun loadBadges(roomIds: List<String>?, private: Boolean): List<org.matrix.rustcomponents.sdk.ThreadInboxBadge> {
             badgeRequests.add(roomIds)
+            badgeGate?.await()
             check(!failure) { "Badge discovery failed" }
             return emptyList()
+        }
+        var pageGate: CompletableDeferred<Unit>? = null
+        var pageFailure = false
+        override fun pages(roomIds: List<String>?) = kotlinx.coroutines.flow.flow {
+            val rooms = load(roomIds)
+            emit(rooms.first())
+            pageGate?.await()
+            check(!pageFailure) { "Later page failed" }
+            rooms.drop(1).forEach { emit(it) }
         }
         var failure = false
         var gate: CompletableDeferred<Unit>? = null
@@ -70,6 +81,62 @@ class KotlinCrossRoomThreadsServiceTest {
     }
 
     @Test
+    fun `first page is published as loading before remaining rooms finish`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source().apply { pageGate = CompletableDeferred() }
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), FakeFeatureFlagService(), source)
+        service.startVisit()
+        roomList.postState(RoomListService.State.Running)
+        runCurrent()
+        assertThat(service.threads.value.isLoading()).isTrue()
+        assertThat(service.threads.value.dataOrNull()).isNotNull()
+        source.pageGate!!.complete(Unit)
+        runCurrent()
+        assertThat(service.threads.value.isSuccess()).isTrue()
+    }
+
+    @Test
+    fun `later page failure retains streamed data and retry completes discovery`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source().apply { pageGate = CompletableDeferred() }
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), FakeFeatureFlagService(), source)
+        service.startVisit()
+        roomList.postState(RoomListService.State.Running)
+        runCurrent()
+        assertThat(service.threads.value.isLoading()).isTrue()
+        source.pageFailure = true
+        source.pageGate!!.complete(Unit)
+        runCurrent()
+        assertThat(service.threads.value.isFailure()).isTrue()
+        assertThat(service.threads.value.dataOrNull()).isNotNull()
+        source.pageFailure = false
+        service.startVisit()
+        runCurrent()
+        assertThat(service.threads.value.isSuccess()).isTrue()
+    }
+
+    @Test
+    fun `opening inbox cancels stalled badge discovery and loads threads immediately`() = runTest {
+        val roomList = FakeRoomListService()
+        val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
+        val source = Source().apply { badgeGate = CompletableDeferred() }
+        val service = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), FakeFeatureFlagService(), source)
+        roomList.postState(RoomListService.State.Running)
+        runCurrent()
+        assertThat(source.badgeRequests).hasSize(1)
+        assertThat(source.requests).isEmpty()
+
+        service.startVisit()
+        runCurrent()
+
+        assertThat(source.badgeGate!!.isCompleted).isFalse()
+        assertThat(source.requests).containsExactly(null)
+        assertThat(service.threads.value.isSuccess()).isTrue()
+    }
+
+    @Test
     fun `closing inbox cancels in flight full discovery and switches to badge updates`() = runTest {
         val roomList = FakeRoomListService()
         val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = roomList, getAccountDataLambda = { Result.success(null) })
@@ -82,10 +149,10 @@ class KotlinCrossRoomThreadsServiceTest {
         service.endVisit()
         runCurrent()
         assertThat(source.badgeRequests).isNotEmpty()
-        assertThat(service.threads.value.isUninitialized()).isTrue()
+        assertThat(service.threads.value.isLoading()).isTrue()
         source.gate!!.complete(Unit)
         runCurrent()
-        assertThat(service.threads.value.isUninitialized()).isTrue()
+        assertThat(service.threads.value.isLoading()).isTrue()
     }
 
     @Test
@@ -197,7 +264,7 @@ class KotlinCrossRoomThreadsServiceTest {
         service.startVisit()
         roomList.postState(RoomListService.State.Running)
         runCurrent()
-        assertThat(service.threads.value.isUninitialized()).isTrue()
+        assertThat(service.threads.value.isLoading()).isTrue()
         source.invalidations.send(listOf("!quiet29:example.org"))
         runCurrent()
         source.gate!!.complete(Unit)
