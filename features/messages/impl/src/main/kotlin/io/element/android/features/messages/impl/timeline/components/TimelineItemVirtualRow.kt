@@ -41,7 +41,7 @@ fun TimelineItemVirtualRow(
     Box(modifier = modifier) {
         when (virtual.model) {
             is TimelineItemDaySeparatorModel -> TimelineItemDaySeparatorView(virtual.model)
-            TimelineItemReadMarkerModel -> TimelineItemReadMarkerView()
+            TimelineItemReadMarkerModel -> TimelineItemReadMarkerView(isCritical = virtual.id.value == "triage-new-divider")
             TimelineItemRoomBeginningModel -> {
                 TimelineItemRoomBeginningView(
                     predecessorRoom = timelineRoomInfo.predecessorRoom,

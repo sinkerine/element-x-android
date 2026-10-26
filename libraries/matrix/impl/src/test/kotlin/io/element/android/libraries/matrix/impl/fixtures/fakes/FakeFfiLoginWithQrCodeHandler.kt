@@ -9,6 +9,7 @@ package io.element.android.libraries.matrix.impl.fixtures.fakes
 
 import org.matrix.rustcomponents.sdk.GeneratedQrLoginProgressListener
 import org.matrix.rustcomponents.sdk.LoginWithQrCodeHandler
+import org.matrix.rustcomponents.sdk.LoginWithQrCodeTask
 import org.matrix.rustcomponents.sdk.NoHandle
 import org.matrix.rustcomponents.sdk.QrCodeData
 import org.matrix.rustcomponents.sdk.QrLoginProgress
@@ -20,13 +21,21 @@ class FakeFfiLoginWithQrCodeHandler(
 ) : LoginWithQrCodeHandler(NoHandle) {
     private var scanProgressListener: QrLoginProgressListener? = null
 
-    override suspend fun generate(progressListener: GeneratedQrLoginProgressListener) {
-        generateResult()
+    override fun generate(progressListener: GeneratedQrLoginProgressListener): LoginWithQrCodeTask {
+        return object : LoginWithQrCodeTask(NoHandle) {
+            override suspend fun wait() = generateResult()
+            override fun cancel() = Unit
+            override fun close() = Unit
+        }
     }
 
-    override suspend fun scan(qrCodeData: QrCodeData, progressListener: QrLoginProgressListener) {
+    override fun scan(qrCodeData: QrCodeData, progressListener: QrLoginProgressListener): LoginWithQrCodeTask {
         scanProgressListener = progressListener
-        scanResult(qrCodeData)
+        return object : LoginWithQrCodeTask(NoHandle) {
+            override suspend fun wait() = scanResult(qrCodeData)
+            override fun cancel() = Unit
+            override fun close() = Unit
+        }
     }
 
     fun emitScanProgress(progress: QrLoginProgress) {

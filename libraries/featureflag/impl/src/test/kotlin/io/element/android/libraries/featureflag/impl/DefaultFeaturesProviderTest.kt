@@ -14,6 +14,11 @@ import org.junit.Test
 
 class DefaultFeaturesProviderTest {
     @Test
+    fun `cross room threads is enabled by default`() {
+        assertThat(FeatureFlags.CrossRoomThreads.defaultValue(io.element.android.libraries.matrix.test.core.aBuildMeta())).isTrue()
+    }
+
+    @Test
     fun `provide should return all features`() {
         val provider = DefaultFeaturesProvider()
         val features = provider.provide()

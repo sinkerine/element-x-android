@@ -21,13 +21,13 @@ android {
 setupDependencyInjection()
 
 dependencies {
-    releaseImplementation(libs.matrix.sdk)
-    if (file("${rootDir.path}/libraries/rustsdk/matrix-rust-sdk.aar").exists()) {
-        println("\nNote: Using local binary of the Rust SDK.\n")
-        debugImplementation(projects.libraries.rustsdk)
-    } else {
-        debugImplementation(libs.matrix.sdk)
+    // Threads Inbox requires the aggregate API on the SDK fork's main branch.
+    // Use the same bindings for every variant; mixing published and local APIs
+    // makes release compilation differ from the verified debug build.
+    require(file("${rootDir.path}/libraries/rustsdk/matrix-rust-sdk.aar").exists()) {
+        "Build the matrix-rust-sdk main branch with tools/sdk/build-threads-inbox-sdk before building the app."
     }
+    implementation(projects.libraries.rustsdk)
     implementation(projects.libraries.rustlsTls)
 
     implementation(projects.appconfig)

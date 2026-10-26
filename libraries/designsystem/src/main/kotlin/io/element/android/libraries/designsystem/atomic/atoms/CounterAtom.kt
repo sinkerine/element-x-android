@@ -52,16 +52,17 @@ fun CounterAtom(
     contentColor: Color? = null,
     textStyle: TextStyle = CounterAtomDefaults.textStyle,
     isCritical: Boolean = false,
+    overflowText: String = MAX_COUNT_STRING,
 ) {
     if (count < 1) return
     val countAsText = when (count) {
         in 0..MAX_COUNT -> count.toString()
-        else -> MAX_COUNT_STRING
+        else -> overflowText
     }
     val textMeasurer = rememberTextMeasurer()
     // Measure the maximum count string size
     val textLayoutResult = textMeasurer.measure(
-        text = MAX_COUNT_STRING,
+        text = overflowText,
         style = textStyle
     )
     val textSize = textLayoutResult.size

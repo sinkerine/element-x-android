@@ -45,11 +45,19 @@ class HomePresenter(
     private val logoutPresenter: Presenter<DirectLogoutState>,
     private val rageshakeFeatureAvailability: RageshakeFeatureAvailability,
     private val sessionStore: SessionStore,
+    private val featureFlags: io.element.android.libraries.featureflag.api.FeatureFlagService,
+    private val threadsQueue: io.element.android.features.threads.api.ThreadsTriageQueue,
+    private val threadsBadgeProvider: io.element.android.features.threads.api.ThreadsInboxBadgeProvider,
 ) : Presenter<HomeState> {
     private val currentUserWithNeighborsBuilder = CurrentUserWithNeighborsBuilder()
 
     @Composable
     override fun present(): HomeState {
+        val crossRoomThreads by featureFlags.isFeatureEnabledFlow(
+            io.element.android.libraries.featureflag.api.FeatureFlags.CrossRoomThreads
+        ).collectAsState(false)
+        val threadsEnabled by featureFlags.isFeatureEnabledFlow(io.element.android.libraries.featureflag.api.FeatureFlags.Threads).collectAsState(false)
+        val threadsBadge by threadsBadgeProvider.badge.collectAsState()
         val coroutineState = rememberCoroutineScope()
         val matrixUser by client.userProfile.collectAsState()
         val currentUserAndNeighbors by remember {
@@ -80,6 +88,11 @@ class HomePresenter(
         fun handleEvent(event: HomeEvent) {
             when (event) {
                 is HomeEvent.SelectHomeNavigationBarItem -> {
+                    if (event.item == HomeNavigationBarItem.Threads) {
+                        threadsQueue.startVisit()
+                    } else if (currentHomeNavigationBarItem == HomeNavigationBarItem.Threads) {
+                        threadsQueue.endVisit()
+                    }
                     currentHomeNavigationBarItemOrdinal = event.item.ordinal
                 }
                 is HomeEvent.SwitchToAccount -> coroutineState.launch {
@@ -98,6 +111,9 @@ class HomePresenter(
             homeSpacesState = homeSpacesState,
             snackbarMessage = snackbarMessage,
             canReportBug = canReportBug,
+            showThreads = crossRoomThreads && threadsEnabled,
+            threadsUnreadCount = threadsBadge.count,
+            threadsHaveMention = threadsBadge.hasMention,
             directLogoutState = directLogoutState,
             eventSink = ::handleEvent,
         )

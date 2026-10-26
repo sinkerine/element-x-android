@@ -21,12 +21,14 @@ enum class HomeNavigationBarItem(
     ),
     Spaces(
         labelRes = R.string.screen_home_tab_spaces
-    );
+    ),
+    Threads(labelRes = io.element.android.libraries.ui.strings.CommonStrings.screen_home_tab_threads);
 
     @Composable
     fun icon(
         isSelected: Boolean,
     ) = when (this) {
+        Threads -> if (isSelected) CompoundIcons.ThreadsSolid() else CompoundIcons.Threads()
         Chats -> if (isSelected) CompoundIcons.ChatSolid() else CompoundIcons.Chat()
         Spaces -> if (isSelected) CompoundIcons.SpaceSolid() else CompoundIcons.Space()
     }

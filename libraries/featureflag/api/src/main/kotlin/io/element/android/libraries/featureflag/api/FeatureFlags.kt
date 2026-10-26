@@ -63,6 +63,13 @@ enum class FeatureFlags(
         // False so it's displayed in the developer options screen
         isFinished = false,
     ),
+    CrossRoomThreads(
+        key = "feature.cross_room_threads",
+        title = "Cross-room threads",
+        description = "Threads Inbox across rooms. Requires Threads to be enabled.",
+        defaultValue = { true },
+        isFinished = false,
+    ),
     Threads(
         key = "feature.thread_timeline",
         title = "Threads",

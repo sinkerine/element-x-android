@@ -16,7 +16,7 @@ import org.matrix.rustcomponents.sdk.TimelineDiff
 import org.matrix.rustcomponents.sdk.TimelineListener
 import uniffi.matrix_sdk.PaginationStatus
 
-class FakeFfiTimeline : Timeline(NoHandle) {
+class FakeFfiTimeline(private val receiptAction: suspend () -> Unit = {}) : Timeline(NoHandle) {
     private var listener: TimelineListener? = null
     override suspend fun addListener(listener: TimelineListener): TaskHandle {
         this.listener = listener
@@ -42,4 +42,6 @@ class FakeFfiTimeline : Timeline(NoHandle) {
     }
 
     override suspend fun fetchMembers() = Unit
+    override suspend fun sendReadReceipt(receiptType: org.matrix.rustcomponents.sdk.ReceiptType, eventId: String) = receiptAction()
+    override suspend fun markAsRead(receiptType: org.matrix.rustcomponents.sdk.ReceiptType) = receiptAction()
 }

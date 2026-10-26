@@ -24,6 +24,9 @@ import uniffi.matrix_sdk_crypto.DecryptionSettings
 class FakeFfiClientBuilder(
     val buildResult: () -> Client = { FakeFfiClient(withUtdHook = {}) }
 ) : ClientBuilder(NoHandle) {
+    var serverNameOrUrl: String? = null
+        private set
+
     override fun addRootCertificates(certificates: List<ByteArray>) = this
     override fun autoEnableBackups(autoEnableBackups: Boolean) = this
     override fun autoEnableCrossSigning(autoEnableCrossSigning: Boolean) = this
@@ -38,7 +41,10 @@ class FakeFfiClientBuilder(
     override fun requestConfig(config: RequestConfig) = this
     override fun roomKeyRecipientStrategy(strategy: CollectStrategy) = this
     override fun serverName(serverName: String) = this
-    override fun serverNameOrHomeserverUrl(serverNameOrUrl: String) = this
+    override fun serverNameOrHomeserverUrl(serverNameOrUrl: String): ClientBuilder {
+        this.serverNameOrUrl = serverNameOrUrl
+        return this
+    }
     override fun sessionPaths(dataPath: String, cachePath: String) = this
     override fun setSessionDelegate(sessionDelegate: ClientSessionDelegate) = this
     override fun slidingSyncVersionBuilder(versionBuilder: SlidingSyncVersionBuilder) = this

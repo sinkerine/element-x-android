@@ -105,6 +105,10 @@ class JoinedRustRoom(
     private val systemClock: SystemClock,
     private val roomContentForwarder: RoomContentForwarder,
     private val featureFlagService: FeatureFlagService,
+    private val onThreadRead: suspend (io.element.android.libraries.matrix.api.room.threads.InboxThreadKey) -> Unit = {},
+    private val runThreadRead: suspend (io.element.android.libraries.matrix.api.room.threads.InboxThreadKey, suspend () -> Unit) -> Unit = { _, action ->
+        action()
+    },
 ) : JoinedRoom, BaseRoom by baseRoom {
     // Create a dispatcher for all room methods...
     private val roomDispatcher = coroutineDispatchers.io.limitedParallelism(32)
@@ -478,7 +482,7 @@ class JoinedRustRoom(
                 widgetSettings = widgetSettings,
                 room = innerRoom,
                 widgetCapabilitiesProvider = object : WidgetCapabilitiesProvider {
-                    override fun acquireCapabilities(capabilities: WidgetCapabilities): WidgetCapabilities {
+                    override suspend fun acquireCapabilities(capabilities: WidgetCapabilities): WidgetCapabilities {
                         return getElementCallRequiredPermissions(sessionId.value, baseRoom.deviceId.value)
                     }
                 },
@@ -584,6 +588,18 @@ class JoinedRustRoom(
             coroutineScope = timelineCoroutineScope,
             dispatcher = roomDispatcher,
             roomContentForwarder = roomContentForwarder,
+            runThreadRead = { action ->
+                if (mode is Timeline.Mode.Thread) {
+                    runThreadRead(io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(roomId, mode.threadRootId), action)
+                } else {
+                    action()
+                }
+            },
+            onThreadRead = {
+                if (mode is Timeline.Mode.Thread) {
+                    onThreadRead(io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(roomId, mode.threadRootId))
+                }
+            },
         )
     }
 }
