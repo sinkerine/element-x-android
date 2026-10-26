@@ -150,9 +150,8 @@ class ThreadedMessagesNode(
         if (focused != null && !loadThreadFocus(threadedTimeline, focused)) {
             effectiveFocus = null
             focusUnavailable = true
-            snackbar.post(io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage(
-                io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed,
-            ))
+            // Render feedback with the fallback timeline. A shared host on an
+            // underlying room can consume a posted snackbar before this view exists.
         }
         timber.log.Timber.d("Thread history prepared after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
         val timelineController = TimelineController(
@@ -451,6 +450,15 @@ class ThreadedMessagesNode(
                     },
                     onOpenThreadInRoom = if (inputs.triage) callback::openInRoom else null,
                     triageBar = {
+                        if (focusUnavailable) {
+                            androidx.compose.material3.Snackbar {
+                                io.element.android.libraries.designsystem.theme.components.Text(
+                                    androidx.compose.ui.res.stringResource(
+                                        io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed
+                                    ),
+                                )
+                            }
+                        }
                         if (inputs.triage) {
                             val next by triageQueue.upNext.collectAsState()
                             val unreadCount by triageQueue.unreadCount.collectAsState()

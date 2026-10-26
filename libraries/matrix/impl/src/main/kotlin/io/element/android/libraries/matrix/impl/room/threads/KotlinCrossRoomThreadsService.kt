@@ -73,7 +73,7 @@ class KotlinCrossRoomThreadsService(
     private var badgeDirty = true
     override val closedBadge = MutableStateFlow<io.element.android.libraries.matrix.api.room.threads.InboxBadgeCounts?>(null)
     private val badgeRows = mutableMapOf<RoomId, List<org.matrix.rustcomponents.sdk.ThreadInboxBadge>>()
-    private data class HistoryBoundary(val latest: EventId, val receipt: EventId?, val history: InboxThreadHistory)
+    private data class HistoryBoundary(val latest: EventId, val receipts: Set<EventId>, val history: InboxThreadHistory)
     private val historyCache = object : LinkedHashMap<InboxThreadKey, HistoryBoundary>(100, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<InboxThreadKey, HistoryBoundary>?): Boolean = size > 100
     }
@@ -172,13 +172,20 @@ class KotlinCrossRoomThreadsService(
                 return id to snapshot.threads.map { native ->
                     val item = native.map(contentMapper)
                     val key = InboxThreadKey(id, item.threadId)
-                    val receipt = inner.loadUserReceipt(receiptType(), ReceiptThread.Thread(item.threadId.value), client.sessionId.value)
-                    val receiptId = receipt?.eventId?.let(::EventId)
+                    // Outgoing privacy must never select the incoming read boundary.
+                    val receiptIds = setOfNotNull(
+                        inner.loadUserReceipt(ReceiptType.READ, ReceiptThread.Thread(item.threadId.value), client.sessionId.value)?.eventId?.let(::EventId),
+                        inner.loadUserReceipt(
+                            ReceiptType.READ_PRIVATE,
+                            ReceiptThread.Thread(item.threadId.value),
+                            client.sessionId.value
+                        )?.eventId?.let(::EventId),
+                    )
                     val latest = (item.latestEvent ?: item.rootEvent).eventId
                     val boundary = synchronized(historyCache) { historyCache[key] }
-                    val history = boundary?.takeIf { it.latest == latest && it.receipt == receiptId }?.history
-                        ?: loadHistory(room, item.threadId.value, receiptId).also {
-                            synchronized(historyCache) { historyCache[key] = HistoryBoundary(latest, receiptId, it) }
+                    val history = boundary?.takeIf { it.latest == latest && it.receipts == receiptIds }?.history
+                        ?: loadHistory(room, item.threadId.value, receiptIds).also {
+                            synchronized(historyCache) { historyCache[key] = HistoryBoundary(latest, receiptIds, it) }
                         }
                     InboxThread(
                         key = key,
@@ -191,7 +198,7 @@ class KotlinCrossRoomThreadsService(
                         numUnreadMentions = history.mentionCount,
                         isParticipating = item.rootEvent.isOwn || history.participating,
                         roomNotificationMode = mode,
-                        readReceiptEventId = receiptId,
+                        readReceiptEventId = history.effectiveReceipt,
                         isMarkedUnread = key in marked,
                     )
                 }
@@ -203,11 +210,11 @@ class KotlinCrossRoomThreadsService(
         }
     }
 
-    private suspend fun loadHistory(room: JoinedRoom, rootId: String, receiptId: EventId?): InboxThreadHistory =
+    private suspend fun loadHistory(room: JoinedRoom, rootId: String, receiptIds: Set<EventId>): InboxThreadHistory =
         try {
             kotlinx.coroutines.withTimeout(30_000) {
                 room.createTimeline(CreateTimelineParams.Threaded(io.element.android.libraries.matrix.api.core.ThreadId(rootId))).getOrThrow().use { timeline ->
-                    loadInboxThreadHistory(timeline, rootId, receiptId, client.sessionId)
+                    loadInboxThreadHistory(timeline, rootId, null, client.sessionId, receiptIds)
                 }
             }
         } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
@@ -341,11 +348,11 @@ class KotlinCrossRoomThreadsService(
         val item = threads.value.dataOrNull()?.find { it.key == key } ?: error("Thread is no longer available")
         if (!item.isUnread) return@runCatchingExceptions null
         synchronized(historyCache) { historyCache[key] }?.takeIf {
-            it.latest == (item.latestEvent ?: item.rootEvent).eventId && it.receipt == item.readReceiptEventId
+            it.latest == (item.latestEvent ?: item.rootEvent).eventId && it.history.effectiveReceipt == item.readReceiptEventId
         }?.let { return@runCatchingExceptions it.history.firstUnread }
         val room = client.getJoinedRoom(key.roomId) ?: error("Room is no longer joined")
         try {
-            loadHistory(room, key.threadId.value, item.readReceiptEventId).firstUnread
+            loadHistory(room, key.threadId.value, setOfNotNull(item.readReceiptEventId)).firstUnread
         } finally {
             room.close()
         }

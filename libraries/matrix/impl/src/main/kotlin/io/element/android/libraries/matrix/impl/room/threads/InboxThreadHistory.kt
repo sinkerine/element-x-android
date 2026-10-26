@@ -20,6 +20,7 @@ internal data class InboxThreadHistory(
     val mentionCount: Long,
     val participating: Boolean,
     val firstUnread: EventId?,
+    val effectiveReceipt: EventId? = null,
 )
 
 /** History order, rather than receipt timestamps or lexicographic event IDs, determines unread. */
@@ -28,10 +29,11 @@ internal fun aggregateThreadHistory(
     rootId: String,
     receiptId: EventId?,
     ownUserId: UserId,
+    receiptIds: Set<EventId> = setOfNotNull(receiptId),
 ): InboxThreadHistory {
     val ordered = events.distinctBy { it.eventId }
-    val receiptIndex = ordered.indexOfFirst { it.eventId == receiptId }
-    check(receiptId == null || receiptIndex >= 0) { "Thread receipt is outside loaded history" }
+    check(receiptIds.all { id -> ordered.any { it.eventId == id } }) { "Thread receipt is outside loaded history" }
+    val receiptIndex = ordered.indexOfLast { it.eventId in receiptIds }
     val unread = ordered.drop(receiptIndex + 1).filter { it.eventId?.value != rootId && !it.isOwn }
     val mentions = unread.count { event ->
         val original = event.timelineItemDebugInfoProvider().originalJson ?: return@count false
@@ -47,5 +49,6 @@ internal fun aggregateThreadHistory(
         mentionCount = mentions.toLong(),
         participating = ordered.any { it.isOwn },
         firstUnread = unread.firstOrNull()?.eventId,
+        effectiveReceipt = ordered.getOrNull(receiptIndex)?.eventId,
     )
 }

@@ -49,6 +49,21 @@ class InboxThreadHistoryTest {
         assertThat(result.firstUnread).isEqualTo(skewed.eventId)
     }
 
+    @Test
+    fun `public and private receipts use latest event order regardless of timestamps or preference`() {
+        val later = mention.copy(timestamp = 0)
+        for (receipts in listOf(setOf(first.eventId!!, later.eventId!!), setOf(later.eventId!!, first.eventId!!))) {
+            val result = aggregateThreadHistory(listOf(root, first, later), "\$root", null, own, receipts)
+            assertThat(result.unreadCount).isEqualTo(0)
+            assertThat(result.mentionCount).isEqualTo(0)
+            assertThat(result.effectiveReceipt).isEqualTo(later.eventId)
+        }
+        val tail = anEventTimelineItem(eventId = EventId("\$tail"), timestamp = 0)
+        val result = aggregateThreadHistory(listOf(root, first, later, tail), "\$root", null, own, setOf(first.eventId!!, later.eventId!!))
+        assertThat(result.unreadCount).isEqualTo(1)
+        assertThat(result.firstUnread).isEqualTo(tail.eventId)
+    }
+
     @Test(expected = IllegalStateException::class)
     fun `missing receipt is an explicit history failure`() {
         aggregateThreadHistory(listOf(root, mention), "\$root", first.eventId, own)
