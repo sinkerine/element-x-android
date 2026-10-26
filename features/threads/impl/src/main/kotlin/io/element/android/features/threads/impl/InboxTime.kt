@@ -24,14 +24,3 @@ internal fun inboxTimeLabel(timestamp: Long, now: Long = System.currentTimeMilli
         else -> DateFormat.getDateInstance(DateFormat.SHORT).format(Date(timestamp))
     }
 }
-
-internal fun formatInboxTime(timestamp: Long, now: Long = System.currentTimeMillis()): String {
-    val age = (now - timestamp.coerceAtMost(now)).coerceAtLeast(0)
-    return when {
-        age < 60_000 -> "now"
-        age < 3_600_000 -> "${age / 60_000}m"
-        age < 86_400_000 -> "${age / 3_600_000}h"
-        age < 604_800_000 -> "${age / 86_400_000}d"
-        else -> DateFormat.getDateInstance(DateFormat.SHORT).format(Date(timestamp))
-    }
-}
