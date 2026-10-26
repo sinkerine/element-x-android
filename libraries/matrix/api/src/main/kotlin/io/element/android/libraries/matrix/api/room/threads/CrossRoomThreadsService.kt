@@ -15,9 +15,10 @@ import io.element.android.libraries.matrix.api.room.RoomNotificationMode
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.flow.StateFlow
 
-/** Session thread aggregate. Loading may contain classified pages; Success indicates a complete scan. */
+/** Loaded thread pages. Success indicates the requested page finished, not an account-wide scan. */
 interface CrossRoomThreadsService {
     val threads: StateFlow<AsyncData<ImmutableList<InboxThread>>>
+    val hasMore: StateFlow<Boolean> get() = kotlinx.coroutines.flow.MutableStateFlow(false)
     val closedBadge: StateFlow<InboxBadgeCounts?>? get() = null
 
     /** Successful local threaded reads from normal timeline navigation. */

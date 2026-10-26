@@ -30,11 +30,9 @@ class ThreadsInboxPresenter(
     @Composable
     override fun present(): ThreadsInboxState {
         val data by session.threads.collectAsState()
+        val hasMore by service.hasMore.collectAsState()
         val read by session.readState.collectAsState()
         val visited by session.visited.collectAsState()
-        val tab by session.tab.collectAsState()
-        val filter by session.filter.collectAsState()
-        val next by queue.upNext.collectAsState()
         val orderRevision by session.orderRevision.collectAsState()
         val scope = rememberCoroutineScope()
         val pagination = androidx.compose.runtime.remember { kotlinx.coroutines.sync.Mutex() }
@@ -45,17 +43,15 @@ class ThreadsInboxPresenter(
         }
         val all = data.dataOrNull().orEmpty()
         // Reading the revision recomposes the released ordering even without a new SDK update.
-        val rows = androidx.compose.runtime.remember(data, tab, filter, visited, read.retained, orderRevision) {
-            data.map { session.ordered(visibleThreads(it, tab, filter, visited + read.retained)).toImmutableList() }
+        val rows = androidx.compose.runtime.remember(data, visited, read.retained, orderRevision) {
+            data.map { session.ordered(it, visited + read.retained).toImmutableList() }
         }
         fun handle(event: ThreadsInboxEvent) {
             when (event) {
-                is ThreadsInboxEvent.SelectTab -> session.tab.value = event.tab
-                is ThreadsInboxEvent.SelectFilter -> session.filter.value = event.filter
                 is ThreadsInboxEvent.MarkAsRead -> session.mark(setOf(event.key))
                 is ThreadsInboxEvent.MarkAsUnread -> session.markUnread(event.key)
                 is ThreadsInboxEvent.Touch -> session.touch(event.key, event.pressed)
-                ThreadsInboxEvent.MarkAllAsRead -> session.mark(all.filter { it.isUnread && it.isMine == (tab == ThreadsInboxTab.Mine) }.map { it.key }.toSet())
+                ThreadsInboxEvent.MarkAllAsRead -> session.mark(all.filter { it.isUnread }.map { it.key }.toSet())
                 ThreadsInboxEvent.Undo -> session.undo()
                 ThreadsInboxEvent.Retry -> session.retry()
                 ThreadsInboxEvent.RetryLoad -> {
@@ -78,13 +74,10 @@ class ThreadsInboxPresenter(
         }
         return ThreadsInboxState(
             rows = rows,
-            tab = tab,
-            filter = filter,
+            hasMore = hasMore,
             visited = visited,
             pending = read.pending.map { it.key }.toSet(),
-            mineUnreadCount = all.count { it.isMine && it.isUnread },
-            otherUnreadCount = all.count { !it.isMine && it.isUnread },
-            latestUnread = next,
+            unreadCount = all.count { it.isUnread },
             failed = read.failed.isNotEmpty() || read.failedUnread.isNotEmpty(),
             summaries = all.associate { it.key to summaryFormatter.format(it) },
             eventSink = ::handle,

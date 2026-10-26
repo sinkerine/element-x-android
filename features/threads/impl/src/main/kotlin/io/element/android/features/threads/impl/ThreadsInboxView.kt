@@ -8,6 +8,7 @@
 package io.element.android.features.threads.impl
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,16 +19,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,8 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import io.element.android.compound.theme.ElementTheme
@@ -66,20 +61,20 @@ fun ThreadsInboxView(
     val clipboard = LocalClipboardManager.current
     val markReadLabel = stringResource(CommonStrings.screen_threads_inbox_mark_read)
     val listState = rememberLazyListState()
-    val mineDescription = stringResource(CommonStrings.screen_threads_inbox_tab_mine) + if (state.rows.isSuccess()) {
-        ", " + pluralStringResource(io.element.android.libraries.ui.strings.R.plurals.a11y_threads_inbox_unread, state.mineUnreadCount, state.mineUnreadCount)
-    } else {
-        ", " + stringResource(CommonStrings.screen_threads_inbox_loading_more)
+    // Unread rows sort first and can arrive after read rows; keep the list at the top until the user drags it.
+    var userScrolled by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) userScrolled = true }
     }
-    val otherDescription = stringResource(CommonStrings.screen_threads_inbox_tab_other) + if (state.rows.isSuccess()) {
-        ", " + pluralStringResource(io.element.android.libraries.ui.strings.R.plurals.a11y_threads_inbox_unread, state.otherUnreadCount, state.otherUnreadCount)
-    } else {
-        ", " + stringResource(CommonStrings.screen_threads_inbox_loading_more)
+    val firstKey = state.rows.dataOrNull()?.firstOrNull()?.key
+    LaunchedEffect(firstKey) {
+        if (!userScrolled && firstKey != null) listState.scrollToItem(0)
     }
-    LaunchedEffect(listState, state.tab, state.filter) {
+    LaunchedEffect(listState, state.rows, state.hasMore) {
         snapshotFlow {
             val layout = listState.layoutInfo
-            layout.totalItemsCount > 2 && (layout.visibleItemsInfo.lastOrNull()?.index ?: 0) >= layout.totalItemsCount - 3
+            state.hasMore && state.rows.isSuccess() && listState.isScrollInProgress &&
+                layout.totalItemsCount > 2 && (layout.visibleItemsInfo.lastOrNull()?.index ?: 0) >= layout.totalItemsCount - 3
         }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) state.eventSink(ThreadsInboxEvent.LoadMore) }
     }
     Column(modifier.padding(16.dp)) {
@@ -88,64 +83,7 @@ fun ThreadsInboxView(
                 Icon(CompoundIcons.Check(), null)
                 Icon(CompoundIcons.Check(), null, modifier = Modifier.padding(start = 8.dp))
             }
-            Text(stringResource(CommonStrings.screen_threads_inbox_mark_all_read))
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = state.tab == ThreadsInboxTab.Mine,
-                modifier = Modifier.minimumInteractiveComponentSize().semantics(mergeDescendants = true) { contentDescription = mineDescription },
-                onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Mine)) },
-                label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_mine)) },
-                trailingIcon = {
-                    if (state.rows.isSuccess()) io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.mineUnreadCount)
-                },
-            )
-            FilterChip(
-                selected = state.tab == ThreadsInboxTab.Other,
-                modifier = Modifier.minimumInteractiveComponentSize().semantics(mergeDescendants = true) { contentDescription = otherDescription },
-                onClick = { state.eventSink(ThreadsInboxEvent.SelectTab(ThreadsInboxTab.Other)) },
-                label = { Text(stringResource(CommonStrings.screen_threads_inbox_tab_other)) },
-                trailingIcon = {
-                    if (state.rows.isSuccess()) io.element.android.libraries.designsystem.atomic.atoms.CounterAtom(state.otherUnreadCount)
-                },
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ThreadsInboxFilter.entries.forEach { filter ->
-                FilterChip(
-                    selected = state.filter == filter,
-                    modifier = Modifier.minimumInteractiveComponentSize(),
-                    onClick = { state.eventSink(ThreadsInboxEvent.SelectFilter(filter)) },
-                    label = {
-                        Text(stringResource(if (filter ==
-                        ThreadsInboxFilter.Unread) {
-                            CommonStrings.screen_threads_inbox_filter_unread
-                        } else {
-                            CommonStrings.screen_threads_inbox_filter_all
-                        }))
-                    },
-                )
-            }
-        }
-        state.latestUnread?.let { thread ->
-            Card(
-                onClick = { onOpen(thread.key) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = ElementTheme.colors.bgAccentRest, contentColor = ElementTheme.colors.textOnSolidPrimary),
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Row {
-                        Icon(CompoundIcons.ArrowRight(), null)
-                        Text(stringResource(CommonStrings.screen_threads_inbox_open_latest_unread))
-                    }
-                    Text(
-                        thread.roomName.orEmpty() + " · " + state.summaries[thread.key]?.second.orEmpty(),
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
-                    if (state.rows.isSuccess()) Text((state.mineUnreadCount + state.otherUnreadCount).toString())
-                }
-            }
+            Text(stringResource(CommonStrings.screen_threads_inbox_mark_loaded_read))
         }
         if (state.pending.isNotEmpty()) {
             Snackbar(action = {
@@ -183,22 +121,13 @@ fun ThreadsInboxView(
             }
             state.rows.dataOrNull() == null -> ThreadsInboxLoading()
             state.rows.isLoading() && state.rows.dataOrNull().isNullOrEmpty() -> ThreadsInboxLoading()
+            state.rows.dataOrNull().isNullOrEmpty() && state.hasMore -> {
+                Text(stringResource(CommonStrings.screen_threads_inbox_no_loaded_matches))
+                TextButton(onClick = { state.eventSink(ThreadsInboxEvent.LoadMore) }) { Text(stringResource(CommonStrings.action_load_more)) }
+            }
             state.rows.dataOrNull().isNullOrEmpty() -> {
-                Text(stringResource(if (state.filter ==
-                    ThreadsInboxFilter.Unread) {
-                        CommonStrings.screen_threads_inbox_caught_up_title
-                    } else {
-                        CommonStrings.screen_threads_inbox_empty
-                    }))
-                Icon(CompoundIcons.CheckCircle(), null)
-                if (state.filter == ThreadsInboxFilter.Unread) {
-                    Text(stringResource(CommonStrings.screen_threads_inbox_no_replies))
-                } else {
-                    Text(stringResource(CommonStrings.screen_threads_inbox_start_thread_hint))
-                }
-                TextButton(onClick = { state.eventSink(ThreadsInboxEvent.SelectFilter(ThreadsInboxFilter.All)) }) {
-                    Text(stringResource(CommonStrings.screen_threads_inbox_show_all))
-                }
+                Text(stringResource(CommonStrings.screen_threads_inbox_empty))
+                Text(stringResource(CommonStrings.screen_threads_inbox_start_thread_hint))
             }
             else -> LazyColumn(state = listState) {
                 items(state.rows.dataOrNull().orEmpty(), key = { it.key.roomId.value + it.key.threadId.value }) { thread ->
@@ -212,8 +141,21 @@ fun ThreadsInboxView(
                         state = dismissState,
                         enableDismissFromStartToEnd = false,
                         backgroundContent = {
-                            Box(Modifier.fillMaxSize().background(ElementTheme.colors.bgAccentRest).padding(16.dp), contentAlignment = Alignment.CenterEnd) {
-                                Text(stringResource(CommonStrings.screen_threads_inbox_mark_read), color = ElementTheme.colors.textOnSolidPrimary)
+                            // Only revealed while swiping; nothing is drawn behind a settled row.
+                            if (dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
+                                Row(
+                                    Modifier.fillMaxSize().background(ElementTheme.colors.bgAccentRest).padding(horizontal = 24.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        stringResource(CommonStrings.screen_threads_inbox_mark_read),
+                                        color = ElementTheme.colors.textOnSolidPrimary,
+                                        style = ElementTheme.typography.fontBodyMdMedium,
+                                    )
+                                    // The swipe reveals from the end, so the icon shows first.
+                                    Icon(CompoundIcons.Check(), null, tint = ElementTheme.colors.iconOnSolidPrimary)
+                                }
                             }
                         },
                     ) {
@@ -227,6 +169,11 @@ fun ThreadsInboxView(
                             onMarkRead = { state.eventSink(ThreadsInboxEvent.MarkAsRead(thread.key)) },
                             onTouch = { state.eventSink(ThreadsInboxEvent.Touch(thread.key, it)) },
                         )
+                    }
+                }
+                if (state.hasMore && !state.rows.isLoading()) {
+                    item {
+                        TextButton(onClick = { state.eventSink(ThreadsInboxEvent.LoadMore) }) { Text(stringResource(CommonStrings.action_load_more)) }
                     }
                 }
                 item { androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 96.dp)) }

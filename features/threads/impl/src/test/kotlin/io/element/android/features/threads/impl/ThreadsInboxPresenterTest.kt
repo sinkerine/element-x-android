@@ -40,7 +40,7 @@ class ThreadsInboxPresenterTest {
             while (pending.pending.isEmpty()) pending = awaitItem()
             assertThat(pending.pending).hasSize(1)
             pending.eventSink(ThreadsInboxEvent.Undo)
-            assertThat(awaitItem().mineUnreadCount).isEqualTo(1)
+            assertThat(awaitItem().unreadCount).isEqualTo(1)
             advanceTimeBy(5_001)
             runCurrent()
             assertThat(service.marked).isEmpty()
@@ -61,8 +61,8 @@ class ThreadsInboxPresenterTest {
         presenter.test {
             awaitItem().eventSink(ThreadsInboxEvent.MarkAllAsRead)
             var pending = awaitItem()
-            while (pending.mineUnreadCount != 0) pending = awaitItem()
-            assertThat(pending.mineUnreadCount).isEqualTo(0)
+            while (pending.unreadCount != 0) pending = awaitItem()
+            assertThat(pending.unreadCount).isEqualTo(0)
             assertThat(pending.rows.dataOrNull()).hasSize(1)
             advanceTimeBy(4_999)
             runCurrent()
@@ -75,47 +75,41 @@ class ThreadsInboxPresenterTest {
     }
 
     @Test
-    fun `filter preserves visited read threads and excludes the other tab`() {
-        val mine = previewThread().copy(numUnread = 0)
-        assertThat(visibleThreads(listOf(mine), ThreadsInboxTab.Mine, ThreadsInboxFilter.Unread, emptySet())).isEmpty()
-        assertThat(visibleThreads(listOf(mine), ThreadsInboxTab.Mine, ThreadsInboxFilter.Unread, setOf(mine.key))).containsExactly(mine)
-        assertThat(visibleThreads(listOf(mine), ThreadsInboxTab.Other, ThreadsInboxFilter.All, emptySet())).isEmpty()
+    fun `threads are ordered unread first then newest and visited rows keep their place`() {
+        val newRead = previewThread().copy(numUnread = 0, latestEvent = null)
+        val oldUnread = newRead.copy(key = newRead.key.copy(threadId = io.element.android.libraries.matrix.api.core.ThreadId("\$old")), numUnread = 2)
+        val newest = newRead.rootEvent.timestamp
+        val read = newRead.copy(rootEvent = newRead.rootEvent.copy(timestamp = newest + 10))
+        val unread = oldUnread.copy(rootEvent = oldUnread.rootEvent.copy(timestamp = newest))
+        assertThat(orderThreads(listOf(read, unread), emptySet())).containsExactly(unread, read).inOrder()
+        val visitedRead = unread.copy(numUnread = 0)
+        assertThat(orderThreads(listOf(read, visitedRead), setOf(visitedRead.key))).containsExactly(visitedRead, read).inOrder()
+        assertThat(orderThreads(listOf(visitedRead, read), emptySet())).containsExactly(read, visitedRead).inOrder()
     }
 
     @Test
-    fun `mark all applies to selected tab and leaves other unread threads untouched`() = runTest {
+    fun `mark all marks every loaded unread thread`() = runTest {
         val mine = previewThread()
-        val other = mine.copy(key = mine.key.copy(threadId = io.element.android.libraries.matrix.api.core.ThreadId("\$other")), isParticipating = false)
+        val second = mine.copy(key = mine.key.copy(threadId = io.element.android.libraries.matrix.api.core.ThreadId("\$second")))
+        val read = mine.copy(key = mine.key.copy(threadId = io.element.android.libraries.matrix.api.core.ThreadId("\$read")), numUnread = 0)
         val service = FakeCrossRoomThreadsService()
-        service.threads.value = AsyncData.Success(persistentListOf(mine, other))
+        service.threads.value = AsyncData.Success(persistentListOf(mine, second, read))
         val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope)
-        val session = ThreadsInboxSession(service, client)
-        session.tab.value = ThreadsInboxTab.Other
         ThreadsInboxPresenter(
             service,
             FakeThreadsTriageQueue(),
-            session,
+            ThreadsInboxSession(service, client),
             InboxThreadSummaryFormatter(io.element.android.libraries.eventformatter.test.FakeRoomLatestEventFormatter())
         ).test {
             val first = awaitItem()
+            assertThat(first.rows.dataOrNull()).hasSize(3)
             first.eventSink(ThreadsInboxEvent.MarkAllAsRead)
             var state = awaitItem()
-            while (state.pending.isEmpty() || state.otherUnreadCount != 0) state = awaitItem()
-            assertThat(state.pending).containsExactly(other.key)
-            assertThat(state.mineUnreadCount).isEqualTo(1)
-            assertThat(state.otherUnreadCount).isEqualTo(0)
+            while (state.pending.isEmpty() || state.unreadCount != 0) state = awaitItem()
+            assertThat(state.pending).containsExactly(mine.key, second.key)
             state.eventSink(ThreadsInboxEvent.Undo)
             cancelAndIgnoreRemainingEvents()
         }
-    }
-
-    @Test
-    fun `muted other threads are only shown in All while own muted threads remain available`() {
-        val mine = previewThread().copy(roomNotificationMode = RoomNotificationMode.MUTE)
-        val other = mine.copy(isParticipating = false)
-        assertThat(visibleThreads(listOf(other), ThreadsInboxTab.Other, ThreadsInboxFilter.Unread, setOf(other.key))).isEmpty()
-        assertThat(visibleThreads(listOf(other), ThreadsInboxTab.Other, ThreadsInboxFilter.All, emptySet())).containsExactly(other)
-        assertThat(visibleThreads(listOf(mine), ThreadsInboxTab.Mine, ThreadsInboxFilter.All, emptySet())).containsExactly(mine)
     }
 
     @Test

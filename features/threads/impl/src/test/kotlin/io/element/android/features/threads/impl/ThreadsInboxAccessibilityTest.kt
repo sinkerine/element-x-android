@@ -73,10 +73,14 @@ class ThreadsInboxAccessibilityTest : RobolectricTest() {
     }
 
     @Test
-    fun `tabs announce unread counts and remain actionable`() = runAndroidComposeUiTest<androidx.activity.ComponentActivity> {
+    fun `single list has no tabs, filters or latest unread banner`() = runAndroidComposeUiTest<androidx.activity.ComponentActivity> {
         val state = ThreadsInboxStatePreviewParam().values.first()
         setContent { ElementPreview { ThreadsInboxView(state, {}, {}) } }
-        onNodeWithContentDescription("My threads, 1 unread").assertHasClickAction()
-        onNodeWithContentDescription("Other threads, 0 unread").assertHasClickAction()
+        onNodeWithContentDescription("Android team, thread:", substring = true).assertExists()
+        onNodeWithText("My threads").assertDoesNotExist()
+        onNodeWithText("Other threads").assertDoesNotExist()
+        onNodeWithText("Unread").assertDoesNotExist()
+        onNodeWithText("All").assertDoesNotExist()
+        onNodeWithText("Open latest unread").assertDoesNotExist()
     }
 }

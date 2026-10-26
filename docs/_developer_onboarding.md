@@ -110,7 +110,7 @@ This repository is used for distributing kotlin releases of the Matrix Rust SDK.
 It'll provide the corresponding aar and also publish them on maven.
 
 Element X consumes the custom SDK package from the
-[15cm/matrix-rust-sdk fork](https://github.com/15cm/matrix-rust-sdk):
+[15cm/matrix-rust-sdk fork](https://github.com/sinkerine/matrix-rust-sdk):
 `org.matrix.rustcomponents:sdk-android:26.09.9-custom.1`. Configure GitHub Packages
 credentials before building. Locally, set `GITHUB_PACKAGES_USERNAME` and
 `GITHUB_PACKAGES_TOKEN`, or add `githubPackagesUsername` and `githubPackagesToken`

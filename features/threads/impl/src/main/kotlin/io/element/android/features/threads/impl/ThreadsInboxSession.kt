@@ -42,8 +42,6 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
     val readState = MutableStateFlow(ReadState())
     val visited = MutableStateFlow<Set<InboxThreadKey>>(emptySet())
     val openThread = MutableStateFlow<InboxThreadKey?>(null)
-    val tab = MutableStateFlow(ThreadsInboxTab.Mine)
-    val filter = MutableStateFlow(ThreadsInboxFilter.Unread)
     private var timer: Job? = null
     private var expiry: Job? = null
     private var active = false
@@ -54,11 +52,12 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
     private var selected = false
     private val touched = mutableSetOf<InboxThreadKey>()
     private var frozenOrder: List<InboxThreadKey>? = null
+    private var displayed: List<InboxThreadKey> = emptyList()
     val orderRevision = MutableStateFlow(0)
 
     fun touch(key: InboxThreadKey, pressed: Boolean) {
         if (pressed) {
-            if (touched.isEmpty()) frozenOrder = threads.value.dataOrNull().orEmpty().sortedByDescending { it.timestamp }.map { it.key }
+            if (touched.isEmpty()) frozenOrder = displayed.ifEmpty { orderThreads(threads.value.dataOrNull().orEmpty(), emptySet()).map { it.key } }
             touched += key
         } else {
             touched -= key
@@ -69,9 +68,15 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
         }
     }
 
-    fun ordered(items: List<InboxThread>): List<InboxThread> {
-        val order = frozenOrder ?: return items.sortedByDescending { it.timestamp }
-        return items.sortedBy { order.indexOf(it.key).takeIf { index -> index >= 0 } ?: Int.MAX_VALUE }
+    fun ordered(items: List<InboxThread>, sticky: Set<InboxThreadKey>): List<InboxThread> {
+        val order = frozenOrder
+        val result = if (order == null) {
+            orderThreads(items, sticky)
+        } else {
+            items.sortedBy { order.indexOf(it.key).takeIf { index -> index >= 0 } ?: Int.MAX_VALUE }
+        }
+        displayed = result.map { it.key }
+        return result
     }
     val threads = combine(service.threads, readState) { data, state ->
         data.map { items ->
@@ -171,7 +176,6 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
             retainedMine = if (thread.isMine) readState.value.retainedMine + thread.key else readState.value.retainedMine,
         )
         visited.value += thread.key
-        tab.value = if (thread.isMine) ThreadsInboxTab.Mine else ThreadsInboxTab.Other
     }
 
     fun mark(keys: Set<InboxThreadKey>) {

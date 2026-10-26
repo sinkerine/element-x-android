@@ -31,6 +31,9 @@ __pycache__/
 # Local configuration file (sdk path, etc)
 local.properties
 
+# direnv cache and Nix profiles
+/.direnv/
+
 # Log Files
 *.log
 

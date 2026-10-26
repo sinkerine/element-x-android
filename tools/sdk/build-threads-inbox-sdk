@@ -30,11 +30,12 @@ if [[ "$target" == x86_64-linux-android && -z "${CC_x86_64_linux_android:-}" ]];
     fi
     export CC_x86_64_linux_android="$ndk_clang"
 fi
-if [[ "$target" == x86_64-linux-android ]]; then
-    export "CC_x86_64-linux-android=$CC_x86_64_linux_android"
-fi
 cd "$sdk_checkout"
-cargo ndk -t "$target" -o "$staging/jniLibs" build -p matrix-sdk-ffi --features sentry
+if [[ "$target" == x86_64-linux-android ]]; then
+    env "CC_x86_64-linux-android=$CC_x86_64_linux_android" cargo ndk -t "$target" -o "$staging/jniLibs" build -p matrix-sdk-ffi --features sentry
+else
+    cargo ndk -t "$target" -o "$staging/jniLibs" build -p matrix-sdk-ffi --features sentry
+fi
 cargo run -p uniffi-bindgen -- generate --library "target/$target/debug/libmatrix_sdk_ffi.so" \
     --language kotlin --out-dir "$components/sdk/sdk-android/src/main/kotlin"
 mkdir -p "$components/sdk/sdk-android/src/main/jniLibs"

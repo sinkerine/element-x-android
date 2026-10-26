@@ -155,6 +155,7 @@ fun MessagesView(
     modifier: Modifier = Modifier,
     forceJumpToBottomVisibility: Boolean = false,
     triageBar: @Composable () -> Unit = {},
+    threadHeader: @Composable () -> Unit = {},
     threadReplyCount: Long? = null,
     onOpenThreadInRoom: (() -> Unit)? = null,
     customReactionBottomSheet: @Composable () -> Unit,
@@ -238,15 +239,18 @@ fun MessagesView(
                 contentWindowInsets = scaffoldScrollableContentInsets,
                 topBar = {
                     if (state.timelineState.timelineMode is Timeline.Mode.Thread) {
-                        ThreadTopBar(
-                            roomName = state.roomName,
-                            roomAvatarData = state.roomAvatar,
-                            heroes = state.heroes,
-                            isTombstoned = state.isTombstoned,
-                            onBackClick = onBackClick,
-                            replyCount = threadReplyCount,
-                            onOpenInRoom = onOpenThreadInRoom,
-                        )
+                        Column {
+                            ThreadTopBar(
+                                roomName = state.roomName,
+                                roomAvatarData = state.roomAvatar,
+                                heroes = state.heroes,
+                                isTombstoned = state.isTombstoned,
+                                onBackClick = onBackClick,
+                                replyCount = threadReplyCount,
+                                onOpenInRoom = onOpenThreadInRoom,
+                            )
+                            threadHeader()
+                        }
                     } else {
                         MessagesViewTopBar(
                             roomName = state.roomName,

@@ -57,7 +57,6 @@ class HomePresenter(
             io.element.android.libraries.featureflag.api.FeatureFlags.CrossRoomThreads
         ).collectAsState(false)
         val threadsEnabled by featureFlags.isFeatureEnabledFlow(io.element.android.libraries.featureflag.api.FeatureFlags.Threads).collectAsState(false)
-        val threadsBadge by threadsBadgeProvider.badge.collectAsState()
         val coroutineState = rememberCoroutineScope()
         val matrixUser by client.userProfile.collectAsState()
         val currentUserAndNeighbors by remember {
@@ -112,8 +111,8 @@ class HomePresenter(
             snackbarMessage = snackbarMessage,
             canReportBug = canReportBug,
             showThreads = crossRoomThreads && threadsEnabled,
-            threadsUnreadCount = threadsBadge.count,
-            threadsHaveMention = threadsBadge.hasMention,
+            threadsUnreadCount = 0,
+            threadsHaveMention = false,
             directLogoutState = directLogoutState,
             eventSink = ::handleEvent,
         )

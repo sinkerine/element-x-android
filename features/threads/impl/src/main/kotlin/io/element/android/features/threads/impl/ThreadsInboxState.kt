@@ -12,26 +12,18 @@ import io.element.android.libraries.matrix.api.room.threads.InboxThread
 import io.element.android.libraries.matrix.api.room.threads.InboxThreadKey
 import kotlinx.collections.immutable.ImmutableList
 
-enum class ThreadsInboxTab { Mine, Other }
-enum class ThreadsInboxFilter { Unread, All }
-
 data class ThreadsInboxState(
     val rows: AsyncData<ImmutableList<InboxThread>>,
-    val tab: ThreadsInboxTab,
-    val filter: ThreadsInboxFilter,
     val visited: Set<InboxThreadKey>,
     val pending: Set<InboxThreadKey>,
-    val mineUnreadCount: Int,
-    val otherUnreadCount: Int,
-    val latestUnread: InboxThread?,
+    val unreadCount: Int,
     val failed: Boolean,
     val summaries: Map<InboxThreadKey, Pair<String, String>> = emptyMap(),
+    val hasMore: Boolean = false,
     val eventSink: (ThreadsInboxEvent) -> Unit,
 )
 
 sealed interface ThreadsInboxEvent {
-    data class SelectTab(val tab: ThreadsInboxTab) : ThreadsInboxEvent
-    data class SelectFilter(val filter: ThreadsInboxFilter) : ThreadsInboxEvent
     data class MarkAsRead(val key: InboxThreadKey) : ThreadsInboxEvent
     data class MarkAsUnread(val key: InboxThreadKey) : ThreadsInboxEvent
     data class Touch(val key: InboxThreadKey, val pressed: Boolean) : ThreadsInboxEvent
@@ -42,10 +34,6 @@ sealed interface ThreadsInboxEvent {
     data object LoadMore : ThreadsInboxEvent
 }
 
-internal fun visibleThreads(
-    threads: List<InboxThread>, tab: ThreadsInboxTab, filter: ThreadsInboxFilter, visited: Set<InboxThreadKey>,
-): List<InboxThread> = threads.filter {
-    it.isMine == (tab == ThreadsInboxTab.Mine) &&
-        (filter == ThreadsInboxFilter.All || it.isUnread || it.key in visited) &&
-        (filter == ThreadsInboxFilter.All || it.isMine || it.roomNotificationMode != io.element.android.libraries.matrix.api.room.RoomNotificationMode.MUTE)
-}.sortedByDescending { it.timestamp }
+/** Unread first, then most recent. [sticky] rows (read during this visit) keep their unread position. */
+internal fun orderThreads(threads: List<InboxThread>, sticky: Set<InboxThreadKey>): List<InboxThread> =
+    threads.sortedWith(compareByDescending<InboxThread> { it.isUnread || it.key in sticky }.thenByDescending { it.timestamp })

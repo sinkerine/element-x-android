@@ -225,11 +225,12 @@ class ThreadsInboxSessionTest {
         val two = one.copy(key = one.key.copy(threadId = ThreadId("\$second")), rootEvent = one.rootEvent.copy(timestamp = 10))
         val (session, _) = session(one, two)
         runCurrent()
+        assertThat(session.ordered(listOf(one, two), emptySet()).map { it.key }).containsExactly(two.key, one.key).inOrder()
         session.touch(one.key, true)
         val updated = one.copy(rootEvent = one.rootEvent.copy(timestamp = 20))
-        assertThat(session.ordered(listOf(updated, two)).map { it.key }).containsExactly(two.key, one.key).inOrder()
+        assertThat(session.ordered(listOf(updated, two), emptySet()).map { it.key }).containsExactly(two.key, one.key).inOrder()
         session.touch(one.key, false)
-        assertThat(session.ordered(listOf(updated, two)).map { it.key }).containsExactly(one.key, two.key).inOrder()
+        assertThat(session.ordered(listOf(updated, two), emptySet()).map { it.key }).containsExactly(one.key, two.key).inOrder()
     }
 
     @Test
@@ -342,20 +343,18 @@ class ThreadsInboxSessionTest {
         runCurrent()
         val row = session.threads.value.dataOrNull()!!.single()
         assertThat(row.isMine).isTrue()
-        assertThat(visibleThreads(listOf(row), ThreadsInboxTab.Mine, ThreadsInboxFilter.Unread, session.visited.value)).hasSize(1)
         session.endVisit()
         runCurrent()
         assertThat(session.threads.value.dataOrNull()!!.single().isMine).isFalse()
     }
 
     @Test
-    fun `opening selects target tab and visit remains active across another start`() = runTest {
+    fun `visit remains active across another start`() = runTest {
         val other = previewThread().copy(isParticipating = false)
         val (session, _) = session(other)
         session.startVisit()
         session.opened(other)
         session.startVisit()
-        assertThat(session.tab.value).isEqualTo(ThreadsInboxTab.Other)
         assertThat(session.visited.value).containsExactly(other.key)
     }
 }

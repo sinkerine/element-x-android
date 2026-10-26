@@ -12,19 +12,12 @@
     <string name="a11y_inactive">Inactive</string>
     <string name="common_switch_account">Switch accounts</string>
     <string name="screen_home_tab_threads">Threads</string>
-    <string name="screen_threads_inbox_tab_mine">My threads</string>
-    <string name="screen_threads_inbox_tab_other">Other threads</string>
-    <string name="screen_threads_inbox_filter_unread">Unread</string>
-    <string name="screen_threads_inbox_filter_all">All</string>
-    <string name="screen_threads_inbox_open_latest_unread">Open latest unread</string>
     <string name="screen_threads_inbox_mark_all_read">Mark all as read</string>
     <string name="screen_threads_inbox_mark_read">Mark as read</string>
     <string name="screen_threads_inbox_open_in_room">Open in room</string>
     <string name="screen_threads_inbox_copy_link">Copy link to thread</string>
     <string name="screen_threads_inbox_caught_up_title">You’re all caught up</string>
     <string name="screen_threads_inbox_empty">No threads yet</string>
-    <string name="screen_threads_inbox_no_replies">No new replies in your threads</string>
-    <string name="screen_threads_inbox_show_all">Show all threads</string>
     <string name="screen_threads_inbox_mark_failed">Couldn’t mark threads as read</string>
     <string name="screen_threads_inbox_load_failed">Couldn’t load threads</string>
     <string name="screen_threads_inbox_up_next">Up next</string>
@@ -57,5 +50,7 @@
         <item quantity="other">Thread · %1$d replies</item>
     </plurals>
     <string name="screen_threads_inbox_start_thread_hint">Reply in a thread to keep the conversation together.</string>
-    <string name="screen_threads_inbox_loading_more">Loading threads… Unread counts will update when loading finishes.</string>
+    <string name="screen_threads_inbox_loading_more">Loading threads…</string>
+    <string name="screen_threads_inbox_mark_loaded_read">Mark loaded threads as read</string>
+    <string name="screen_threads_inbox_no_loaded_matches">No matching threads loaded yet. Load more to check older threads.</string>
 </resources>

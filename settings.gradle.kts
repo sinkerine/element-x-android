@@ -24,7 +24,7 @@ dependencyResolutionManagement {
     repositories {
         maven {
             name = "matrixRustSdkFork"
-            url = uri("https://maven.pkg.github.com/15cm/matrix-rust-sdk")
+            url = uri("https://maven.pkg.github.com/sinkerine/matrix-rust-sdk")
             credentials {
                 username = githubPackagesUsername.orNull.orEmpty()
                 password = githubPackagesToken.orNull.orEmpty()

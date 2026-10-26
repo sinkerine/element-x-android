@@ -7,6 +7,7 @@
 
 package io.element.android.features.threads.impl
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
@@ -112,7 +113,8 @@ internal fun ThreadsInboxRow(
                 }
             }
         },
-        modifier = modifier.alpha(if (unread) 1f else 0.55f)
+        // Opaque canvas below the dimmed content, so the swipe action never shows through read rows.
+        modifier = modifier.background(ElementTheme.colors.bgCanvasDefault).alpha(if (unread) 1f else 0.55f)
             .semantics(mergeDescendants = true) {
                 contentDescription = description
                 customActions = listOf(CustomAccessibilityAction(label) {

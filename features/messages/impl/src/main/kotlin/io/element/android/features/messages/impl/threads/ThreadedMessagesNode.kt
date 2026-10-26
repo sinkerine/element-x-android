@@ -460,6 +460,8 @@ class ThreadedMessagesNode(
                                 )
                             }
                         }
+                    },
+                    threadHeader = {
                         if (inputs.triage) {
                             val next by triageQueue.upNext.collectAsState()
                             val unreadCount by triageQueue.unreadCount.collectAsState()

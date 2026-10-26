@@ -11,30 +11,40 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import io.element.android.libraries.di.SessionScope
 import io.element.android.libraries.matrix.api.MatrixClient
+import io.element.android.libraries.matrix.api.core.EventId
+import io.element.android.libraries.matrix.api.core.RoomId
+import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.impl.RustMatrixClient
 import io.element.android.libraries.matrix.impl.util.mxCallbackFlow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
+import org.matrix.rustcomponents.sdk.ReceiptThread
+import org.matrix.rustcomponents.sdk.ReceiptType
 import org.matrix.rustcomponents.sdk.ThreadInboxListener
-import org.matrix.rustcomponents.sdk.ThreadInboxRoom
+import org.matrix.rustcomponents.sdk.ThreadInboxPage
+import org.matrix.rustcomponents.sdk.ThreadInboxUnread
 
 interface ThreadInboxSource {
     val updates: Flow<List<String>?>
-    suspend fun load(roomIds: List<String>?): List<ThreadInboxRoom>
-    suspend fun loadBadges(roomIds: List<String>?, private: Boolean): List<org.matrix.rustcomponents.sdk.ThreadInboxBadge>
-    fun pages(roomIds: List<String>?): Flow<ThreadInboxRoom> = kotlinx.coroutines.flow.flow {
-        load(roomIds).forEach { emit(it) }
-    }
-    fun badgePages(roomIds: List<String>?, private: Boolean): Flow<org.matrix.rustcomponents.sdk.ThreadInboxBadge> = kotlinx.coroutines.flow.flow {
-        loadBadges(roomIds, private).forEach { emit(it) }
-    }
+    fun reset()
+    suspend fun nextPage(): ThreadInboxPage
+
+    /** Locally stored public and private threaded receipts of the current user. No network. */
+    suspend fun receipts(roomId: RoomId, threadId: ThreadId): Set<EventId>
+
+    /** Bounded backwards scan of replies newer than the newest receipt or own reply. */
+    suspend fun unread(roomId: RoomId, threadId: ThreadId, receipts: Set<EventId>): ThreadInboxUnread
 }
+
+/** Replies scanned per unread thread before counts become lower bounds; three `/relations` pages. */
+internal const val MAX_UNREAD_SCAN = 300
 
 @ContributesBinding(SessionScope::class)
 @Inject
 class RustThreadInboxSource(private val client: MatrixClient) : ThreadInboxSource {
     private val inner get() = (client as RustMatrixClient).innerClient
+    private var pager: org.matrix.rustcomponents.sdk.ThreadInboxPager? = null
     override val updates: Flow<List<String>?> = mxCallbackFlow {
         inner.subscribeToThreadInboxUpdates(object : ThreadInboxListener {
             override fun onUpdate(roomIds: List<String>?) {
@@ -43,25 +53,26 @@ class RustThreadInboxSource(private val client: MatrixClient) : ThreadInboxSourc
         })
     }.buffer(Channel.UNLIMITED)
 
-    override fun pages(roomIds: List<String>?): Flow<ThreadInboxRoom> = kotlinx.coroutines.flow.channelFlow {
-        inner.loadThreadInboxPages(roomIds, object : org.matrix.rustcomponents.sdk.ThreadInboxPageListener {
-            override fun onPage(room: ThreadInboxRoom) {
-                trySend(room)
-            }
-        })
-    }.buffer(Channel.UNLIMITED)
+    override fun reset() {
+        pager?.close()
+        pager = null
+    }
 
-    override fun badgePages(
-        roomIds: List<String>?,
-        private: Boolean,
-    ): Flow<org.matrix.rustcomponents.sdk.ThreadInboxBadge> = kotlinx.coroutines.flow.channelFlow {
-        inner.loadThreadInboxBadgePages(roomIds, private, object : org.matrix.rustcomponents.sdk.ThreadInboxBadgeListener {
-            override fun onBadge(badge: org.matrix.rustcomponents.sdk.ThreadInboxBadge) {
-                trySend(badge)
-            }
-        })
-    }.buffer(Channel.UNLIMITED)
+    override suspend fun nextPage(): ThreadInboxPage {
+        val current = pager ?: inner.threadInboxPager(participatedOnly = true).also { pager = it }
+        return current.nextPage()
+    }
 
-    override suspend fun load(roomIds: List<String>?): List<ThreadInboxRoom> = inner.loadThreadInbox(roomIds)
-    override suspend fun loadBadges(roomIds: List<String>?, private: Boolean) = inner.loadThreadInboxBadges(roomIds, private)
+    override suspend fun receipts(roomId: RoomId, threadId: ThreadId): Set<EventId> {
+        val room = inner.getRoom(roomId.value) ?: error("Joined room unavailable during inbox discovery")
+        return room.use {
+            // Outgoing privacy must never select the incoming read boundary.
+            listOf(ReceiptType.READ, ReceiptType.READ_PRIVATE).mapNotNullTo(mutableSetOf()) { type ->
+                room.loadUserReceipt(type, ReceiptThread.Thread(threadId.value), client.sessionId.value)?.eventId?.let(::EventId)
+            }
+        }
+    }
+
+    override suspend fun unread(roomId: RoomId, threadId: ThreadId, receipts: Set<EventId>): ThreadInboxUnread =
+        inner.threadInboxUnread(roomId.value, threadId.value, receipts.map { it.value }, MAX_UNREAD_SCAN.toUInt())
 }

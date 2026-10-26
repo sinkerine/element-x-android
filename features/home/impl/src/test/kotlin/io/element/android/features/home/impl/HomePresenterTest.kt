@@ -131,7 +131,7 @@ class HomePresenterTest {
     }
 
     @Test
-    fun `threads entry requires both flags and exposes count and mention colour`() = runTest {
+    fun `threads entry requires both flags without badge count`() = runTest {
         val flags = io.element.android.libraries.featureflag.test.FakeFeatureFlagService()
         val badge = io.element.android.features.threads.test.FakeThreadsInboxBadgeProvider()
         createHomePresenter(featureFlags = flags, threadsBadge = badge).test {
@@ -140,8 +140,8 @@ class HomePresenterTest {
             flags.setFeatureEnabled(io.element.android.libraries.featureflag.api.FeatureFlags.Threads, true)
             while (!state.showThreads) state = awaitItem()
             badge.badge.value = io.element.android.features.threads.api.ThreadsBadge(123, true)
-            while (state.threadsUnreadCount != 123) state = awaitItem()
-            assertThat(state.threadsHaveMention).isTrue()
+            assertThat(state.threadsUnreadCount).isEqualTo(0)
+            assertThat(state.threadsHaveMention).isFalse()
             flags.setFeatureEnabled(io.element.android.libraries.featureflag.api.FeatureFlags.Threads, false)
             while (state.showThreads) state = awaitItem()
             assertThat(state.showThreads).isFalse()

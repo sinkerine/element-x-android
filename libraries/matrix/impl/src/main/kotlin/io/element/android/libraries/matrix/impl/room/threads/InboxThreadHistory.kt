@@ -21,7 +21,20 @@ internal data class InboxThreadHistory(
     val participating: Boolean,
     val firstUnread: EventId?,
     val effectiveReceipt: EventId? = null,
+    /** False when the scan was capped: counts are lower bounds and [firstUnread] is not the boundary. */
+    val complete: Boolean = true,
 )
+
+/**
+ * Classification that needs no reply history: the latest reply is covered by a receipt or is the user's own,
+ * or there are no replies. Returns null when replies newer than the read boundary must be scanned.
+ */
+internal fun localThreadHistory(latest: EventId, latestIsOwn: Boolean, hasReplies: Boolean, receipts: Set<EventId>): InboxThreadHistory? = when {
+    !hasReplies -> InboxThreadHistory(0, 0, latestIsOwn, null, receipts.firstOrNull())
+    latest in receipts -> InboxThreadHistory(0, 0, false, null, latest)
+    latestIsOwn -> InboxThreadHistory(0, 0, true, null, latest)
+    else -> null
+}
 
 /** History order, rather than receipt timestamps or lexicographic event IDs, determines unread. */
 internal fun aggregateThreadHistory(
