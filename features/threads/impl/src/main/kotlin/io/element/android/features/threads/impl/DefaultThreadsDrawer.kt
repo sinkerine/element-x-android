@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
@@ -43,7 +44,8 @@ class DefaultThreadsDrawer(
         .stateIn(client.sessionCoroutineScope, SharingStarted.Eagerly, false)
     private val openState = MutableStateFlow(false)
     override val isOpen = openState.asStateFlow()
-    private var visitActive = false
+    private val visitIdState = MutableStateFlow<UUID?>(null)
+    override val visitId = visitIdState.asStateFlow()
     private var threadOnStack = false
     private var available = true
 
@@ -55,9 +57,9 @@ class DefaultThreadsDrawer(
 
     override fun open() {
         if (!available || !isEnabled.value || isOpen.value) return
-        if (!visitActive) {
+        if (visitId.value == null) {
             queue.startVisit()
-            visitActive = true
+            visitIdState.value = UUID.randomUUID()
         }
         openState.value = true
     }
@@ -69,7 +71,7 @@ class DefaultThreadsDrawer(
     }
 
     override fun onThreadOpened() {
-        if (!visitActive) return
+        if (visitId.value == null) return
         openState.value = false
         threadOnStack = true
     }
@@ -92,8 +94,8 @@ class DefaultThreadsDrawer(
     }
 
     private fun endVisitIfActive() {
-        if (!visitActive) return
-        visitActive = false
+        if (visitId.value == null) return
+        visitIdState.value = null
         queue.endVisit()
     }
 

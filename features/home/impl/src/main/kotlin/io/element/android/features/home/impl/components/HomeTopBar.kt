@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -116,6 +117,9 @@ fun HomeTopBar(
     displayFilters: Boolean,
     filtersState: RoomListFiltersState,
     spaceFiltersState: SpaceFiltersState,
+    showThreadsButton: Boolean,
+    isThreadsDrawerOpen: Boolean,
+    onThreadsClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val contentPadding = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal).asPaddingValues()
@@ -139,7 +143,6 @@ fun HomeTopBar(
                             else -> stringResource(selectedNavigationItem.labelRes)
                         }
                     }
-                    HomeNavigationBarItem.Threads -> stringResource(selectedNavigationItem.labelRes)
                     HomeNavigationBarItem.Spaces -> null
                 }
                 displayTitle?.let {
@@ -157,12 +160,17 @@ fun HomeTopBar(
                 }
             },
             navigationIcon = {
-                NavigationIcon(
-                    currentUserAndNeighbors = currentUserAndNeighbors,
-                    showAvatarIndicator = showAvatarIndicator,
-                    onAccountSwitch = onAccountSwitch,
-                    onClick = onOpenSettings,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NavigationIcon(
+                        currentUserAndNeighbors = currentUserAndNeighbors,
+                        showAvatarIndicator = showAvatarIndicator,
+                        onAccountSwitch = onAccountSwitch,
+                        onClick = onOpenSettings,
+                    )
+                    if (showThreadsButton) {
+                        ThreadsDrawerButton(isThreadsDrawerOpen, onThreadsClick)
+                    }
+                }
             },
             actions = {
                 if (selectedNavigationItem == HomeNavigationBarItem.Chats) {
@@ -190,6 +198,17 @@ fun HomeTopBar(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ThreadsDrawerButton(isOpen: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.testTag(TestTags.homeThreadsButton)) {
+        Icon(
+            imageVector = if (isOpen) CompoundIcons.ThreadsSolid() else CompoundIcons.Threads(),
+            tint = if (isOpen) ElementTheme.colors.iconAccentPrimary else ElementTheme.colors.iconSecondary,
+            contentDescription = stringResource(CommonStrings.screen_home_tab_threads),
+        )
     }
 }
 
@@ -458,6 +477,9 @@ internal fun HomeTopBarPreview() = ElementPreview {
         selectedNavigationItem = HomeNavigationBarItem.Chats,
         currentUserAndNeighbors = persistentListOf(aMatrixUser(id = "@id:domain", displayName = USER_NAME_ALICE)),
         showAvatarIndicator = false,
+        showThreadsButton = true,
+        isThreadsDrawerOpen = false,
+        onThreadsClick = {},
         areSearchResultsDisplayed = false,
         scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState()),
         onOpenSettings = {},
@@ -479,6 +501,9 @@ internal fun HomeTopBarSpaceFiltersSelectedPreview() = ElementPreview {
         selectedNavigationItem = HomeNavigationBarItem.Chats,
         currentUserAndNeighbors = persistentListOf(aMatrixUser(id = "@id:domain", displayName = USER_NAME_ALICE)),
         showAvatarIndicator = false,
+        showThreadsButton = true,
+        isThreadsDrawerOpen = false,
+        onThreadsClick = {},
         areSearchResultsDisplayed = false,
         scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState()),
         onOpenSettings = {},
@@ -500,6 +525,9 @@ internal fun HomeTopBarSpacesPreview() = ElementPreview {
         selectedNavigationItem = HomeNavigationBarItem.Spaces,
         currentUserAndNeighbors = persistentListOf(aMatrixUser(id = "@id:domain", displayName = USER_NAME_ALICE)),
         showAvatarIndicator = false,
+        showThreadsButton = true,
+        isThreadsDrawerOpen = false,
+        onThreadsClick = {},
         areSearchResultsDisplayed = false,
         scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState()),
         onOpenSettings = {},
@@ -521,6 +549,9 @@ internal fun HomeTopBarWithIndicatorPreview() = ElementPreview {
         selectedNavigationItem = HomeNavigationBarItem.Chats,
         currentUserAndNeighbors = persistentListOf(aMatrixUser(id = "@id:domain", displayName = USER_NAME_ALICE)),
         showAvatarIndicator = true,
+        showThreadsButton = true,
+        isThreadsDrawerOpen = false,
+        onThreadsClick = {},
         areSearchResultsDisplayed = false,
         scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState()),
         onOpenSettings = {},
@@ -548,6 +579,9 @@ internal fun HomeTopBarWithStatusPreview() = ElementPreview {
             )
         ),
         showAvatarIndicator = false,
+        showThreadsButton = true,
+        isThreadsDrawerOpen = false,
+        onThreadsClick = {},
         areSearchResultsDisplayed = false,
         scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState()),
         onOpenSettings = {},
@@ -569,6 +603,9 @@ internal fun HomeTopBarMultiAccountPreview() = ElementPreview {
         selectedNavigationItem = HomeNavigationBarItem.Chats,
         currentUserAndNeighbors = aMatrixUserList().take(3).toImmutableList(),
         showAvatarIndicator = false,
+        showThreadsButton = true,
+        isThreadsDrawerOpen = false,
+        onThreadsClick = {},
         areSearchResultsDisplayed = false,
         scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState()),
         onOpenSettings = {},

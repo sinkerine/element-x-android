@@ -53,7 +53,7 @@ Rejected alternatives: B (navigation-menu drawer; reworks Settings and account s
 7. Swiping doesn't open the drawer on the media viewer, the attachments preview, or the show-location and share-location maps.
 8. Back, a scrim tap, × or a drag closes the drawer and leaves the underlying page, its scroll position and selection unchanged. Back closes the drawer even if the underlying page has its own enabled `BackHandler`, such as Home with a space filter selected.
 9. Tapping a row closes the drawer and opens the thread (focused first unread, Up next) on top of the current page. Up next keeps working across threads. Back from the thread (or the last Up next thread) returns to the origin page with the drawer closed.
-10. "Open in room" from the long-press menu closes the drawer and opens the thread in its room (`triage = false`) on top of the current page.
+10. "Open in room" from the long-press menu closes the drawer and opens the thread in its room (`triage = false`) on top of the current page. Preserve the existing non-triage room stack: Back first reaches that room timeline, then the drawer origin; the visit ends on reaching the origin.
 11. Visit lifecycle:
     - a. `ThreadsTriageQueue.startVisit()` is called once when the drawer opens with no active visit.
     - b. `endVisit()` is called exactly once, when the drawer is closed **and** no drawer-opened thread remains above the origin page.
@@ -106,6 +106,9 @@ interface ThreadsDrawer {
     val isEnabled: StateFlow<Boolean>
     val isOpen: StateFlow<Boolean>
 
+    /** Identity of the active session visit; null after it ends or resets. Not restored after process death. */
+    val visitId: StateFlow<UUID?>
+
     /** Shows the drawer; starts a triage visit if none is active. No-op when disabled or already open. */
     fun open()
 
@@ -142,20 +145,21 @@ class DefaultThreadsDrawer(
 ) : ThreadsDrawer
 ```
 
-State machine (private fields `visitActive`, `threadOnStack`; `isOpen` is a `MutableStateFlow`):
+State machine (private fields `visitIdState: MutableStateFlow<UUID?>`, `threadOnStack`; `isOpen` is a `MutableStateFlow`):
 
 | Call | Effect |
 | --- | --- |
-| `open()` | If `!isEnabled.value` or open, no-op. If `!visitActive`: `queue.startVisit(); visitActive = true`. Then `isOpen = true`. |
+| `open()` | If unavailable, `!isEnabled.value` or open, no-op. If `visitId.value == null`: `queue.startVisit(); visitIdState.value = UUID.randomUUID()`. Then `isOpen = true`. |
 | `close()` | If not open, no-op. `isOpen = false`. If `!threadOnStack`: `endVisitIfActive()`. |
-| `onThreadOpened()` | `isOpen = false; threadOnStack = true`. The visit is unchanged. |
+| `onThreadOpened()` | If `visitId.value == null`, no-op. Otherwise `isOpen = false; threadOnStack = true`. The visit is unchanged. |
 | `onReturnedToOrigin()` | If `!threadOnStack`, no-op. `threadOnStack = false`. If not open: `endVisitIfActive()`. |
 | `isEnabled` becomes false (collected in `client.sessionCoroutineScope`) | `isOpen = false; threadOnStack = false; endVisitIfActive()`. |
-| `endVisitIfActive()` | If `visitActive`: `queue.endVisit(); visitActive = false`. |
+| `setAvailable(isAvailable: Boolean)` (internal) | Updates availability; when unavailable, resets open/thread state and ends the active visit once. |
+| `endVisitIfActive()` | If `visitId.value != null`: `visitIdState.value = null; queue.endVisit()` (exactly once). |
 
 `isEnabled = combine(flag(CrossRoomThreads), flag(Threads)) { a, b -> a && b }.stateIn(client.sessionCoroutineScope, SharingStarted.Eagerly, false)`.
 
-`Layout` collects `isEnabled` and `isOpen`, then calls `ThreadsDrawerLayout(isEnabled = isAvailable && enabled, isOpen = open, onOpen = ::open, onClose = ::close, inbox, modifier, content)`.
+`Layout` collects `isEnabled` and `isOpen`, applies `SideEffect { setAvailable(isAvailable) }`, then calls `ThreadsDrawerLayout(isEnabled = isAvailable && enabled, isOpen = isAvailable && enabled && open, onOpen = ::open, onClose = ::close, inbox, modifier, content)`.
 
 `features/threads/impl/.../ThreadsDrawerLayout.kt`
 
@@ -190,9 +194,10 @@ Behavior:
 class FakeThreadsDrawer(
     override val isEnabled: MutableStateFlow<Boolean> = MutableStateFlow(true),
     override val isOpen: MutableStateFlow<Boolean> = MutableStateFlow(false),
+    override val visitId: MutableStateFlow<UUID?> = MutableStateFlow(null),
 ) : ThreadsDrawer {
     val calls: MutableList<String> // "open", "close", "onThreadOpened", "onReturnedToOrigin"
-    // Layout renders content() only
+    // Mirrors visit identity across open/close/thread/return calls; Layout renders content() only
 }
 
 // FakeThreadsTriageQueue: add `var startVisitCount = 0` and `var endVisitCount = 0` (endVisit keeps clearing visited).
@@ -205,11 +210,10 @@ class FakeThreadsDrawer(
 - `resolve(NavTarget.ThreadsInbox)` returns `threadsInboxEntryPoint.createNode(this, buildContext, callback)`, where:
   - `openThread(key, focusedEventId, focusCaptureFailed)` → `openFromDrawer(NavTarget.Room(key.roomId.toRoomIdOrAlias(), initialElement = RoomNavigationTarget.Thread(key.threadId, focusedEventId, focusCaptureFailed = focusCaptureFailed)))`
   - `openRoom(key)` → `openFromDrawer(NavTarget.Room(key.roomId.toRoomIdOrAlias(), initialElement = RoomNavigationTarget.Thread(key.threadId, null, triage = false)))`
-- `private var drawerOrigin: NavKey<NavTarget>?`. It is restored from `buildContext.savedStateMap["threads_drawer_origin"]` and saved in `onSaveInstanceState`.
-- `private fun openFromDrawer(target: NavTarget)` does `if (drawerOrigin == null) drawerOrigin = backstack.active?.key; threadsDrawer.onThreadOpened(); backstack.push(target)`.
-- `onBuilt()`:
-  - Collect `backstack.elements`. When `drawerOrigin?.let { elements.hasReturnedTo(it) } == true`, set `drawerOrigin = null` and call `threadsDrawer.onReturnedToOrigin()`.
-  - If no origin was restored, call `threadsDrawer.onReturnedToOrigin()` once, so a session can't be stuck with a visit and no origin.
+- `private val drawerOrigin = ThreadsDrawerOrigin(threadsDrawer, backstack, buildContext.savedStateMap)` owns navigation coordination.
+- `onSaveInstanceState(state)` delegates to `drawerOrigin.saveInstanceState(state)`.
+- `private fun openFromDrawer(target: NavTarget)` delegates to `drawerOrigin.openThread(target)`.
+- `onBuilt()` calls `drawerOrigin.observe(lifecycleScope)`.
 - `View`: inside the existing `Box(contentModifier)`:
 
   ```kotlin
@@ -229,7 +233,21 @@ class FakeThreadsDrawer(
 /** True when [origin] is the active element again, or no longer in the back stack. */
 internal fun <T : Any> List<BackStackElement<T>>.hasReturnedTo(origin: NavKey<T>): Boolean
 // = none { it.key == origin } || lastOrNull { it.targetState == BackStack.State.ACTIVE }?.key == origin
+
+internal class ThreadsDrawerOrigin<T : Any>(
+    private val drawer: ThreadsDrawer,
+    private val backstack: BackStack<T>,
+    savedState: SavedStateMap?,
+) {
+    fun saveInstanceState(state: MutableSavedStateMap)
+    fun openThread(target: T)
+    fun observe(scope: CoroutineScope)
+}
 ```
+
+**Ruling — minimal visit identity extension (accepted Important T2 repair):** `ThreadsDrawer.visitId: StateFlow<UUID?>` is the sole API addition. It replaces the controller's private active Boolean with a fresh, non-restored UUID per visit, retained across configuration changes and drawer reopen/Up next. A Boolean reset notification cannot distinguish an old visit from a new one when `StateFlow` conflates reset/reopen emissions. Appnav saves the origin key together with its visit ID (`threads_drawer_origin`, `threads_drawer_origin_visit`) and invalidates ownership whenever the saved/captured ID differs from the controller's current ID, including a fresh controller after process death. It validates before navigation, saving and observer handling; observers read current backstack/controller values instead of queued snapshots. `openThread` captures the active key, calls `onThreadOpened`, pushes the thread, then publishes new ownership so an immediate observer cannot mistake the still-active origin for a return. No suspension occurs in this sequence. The fake mirrors active visit identity; controller tests cover reset/new identities, and integration tests exercise the production coordinator with `DefaultThreadsDrawer` and `BackStack`.
+
+**Ruling — preserved Open in room Back behavior:** D6 and criterion 9 describe triage thread navigation. For criterion 10, `MessagesFlowNode` already installs the room timeline beneath a non-triage thread. Preserve this behavior: Back reaches that room first, then the origin. Do not alter the messages stack to force a single Back to the origin.
 
 `features/home/api/.../HomeEntryPoint.kt`: remove `navigateToThread(...)` and `openThreadInRoom(...)` from `Callback`.
 
@@ -267,7 +285,7 @@ ThreadsDrawer.isOpen ─▶ LoggedInFlowNode.View → ThreadsDrawerLayout ─▶
                                                                      └ ThreadsInboxPresenter: startVisit(no-op)/returnedToList … commit on dispose
 Back / scrim / × / drag ─▶ ThreadsDrawer.close() ─(no thread on stack)─ endVisit ─▶ queue
 Row tap ─▶ ThreadsInboxNode ─queue.open─▶ callback.openThread ─▶ LoggedInFlowNode.openFromDrawer:
-           origin = active key; ThreadsDrawer.onThreadOpened() (drawer hides, visit kept); push Room(Thread)
+           capture origin + visit ID; ThreadsDrawer.onThreadOpened() (drawer hides, visit kept); push Room(Thread); publish ownership
 Up next ─▶ replaceTriageThread (origin stays below)
 Back to origin (or origin removed) ─▶ backstack.elements.hasReturnedTo(origin) ─▶ ThreadsDrawer.onReturnedToOrigin() ─endVisit─▶ queue
 ```
@@ -279,8 +297,8 @@ Back to origin (or origin removed) ─▶ backstack.elements.hasReturnedTo(origi
 - Drag-open cancelled before settling: no `open()`, so no visit is started and no inbox is composed.
 - The drawer is reopened while reading a drawer-opened thread: no second `startVisit`. Closing it again keeps the visit until you return to the origin.
 - A notification or permalink clears the back stack and removes the origin: `hasReturnedTo` is true, so the visit ends.
-- Configuration change: the controller (session singleton) keeps `isOpen` and `threadOnStack`, and the node restores `drawerOrigin` from its saved state.
-- Process death: everything resets to closed; the restore-without-origin rule ends any stale visit.
+- Configuration change: the controller (session singleton) keeps `isOpen`, `visitId` and `threadOnStack`; appnav restores the origin only when its saved visit ID matches the retained controller.
+- Process death: the fresh controller starts closed with `visitId = null`; appnav discards any saved origin from the previous controller. A later visit captures its own origin.
 - Dialogs and bottom sheets are separate windows, so the drawer neither opens over them nor steals their gestures.
 - The Threads tab ordinal persisted by older versions maps to Chats.
 
@@ -336,6 +354,7 @@ Timber only; never log thread content (Matrix IDs only). No `localazy.xml` edits
   - Move the inbox permanent child from Home to `LoggedInFlowNode`, open threads from the drawer, and track the triage origin.
   - Replace Home's Threads tab with the top bar button, and update the Maestro flow.
 - Owned files:
+  - `appnav/build.gradle.kts` (test-only dependencies on threads impl/test for the accepted origin repair integration coverage)
   - `appnav/src/main/kotlin/io/element/android/appnav/LoggedInFlowNode.kt`
   - `appnav/src/main/kotlin/io/element/android/appnav/loggedin/ThreadsDrawerOrigin.kt` (new)
   - `appnav/src/test/kotlin/io/element/android/appnav/loggedin/ThreadsDrawerOriginTest.kt` (new)
@@ -357,7 +376,7 @@ Timber only; never log thread content (Matrix IDs only). No `localazy.xml` edits
 - Produces: `HomeEvent.OpenThreadsDrawer`, `HomeState.isThreadsDrawerOpen`, the new `HomeTopBar` parameters, `TestTags.homeThreadsButton`, `LoggedInFlowNode.NavTarget.ThreadsInbox`, `hasReturnedTo`, and the slimmer `HomeEntryPoint.Callback`.
 - Dependencies: T1.
 - Tests:
-  - `ThreadsDrawerOriginTest`: origin active → true; origin stashed under a pushed thread → false; Up next replace keeps the origin below → false; origin removed → true.
+  - `ThreadsDrawerOriginTest`: origin active → true; origin stashed under a pushed thread → false; Up next replace keeps the origin below → false; origin removed → true. Integration coverage uses the actual `ThreadsDrawerOrigin` coordinator, controller and backstack: flag reset/re-enable with conflated observer emissions captures Settings and ends exactly once; fresh-controller restore discards the old origin; configuration restore retains the live origin through Up next; immediate observers do not end during push.
   - `HomePresenterTest`:
     - `OpenThreadsDrawer` → `FakeThreadsDrawer.calls == ["open"]`.
     - `showThreads` and `isThreadsDrawerOpen` mirror the fake's flows.
@@ -421,7 +440,7 @@ Preconditions:
 7. Press Back. Expected: Home (Chats) with the drawer closed.
 8. Open a room. Swipe left-to-right on a message bubble. Expected: reply mode starts and the drawer stays closed. Swipe left-to-right on the top bar or composer area. Expected: the drawer opens over the room.
 9. From the drawer opened in the room, tap a thread in another room. Expected: the thread opens. Press Back. Expected: the original room with the drawer closed, and its timeline position unchanged.
-10. Long-press a drawer row and tap "Open in room". Expected: the drawer closes and the thread opens in its room. Press Back. Expected: the origin page.
+10. Long-press a drawer row and tap "Open in room". Expected: the drawer closes and the thread opens in its room. Press Back. Expected: its room timeline. Press Back again. Expected: the origin page, ending the visit.
 11. Open Settings and swipe left-to-right. Expected: the drawer opens over Settings. Press Back. Expected: the drawer closes and Settings stays.
 12. Open an image in the media viewer and swipe left-to-right. Expected: the viewer pages or does nothing; the drawer doesn't open. Do the same on a location map. Expected: the map pans; the drawer doesn't open.
 13. Open the drawer and rotate the device or toggle dark mode. Expected: the drawer is still open.

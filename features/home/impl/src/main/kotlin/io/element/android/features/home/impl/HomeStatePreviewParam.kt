@@ -29,6 +29,8 @@ open class HomeStatePreviewParam : PreviewParameterProvider<HomeState> {
         get() = sequenceOf(
             aHomeState(),
             aHomeState(hasNetworkConnection = false),
+            aHomeState(showThreads = true),
+            aHomeState(showThreads = true, isThreadsDrawerOpen = true),
             aHomeState(snackbarMessage = SnackbarMessage(CommonStrings.common_verification_complete)),
             aHomeState(
                 roomListState = aRoomListState(
@@ -63,6 +65,8 @@ internal fun aHomeState(
     roomListState: RoomListState = aRoomListState(),
     homeSpacesState: HomeSpacesState = aHomeSpacesState(),
     canReportBug: Boolean = true,
+    showThreads: Boolean = false,
+    isThreadsDrawerOpen: Boolean = false,
     directLogoutState: DirectLogoutState = aDirectLogoutState(),
     eventSink: (HomeEvent) -> Unit = {}
 ) = HomeState(
@@ -71,6 +75,8 @@ internal fun aHomeState(
     hasNetworkConnection = hasNetworkConnection,
     snackbarMessage = snackbarMessage,
     canReportBug = canReportBug,
+    showThreads = showThreads,
+    isThreadsDrawerOpen = isThreadsDrawerOpen,
     directLogoutState = directLogoutState,
     currentHomeNavigationBarItem = currentHomeNavigationBarItem,
     roomListState = roomListState,

@@ -10,11 +10,15 @@ package io.element.android.features.threads.api
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.flow.StateFlow
+import java.util.UUID
 
 interface ThreadsDrawer {
     /** True when FeatureFlags.CrossRoomThreads and FeatureFlags.Threads are both enabled. */
     val isEnabled: StateFlow<Boolean>
     val isOpen: StateFlow<Boolean>
+
+    /** Identity of the active session visit; null after it ends or resets. Not restored after process death. */
+    val visitId: StateFlow<UUID?>
 
     /** Shows the drawer; starts a triage visit if none is active. No-op when disabled or already open. */
     fun open()

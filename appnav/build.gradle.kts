@@ -59,6 +59,8 @@ dependencies {
     implementation(projects.services.analytics.api)
 
     testCommonDependencies(libs)
+    testImplementation(projects.features.threads.impl)
+    testImplementation(projects.features.threads.test)
     testImplementation(projects.features.login.test)
     testImplementation(projects.features.share.test)
     testImplementation(projects.libraries.accountselect.test)

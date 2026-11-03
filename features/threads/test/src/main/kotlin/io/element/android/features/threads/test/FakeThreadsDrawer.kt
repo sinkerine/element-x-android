@@ -11,30 +11,42 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import io.element.android.features.threads.api.ThreadsDrawer
 import kotlinx.coroutines.flow.MutableStateFlow
+import java.util.UUID
 
 class FakeThreadsDrawer(
     override val isEnabled: MutableStateFlow<Boolean> = MutableStateFlow(true),
     override val isOpen: MutableStateFlow<Boolean> = MutableStateFlow(false),
+    override val visitId: MutableStateFlow<UUID?> = MutableStateFlow(null),
 ) : ThreadsDrawer {
     val calls: MutableList<String> = mutableListOf()
+    private var threadOnStack = false
 
     override fun open() {
         calls += "open"
-        if (isEnabled.value) isOpen.value = true
+        if (isEnabled.value) {
+            if (visitId.value == null) visitId.value = UUID.randomUUID()
+            isOpen.value = true
+        }
     }
 
     override fun close() {
         calls += "close"
         isOpen.value = false
+        if (!threadOnStack) visitId.value = null
     }
 
     override fun onThreadOpened() {
         calls += "onThreadOpened"
+        if (visitId.value == null) return
         isOpen.value = false
+        threadOnStack = true
     }
 
     override fun onReturnedToOrigin() {
         calls += "onReturnedToOrigin"
+        if (!threadOnStack) return
+        threadOnStack = false
+        if (!isOpen.value) visitId.value = null
     }
 
     @Composable

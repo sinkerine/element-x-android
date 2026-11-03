@@ -31,6 +31,7 @@ data class HomeState(
     val canReportBug: Boolean,
     val directLogoutState: DirectLogoutState,
     val showThreads: Boolean = false,
+    val isThreadsDrawerOpen: Boolean = false,
     val threadsUnreadCount: Int = 0,
     val threadsHaveMention: Boolean = false,
     val eventSink: (HomeEvent) -> Unit,
