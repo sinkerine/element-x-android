@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thread My Messages</title>
+<!-- Design showcase for docs/features/thread-my-messages-plan.md. All message content is synthetic. -->
+<style>
+:root {
+  --page: #f4f6fa; --ink: #1b1d22; --ink2: #656d77; --ink3: #8d97a5;
+  --canvas: #ffffff; --line: #e1e6ec; --bubble-me: #e1e6ec; --bubble-other: #f0f2f5;
+  --accent: #0b7c5a; --accent-line: #8fd5b6; --accent-wash: rgba(13,189,139,.16);
+  --crit: #d51928; --scrim: rgba(27,29,34,.42); --sheet: #ffffff; --callout: #e8590c;
+  --snack: #1b1d22; --snack-ink: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0e1014; --ink: #ebeef2; --ink2: #9199a4; --ink3: #6f7882;
+    --canvas: #101317; --line: #26282d; --bubble-me: #26282d; --bubble-other: #1d1f24;
+    --accent: #1fc090; --accent-line: #1a7f5f; --accent-wash: rgba(31,192,144,.16);
+    --crit: #fd3e3c; --scrim: rgba(0,0,0,.55); --sheet: #1d1f24; --callout: #ff8a3d;
+    --snack: #ebeef2; --snack-ink: #101317;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0e1014; --ink: #ebeef2; --ink2: #9199a4; --ink3: #6f7882;
+  --canvas: #101317; --line: #26282d; --bubble-me: #26282d; --bubble-other: #1d1f24;
+  --accent: #1fc090; --accent-line: #1a7f5f; --accent-wash: rgba(31,192,144,.16);
+  --crit: #fd3e3c; --scrim: rgba(0,0,0,.55); --sheet: #1d1f24; --callout: #ff8a3d;
+  --snack: #ebeef2; --snack-ink: #101317;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1240px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.01em; }
+h2 { font-size: 18px; margin: 44px 0 4px; }
+.lede { color: var(--ink2); max-width: 760px; margin: 0; }
+.sub { color: var(--ink2); margin: 0 0 18px; max-width: 820px; }
+.row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+figure { margin: 0; width: 300px; max-width: 100%; }
+figcaption { margin-top: 10px; font-size: 13px; color: var(--ink2); }
+figcaption b { color: var(--ink); display: block; font-size: 14px; margin-bottom: 2px; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 99px; margin-left: 6px; vertical-align: 1px; }
+.tag.rec { background: var(--accent-wash); color: var(--accent); }
+.tag.alt { background: var(--bubble-other); color: var(--ink2); }
+
+/* Phone */
+.phone { position: relative; width: 300px; max-width: 100%; height: 600px; background: var(--canvas); border: 1px solid var(--line); border-radius: 26px; overflow: hidden; box-shadow: 0 6px 22px rgba(0,0,0,.08); display: flex; flex-direction: column; }
+.status { height: 22px; flex: none; }
+.topbar { flex: none; height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 4px; border-bottom: 1px solid var(--line); }
+.ib { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--ink); position: relative; }
+.ib svg { width: 22px; height: 22px; }
+.ib.hot { outline: 2px dashed var(--callout); outline-offset: 1px; }
+.av { width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: #fff; }
+.av.sm { width: 26px; height: 26px; font-size: 11px; }
+.c1 { background: #5a56d5; } .c2 { background: #0e7fa8; } .c3 { background: #c14b84; } .c4 { background: #b4690e; } .c5 { background: #2f8f4e; }
+.ttl { flex: 1; min-width: 0; line-height: 1.2; }
+.ttl b { display: block; font-size: 15px; font-weight: 600; }
+.ttl span { font-size: 12px; color: var(--ink2); }
+.timeline { flex: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px 10px; gap: 4px; position: relative; }
+.timeline.top { justify-content: flex-start; }
+.msg { display: flex; gap: 6px; align-items: flex-end; position: relative; }
+.msg .body { max-width: 78%; }
+.msg .who { font-size: 12px; font-weight: 600; margin: 6px 0 2px 2px; }
+.bub { background: var(--bubble-other); padding: 7px 10px; border-radius: 12px; font-size: 13px; }
+.bub small { color: var(--ink3); font-size: 10px; margin-left: 6px; white-space: nowrap; }
+.msg.me { justify-content: flex-end; }
+.msg.me .bub { background: var(--bubble-me); }
+.spacer-av { width: 26px; flex: none; }
+.day { align-self: center; font-size: 11px; color: var(--ink2); margin: 6px 0; }
+.focus { margin: 0 -10px; padding: 8px 10px 4px; border-top: 2px solid var(--accent-line); background: linear-gradient(var(--accent-wash), transparent 70%); }
+.composer { flex: none; height: 50px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px; padding: 0 10px; }
+.composer .field { flex: 1; height: 34px; border-radius: 17px; background: var(--bubble-other); color: var(--ink3); font-size: 13px; display: flex; align-items: center; padding: 0 14px; }
+.plus { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--ink2); display: grid; place-items: center; color: var(--ink2); font-size: 18px; }
+
+/* Callouts */
+.call { position: absolute; z-index: 5; background: var(--callout); color: #fff; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 8px; line-height: 1.3; max-width: 170px; }
+.call::after { content: ""; position: absolute; border: 6px solid transparent; }
+.call.up::after { top: -12px; right: 16px; border-bottom-color: var(--callout); }
+.call.left::after { left: -12px; top: 8px; border-right-color: var(--callout); }
+
+/* Sheet */
+.scrim { position: absolute; inset: 0; background: var(--scrim); z-index: 2; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; background: var(--sheet); border-radius: 20px 20px 0 0; display: flex; flex-direction: column; max-height: 76%; }
+.grab { width: 36px; height: 4px; border-radius: 2px; background: var(--ink3); opacity: .5; margin: 8px auto 4px; flex: none; }
+.sheet h3 { margin: 4px 16px 0; font-size: 16px; }
+.sheet .hint { margin: 2px 16px 8px; font-size: 12px; color: var(--ink2); }
+.list { overflow: hidden; }
+.item { display: flex; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); align-items: flex-start; }
+.item .txt { flex: 1; min-width: 0; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.item .meta { font-size: 11px; color: var(--ink2); white-space: nowrap; padding-top: 1px; }
+.item .kind { color: var(--ink2); }
+.item.pressed { background: var(--bubble-other); }
+.foot { border-top: 1px solid var(--line); padding: 12px 16px 18px; text-align: center; font-size: 13px; }
+.foot .btn { color: var(--accent); font-weight: 600; }
+.foot .muted { color: var(--ink2); font-size: 12px; }
+.foot .err { color: var(--crit); font-size: 12px; margin-bottom: 4px; }
+.spin { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--line); border-top-color: var(--accent); margin: 0 auto 6px; }
+.empty { padding: 26px 22px 30px; text-align: center; }
+.empty .ico { width: 44px; height: 44px; border-radius: 12px; background: var(--bubble-other); display: grid; place-items: center; margin: 0 auto 10px; color: var(--ink2); }
+.empty b { display: block; font-size: 14px; margin-bottom: 4px; }
+.empty p { margin: 0 0 10px; color: var(--ink2); font-size: 12px; }
+
+.menu { position: absolute; right: 8px; top: 64px; z-index: 4; background: var(--sheet); border-radius: 8px; box-shadow: 0 8px 26px rgba(0,0,0,.2); width: 184px; padding: 6px 0; font-size: 13px; }
+.menu div { padding: 9px 14px; display: flex; gap: 10px; align-items: center; }
+.menu div.hot { outline: 2px dashed var(--callout); outline-offset: -3px; border-radius: 6px; }
+.menu svg { width: 18px; height: 18px; color: var(--ink2); }
+
+.tl-row { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.tl-row .t { flex: 1; min-width: 0; font-size: 13px; }
+.tl-row .t b { display: block; font-size: 13px; }
+.tl-row .t span { color: var(--ink2); font-size: 12px; }
+.pill { margin: 10px 14px; border: 2px dashed var(--callout); border-radius: 12px; padding: 10px 12px; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+
+.snack { position: absolute; left: 10px; right: 10px; bottom: 62px; z-index: 4; background: var(--snack); color: var(--snack-ink); border-radius: 6px; padding: 10px 12px; font-size: 12.5px; }
+.jumpbtn { position: absolute; right: 12px; bottom: 62px; width: 36px; height: 36px; border-radius: 50%; background: var(--sheet); box-shadow: 0 2px 8px rgba(0,0,0,.2); display: grid; place-items: center; color: var(--ink); z-index: 2; }
+.jumpbtn svg { width: 18px; height: 18px; }
+
+.flow { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.arrow { font-size: 22px; color: var(--ink3); margin-top: 200px; }
+.notes { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.note { background: var(--canvas); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 13px; }
+.note h4 { margin: 0 0 6px; font-size: 14px; }
+.note ul { margin: 0; padding-left: 18px; color: var(--ink2); }
+.note li { margin: 3px 0; }
+.note li b { color: var(--ink); }
+
+/* Material 3 (Android) variants */
+.m3 { font-family: Roboto, "Google Sans", system-ui, sans-serif; }
+.m3 .topbar { height: 60px; border-bottom: none; padding: 0 4px; }
+.m3 .ttl b { font-size: 18px; font-weight: 500; }
+.ctx { background: var(--bubble-other); }
+.ctx .ttl b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctx .ib { width: 32px; }
+.counter { font-size: 13px; color: var(--ink2); padding: 0 2px; white-space: nowrap; }
+.ib.off { opacity: .32; }
+.lin { height: 4px; flex: none; background: var(--accent-wash); position: relative; overflow: hidden; }
+.lin::before { content: ""; position: absolute; left: 18%; width: 38%; top: 0; bottom: 0; background: var(--accent); border-radius: 2px; }
+.li { display: flex; gap: 14px; align-items: center; padding: 10px 16px; min-height: 68px; }
+.li .lead { width: 40px; height: 40px; flex: none; border-radius: 50%; background: var(--accent-wash); color: var(--accent); display: grid; place-items: center; }
+.li .lead svg { width: 20px; height: 20px; }
+.li .mid { flex: 1; min-width: 0; }
+.li .head { font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.li .supp { font-size: 12px; color: var(--ink2); margin-top: 1px; }
+.li.pressed { background: var(--bubble-other); }
+.seg { padding: 14px 16px 4px; font-size: 13px; font-weight: 500; color: var(--accent); }
+.m3snack { position: absolute; left: 10px; right: 10px; bottom: 14px; z-index: 4; background: var(--snack); color: var(--snack-ink); border-radius: 4px; padding: 12px 14px; font-size: 13px; display: flex; justify-content: space-between; gap: 10px; box-shadow: 0 3px 10px rgba(0,0,0,.25); }
+.m3snack b { color: #7fe0b8; font-weight: 500; }
+:root[data-theme="dark"] .m3snack b { color: #0b7c5a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .m3snack b { color: #0b7c5a; } }
+.m3sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; background: var(--sheet); border-radius: 28px 28px 0 0; max-height: 80%; display: flex; flex-direction: column; overflow: hidden; }
+.m3sheet .grab { width: 32px; height: 4px; margin: 14px auto 10px; }
+.m3sheet h3 { margin: 0 24px 6px; font-size: 18px; font-weight: 500; }
+.m3foot { padding: 6px 12px 16px; display: flex; justify-content: center; }
+.tonal { background: var(--accent-wash); color: var(--accent); font-weight: 500; font-size: 13px; padding: 9px 18px; border-radius: 20px; }
+.circ { width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--accent-wash); border-top-color: var(--accent); margin: 8px auto 14px; }
+.fab-mini { position: absolute; right: 14px; bottom: 64px; z-index: 2; background: var(--accent-wash); color: var(--accent); border-radius: 14px; padding: 10px 14px; font-size: 13px; font-weight: 500; display: flex; gap: 8px; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
+.fab-mini svg { width: 18px; height: 18px; }
+@media (max-width: 680px) {
+  .row { gap: 20px; justify-content: center; }
+  .arrow { display: none; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-me" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6.4 18.2c1.3-2 3.3-3 5.6-3s4.3 1 5.6 3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="19" r="1.8" fill="currentColor"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-room" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-dn" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="4.5" cy="6" r="1.3" fill="currentColor"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor"/><circle cx="4.5" cy="18" r="1.3" fill="currentColor"/></symbol>
+    <symbol id="i-img" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="M5 17l5-5 4 4 2-2 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-poll" viewBox="0 0 24 24"><path d="M6 19V11M12 19V5M18 19v-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+<main>
+  <h1>Your messages in a thread</h1>
+  <p class="lede">Design showcase for <code>docs/features/thread-my-messages-plan.md</code>. Mockups approximate Compound tokens and are not pixel-exact. All names and messages are synthetic. Dashed orange marks the new UI.</p>
+
+  <!-- ============ 1. ENTRY POINT ============ -->
+  <h2>1 · Entry point in the existing thread view</h2>
+  <p class="sub">The thread view today has a back button, a room avatar, the title “Thread” with the room name, and the timeline and composer. The new entry point only adds to the top bar.</p>
+  <div class="row">
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar">
+          <div class="ib"><svg><use href="#i-back"/></svg></div>
+          <div class="av c1">R</div>
+          <div class="ttl"><b>Thread</b><span>Release crew</span></div>
+          <div class="ib hot" aria-label="Your messages"><svg><use href="#i-me"/></svg></div>
+        </div>
+        <div class="call up" style="right:8px;top:82px">New action: “Your messages”</div>
+        <div class="timeline">
+          <div class="day">Today</div>
+          <div class="msg"><div class="av sm c2">L</div><div class="body"><div class="who">Lena</div><div class="bub">Can someone double-check the changelog wording? <small>10:02</small></div></div></div>
+          <div class="msg me"><div class="body"><div class="bub">On it, I’ll have it reviewed before lunch. <small>10:05</small></div></div></div>
+          <div class="msg"><div class="av sm c3">M</div><div class="body"><div class="who">Marco</div><div class="bub">CI is green on the release branch 🎉 <small>10:31</small></div></div></div>
+          <div class="msg"><div class="spacer-av"></div><div class="body"><div class="bub">Tagging in 10 min unless anyone objects. <small>10:32</small></div></div></div>
+          <div class="msg me"><div class="body"><div class="bub">No objection from me. <small>10:40</small></div></div></div>
+        </div>
+        <div class="composer"><div class="plus">+</div><div class="field">Reply in thread…</div></div>
+      </div>
+      <figcaption><b>A · Top-bar icon <span class="tag rec">Recommended</span></b>One tap, always visible. Uses <code>CompoundIcons.UserProfile()</code> with the accessibility label “Your messages”. It sits after “Open in room” when that button shows (Threads inbox triage).</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar">
+          <div class="ib"><svg><use href="#i-back"/></svg></div>
+          <div class="av c1">R</div>
+          <div class="ttl"><b>Thread</b><span>Release crew</span></div>
+          <div class="ib"><svg><use href="#i-more"/></svg></div>
+        </div>
+        <div class="menu">
+          <div class="hot"><svg><use href="#i-me"/></svg>Your messages</div>
+        </div>
+        <div class="timeline">
+          <div class="msg"><div class="av sm c2">L</div><div class="body"><div class="who">Lena</div><div class="bub">Can someone double-check the changelog wording? <small>10:02</small></div></div></div>
+          <div class="msg me"><div class="body"><div class="bub">On it, I’ll have it reviewed before lunch. <small>10:05</small></div></div></div>
+          <div class="msg"><div class="av sm c3">M</div><div class="body"><div class="who">Marco</div><div class="bub">CI is green on the release branch 🎉 <small>10:31</small></div></div></div>
+          <div class="msg me"><div class="body"><div class="bub">No objection from me. <small>10:40</small></div></div></div>
+        </div>
+        <div class="composer"><div class="plus">+</div><div class="field">Reply in thread…</div></div>
+      </div>
+      <figcaption><b>B · Overflow menu item <span class="tag alt">Alternative</span></b>Text label instead of an icon, so there's no confusion with a profile icon. Costs an extra tap and adds the thread view's first overflow menu.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar">
+          <div class="ib"><svg><use href="#i-back"/></svg></div>
+          <div class="av c1">R</div>
+          <div class="ttl"><b>Threads</b><span>Release crew</span></div>
+        </div>
+        <div class="pill"><svg width="20" height="20"><use href="#i-me"/></svg><div><b>Your messages</b><br><span style="color:var(--ink2);font-size:12px">Across all threads in this room</span></div></div>
+        <div class="tl-row"><div class="av sm c2">L</div><div class="t"><b>Lena</b>Release 26.11 checklist<br><span>12 replies · 10:40</span></div></div>
+        <div class="tl-row"><div class="av sm c4">P</div><div class="t"><b>Priya</b>Flaky screenshot test on API 33<br><span>4 replies · Yesterday</span></div></div>
+        <div class="tl-row"><div class="av sm c5">O</div><div class="t"><b>Omar</b>Offsite agenda draft<br><span>9 replies · Mon</span></div></div>
+      </div>
+      <figcaption><b>C · Row in the room’s Threads list <span class="tag alt">Wider scope</span></b>Lists your messages across every thread in the room. The SDK has no search or “messages by sender” API, so this would page through each thread’s timeline. That's much slower and larger. Not recommended for this iteration.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 2. THE LIST ============ -->
+  <h2>2 · The “Your messages” sheet</h2>
+  <p class="sub">A Compound <code>ModalBottomSheet</code> over the thread, like the read-receipt and reaction sheets. It lists your messages in this thread, newest first. Each row shows a two-line summary from the existing <code>MessageSummaryFormatter</code> and the date and time it was sent.</p>
+  <div class="row">
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="av c1">R</div><div class="ttl"><b>Thread</b><span>Release crew</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline"><div class="msg me"><div class="body"><div class="bub">No objection from me. <small>10:40</small></div></div></div></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <h3>Your messages</h3>
+          <div class="hint">In this thread · newest first</div>
+          <div class="list">
+            <div class="item"><div class="txt">No objection from me.</div><div class="meta">Today 10:40</div></div>
+            <div class="item"><div class="txt">On it, I’ll have it reviewed before lunch.</div><div class="meta">Today 10:05</div></div>
+            <div class="item"><div class="txt"><span class="kind">Image</span> · release-notes-draft.png</div><div class="meta">Yesterday 17:12</div></div>
+            <div class="item"><div class="txt">Proposal: we freeze strings on Thursday and cut the RC Friday morning, then soak it over the weekend on the internal track…</div><div class="meta">28 Oct 09:41</div></div>
+            <div class="item"><div class="txt"><span class="kind">Poll</span> · Which day works for the release retro?</div><div class="meta">27 Oct 16:03</div></div>
+          </div>
+          <div class="foot"><span class="btn">Load older messages</span></div>
+        </div>
+      </div>
+      <figcaption><b>Populated <span class="tag rec">Default</span></b>Rows come from the thread messages already loaded. Media, polls, voice and location messages show a type label. Edited messages show their latest text. The footer appears while older history exists.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="av c1">R</div><div class="ttl"><b>Thread</b><span>Release crew</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline"></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <h3>Your messages</h3>
+          <div class="hint">In this thread · newest first</div>
+          <div class="list">
+            <div class="item"><div class="txt">No objection from me.</div><div class="meta">Today 10:40</div></div>
+          </div>
+          <div class="foot"><div class="spin"></div><span class="muted">Looking for older messages…</span></div>
+        </div>
+      </div>
+      <figcaption><b>Loading older</b>Opening the sheet with fewer than 10 of your messages loaded starts one automatic batch. So does tapping “Load older messages”. Rows already found stay visible during loading.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="av c1">R</div><div class="ttl"><b>Thread</b><span>Release crew</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline"></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <h3>Your messages</h3>
+          <div class="empty">
+            <div class="ico"><svg width="22" height="22"><use href="#i-chat"/></svg></div>
+            <b>You haven’t posted in this thread</b>
+            <p>Messages you send in this thread will appear here.</p>
+          </div>
+        </div>
+      </div>
+      <figcaption><b>Empty (whole thread loaded)</b>Shown only when the start of the thread was reached and none of the messages are yours. If older history remains, the empty text reads “None of your messages are loaded yet” with “Load older messages”.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="av c1">R</div><div class="ttl"><b>Thread</b><span>Release crew</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline"></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <h3>Your messages</h3>
+          <div class="hint">In this thread · newest first</div>
+          <div class="list">
+            <div class="item"><div class="txt">No objection from me.</div><div class="meta">Today 10:40</div></div>
+            <div class="item"><div class="txt">On it, I’ll have it reviewed before lunch.</div><div class="meta">Today 10:05</div></div>
+          </div>
+          <div class="foot"><div class="err">Older messages couldn’t be loaded.</div><span class="btn">Retry</span></div>
+        </div>
+      </div>
+      <figcaption><b>Load error</b>Pagination failures keep the rows already shown and turn the footer into Retry. The thread timeline is unaffected.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="av c1">R</div><div class="ttl"><b>Thread</b><span>Release crew</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline"></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <h3>Your messages</h3>
+          <div class="hint">In this thread · newest first</div>
+          <div class="list">
+            <div class="item"><div class="txt">No objection from me.</div><div class="meta">Today 10:40</div></div>
+            <div class="item"><div class="txt">On it, I’ll have it reviewed before lunch.</div><div class="meta">Today 10:05</div></div>
+            <div class="item"><div class="txt">Kicking off the 26.11 release thread — checklist below, shout if I missed anything.</div><div class="meta">26 Oct 08:30</div></div>
+          </div>
+          <div class="foot"><span class="muted">That’s all your messages in this thread</span></div>
+        </div>
+      </div>
+      <figcaption><b>Start of thread reached</b>The footer confirms the list is complete. Your thread root message, if you started the thread, is included and listed last.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 3. DESTINATION ============ -->
+  <h2>3 · After tapping a message</h2>
+  <p class="sub">The sheet closes and the thread timeline scrolls to the chosen message. It centers the message and highlights it with the focus style permalink and reply jumps already use: an accent top line and a soft accent wash. As with permalink jumps today, the highlight stays until you jump to another message or leave the thread. Back closes the thread, as it does today. It does not reopen the sheet.</p>
+  <div class="row">
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="av c1">R</div><div class="ttl"><b>Thread</b><span>Release crew</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline" style="justify-content:center">
+          <div class="day">28 October</div>
+          <div class="msg"><div class="av sm c2">L</div><div class="body"><div class="who">Lena</div><div class="bub">What’s the cut-off for string changes? <small>09:30</small></div></div></div>
+          <div class="focus">
+            <div class="msg me"><div class="body"><div class="bub">Proposal: we freeze strings on Thursday and cut the RC Friday morning, then soak it over the weekend on the internal track. <small>09:41</small></div></div></div>
+          </div>
+          <div class="msg"><div class="av sm c3">M</div><div class="body"><div class="who">Marco</div><div class="bub">+1, Friday works for QA. <small>09:52</small></div></div></div>
+          <div class="msg"><div class="av sm c4">P</div><div class="body"><div class="who">Priya</div><div class="bub">Same here 👍 <small>10:07</small></div></div></div>
+        </div>
+        <div class="call" style="left:14px;top:92px;max-width:240px">Tapped message is centered and gets the existing focus highlight ↓</div>
+        <div class="jumpbtn" aria-label="Jump to bottom"><svg><use href="#i-down"/></svg></div>
+        <div class="composer"><div class="plus">+</div><div class="field">Reply in thread…</div></div>
+      </div>
+      <figcaption><b>Destination</b>The “Jump to bottom” button is the existing control and returns to the latest reply. TalkBack users get focus on the highlighted message.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="phone">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="av c1">R</div><div class="ttl"><b>Thread</b><span>Release crew</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline">
+          <div class="msg"><div class="av sm c3">M</div><div class="body"><div class="who">Marco</div><div class="bub">CI is green on the release branch 🎉 <small>10:31</small></div></div></div>
+          <div class="msg me"><div class="body"><div class="bub">No objection from me. <small>10:40</small></div></div></div>
+        </div>
+        <div class="snack">That message is no longer available.</div>
+        <div class="composer"><div class="plus">+</div><div class="field">Reply in thread…</div></div>
+      </div>
+      <figcaption><b>Jump failed</b>If the message was deleted after the list was built, or older history can’t be loaded, the sheet closes, the timeline stays put and a snackbar explains why.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 4. OUT OF WINDOW ============ -->
+  <h2>4 · Jumping to a message older than the loaded window</h2>
+  <p class="sub">The thread opens with only the latest ~50 events loaded. Example: a thread with 140 replies, where your proposal is reply #12. The sheet loads older history into the same thread timeline. The rows it reveals are then already in the timeline, so a tap jumps directly.</p>
+  <div class="flow">
+    <figure style="width:220px">
+      <div class="phone" style="height:440px">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="ttl"><b>Thread</b><span>140 replies</span></div><div class="ib hot"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline"><div class="msg"><div class="av sm c3">M</div><div class="body"><div class="bub">Reply #140 <small>11:58</small></div></div></div></div>
+      </div>
+      <figcaption><b>① Thread open</b>Replies #91–140 loaded.</figcaption>
+    </figure>
+    <div class="arrow">→</div>
+    <figure style="width:220px">
+      <div class="phone" style="height:440px">
+        <div class="status"></div>
+        <div class="timeline"></div>
+        <div class="scrim"></div>
+        <div class="sheet" style="max-height:88%">
+          <div class="grab"></div><h3>Your messages</h3>
+          <div class="list"><div class="item"><div class="txt">No objection from me.</div><div class="meta">10:40</div></div></div>
+          <div class="foot"><div class="spin"></div><span class="muted">Looking for older messages…</span></div>
+        </div>
+      </div>
+      <figcaption><b>② Auto batch</b>Fewer than 10 of yours are loaded, so the sheet pages back. Each page is 50 events, up to 5 pages per batch.</figcaption>
+    </figure>
+    <div class="arrow">→</div>
+    <figure style="width:220px">
+      <div class="phone" style="height:440px">
+        <div class="status"></div>
+        <div class="timeline"></div>
+        <div class="scrim"></div>
+        <div class="sheet" style="max-height:88%">
+          <div class="grab"></div><h3>Your messages</h3>
+          <div class="list">
+            <div class="item"><div class="txt">No objection from me.</div><div class="meta">10:40</div></div>
+            <div class="item pressed"><div class="txt">Proposal: we freeze strings on Thursday…</div><div class="meta">28 Oct</div></div>
+          </div>
+          <div class="foot"><span class="muted">That’s all your messages in this thread</span></div>
+        </div>
+      </div>
+      <figcaption><b>③ Tap reply #12</b>It was outside the window when the thread opened.</figcaption>
+    </figure>
+    <div class="arrow">→</div>
+    <figure style="width:220px">
+      <div class="phone" style="height:440px">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="ttl"><b>Thread</b><span>140 replies</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline" style="justify-content:center">
+          <div class="focus"><div class="msg me"><div class="body"><div class="bub">Proposal: we freeze strings on Thursday… <small>09:41</small></div></div></div></div>
+        </div>
+      </div>
+      <figcaption><b>④ Highlighted</b>The timeline scrolls up past the replies that were just loaded.</figcaption>
+    </figure>
+  </div>
+
+
+  <!-- ============ 5. ANDROID-STYLE OPTIONS ============ -->
+  <h2 id="android">5 · Android-native options (Material 3)</h2>
+  <p class="sub">The same feature in the patterns Android users know from WhatsApp, Telegram and Google Messages: a contextual top app bar, a full-screen list with Material list items, and a Material 3 modal sheet. All three reuse the same data and jump logic as sections 2–4. They differ only in presentation.</p>
+
+  <h3 style="margin:26px 0 4px;font-size:15px">5A · Step through your messages in a contextual top bar</h3>
+  <p class="sub">Like “search in chat” on Android. The action switches the top bar into a contextual mode. ▲ jumps to your previous (older) message and ▼ to the next (newer) one, each centered and highlighted in place. The counter shows a <code>+</code> while older history remains. The list icon opens the full list (5B or 5C). The ✕ button or system Back leaves the mode and keeps the scroll position.</p>
+  <div class="row">
+    <figure>
+      <div class="phone m3">
+        <div class="status"></div>
+        <div class="topbar ctx">
+          <div class="ib"><svg><use href="#i-close"/></svg></div>
+          <div class="ttl"><b>Your messages</b></div>
+          <span class="counter">2 of 5+</span>
+          <div class="ib"><svg><use href="#i-up"/></svg></div>
+          <div class="ib"><svg><use href="#i-dn"/></svg></div>
+          <div class="ib"><svg><use href="#i-list"/></svg></div>
+        </div>
+        <div class="timeline" style="justify-content:center">
+          <div class="msg"><div class="av sm c2">L</div><div class="body"><div class="who">Lena</div><div class="bub">Can someone double-check the changelog wording? <small>10:02</small></div></div></div>
+          <div class="focus"><div class="msg me"><div class="body"><div class="bub">On it, I’ll have it reviewed before lunch. <small>10:05</small></div></div></div></div>
+          <div class="msg"><div class="av sm c3">M</div><div class="body"><div class="who">Marco</div><div class="bub">CI is green on the release branch 🎉 <small>10:31</small></div></div></div>
+        </div>
+        <div class="composer"><div class="plus">+</div><div class="field">Reply in thread…</div></div>
+      </div>
+      <figcaption><b>Stepping</b>The second-newest of your messages is highlighted. ▲ goes older, ▼ newer, and the list icon opens all of them.</figcaption>
+    </figure>
+    <figure>
+      <div class="phone m3">
+        <div class="status"></div>
+        <div class="topbar ctx">
+          <div class="ib"><svg><use href="#i-close"/></svg></div>
+          <div class="ttl"><b>Your messages</b></div>
+          <span class="counter">5 of 5+</span>
+          <div class="ib"><svg><use href="#i-up"/></svg></div>
+          <div class="ib"><svg><use href="#i-dn"/></svg></div>
+          <div class="ib"><svg><use href="#i-list"/></svg></div>
+        </div>
+        <div class="lin"></div>
+        <div class="timeline" style="justify-content:center">
+          <div class="focus"><div class="msg me"><div class="body"><div class="bub"><span style="color:var(--ink2)">Poll ·</span> Which day works for the release retro? <small>16:03</small></div></div></div></div>
+        </div>
+        <div class="composer"><div class="plus">+</div><div class="field">Reply in thread…</div></div>
+      </div>
+      <figcaption><b>Loading older</b>Pressing ▲ on the oldest loaded message pages back (a linear progress bar shows under the bar) and then jumps to the next one found.</figcaption>
+    </figure>
+    <figure>
+      <div class="phone m3">
+        <div class="status"></div>
+        <div class="topbar ctx">
+          <div class="ib"><svg><use href="#i-close"/></svg></div>
+          <div class="ttl"><b>Your messages</b></div>
+          <span class="counter">7 of 7</span>
+          <div class="ib off"><svg><use href="#i-up"/></svg></div>
+          <div class="ib"><svg><use href="#i-dn"/></svg></div>
+          <div class="ib"><svg><use href="#i-list"/></svg></div>
+        </div>
+        <div class="timeline" style="justify-content:center">
+          <div class="focus"><div class="msg me"><div class="body"><div class="bub">Kicking off the 26.11 release thread — checklist below. <small>08:30</small></div></div></div></div>
+        </div>
+        <div class="m3snack" style="bottom:62px"><span>That’s your oldest message in this thread</span></div>
+        <div class="composer"><div class="plus">+</div><div class="field">Reply in thread…</div></div>
+      </div>
+      <figcaption><b>Start reached</b>▲ is disabled, the total is exact, and a short snackbar confirms it. A load error shows a snackbar with a <b style="display:inline">Retry</b> action.</figcaption>
+    </figure>
+  </div>
+
+  <h3 style="margin:26px 0 4px;font-size:15px">5B · Full-screen list (Material list items)</h3>
+  <p class="sub">Like “Starred messages” in WhatsApp or Google Messages. A full-screen surface with a top app bar and back arrow, two-line list items with a leading type icon, and day section headers. Older history loads automatically as you scroll (infinite scroll), with a progress row at the end. Errors use a snackbar with Retry. Tapping a message closes the screen and jumps. System Back (with predictive back) returns to the thread unchanged.</p>
+  <div class="row">
+    <figure>
+      <div class="phone m3">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="ttl"><b>Your messages</b><span>Thread in Release crew</span></div></div>
+        <div class="lin"></div>
+        <div class="list">
+          <div class="seg">Today</div>
+          <div class="li"><div class="lead"><svg><use href="#i-chat"/></svg></div><div class="mid"><div class="head">No objection from me.</div><div class="supp">10:40</div></div></div>
+          <div class="li"><div class="lead"><svg><use href="#i-chat"/></svg></div><div class="mid"><div class="head">On it, I’ll have it reviewed before lunch.</div><div class="supp">10:05</div></div></div>
+          <div class="seg">Yesterday</div>
+          <div class="li"><div class="lead"><svg><use href="#i-img"/></svg></div><div class="mid"><div class="head">Image · release-notes-draft.png</div><div class="supp">17:12</div></div></div>
+          <div class="seg">28 October</div>
+          <div class="li pressed"><div class="lead"><svg><use href="#i-chat"/></svg></div><div class="mid"><div class="head">Proposal: we freeze strings on Thursday and cut the RC Friday morning, then soak it…</div><div class="supp">09:41</div></div></div>
+          <div class="li"><div class="lead"><svg><use href="#i-poll"/></svg></div><div class="mid"><div class="head">Poll · Which day works for the release retro?</div><div class="supp">27 Oct · 16:03</div></div></div>
+        </div>
+      </div>
+      <figcaption><b>Populated, loading more</b>The linear progress bar under the app bar shows that older history is still being fetched. Rows already loaded stay tappable.</figcaption>
+    </figure>
+    <figure>
+      <div class="phone m3">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="ttl"><b>Your messages</b><span>Thread in Release crew</span></div></div>
+        <div class="list">
+          <div class="seg">Today</div>
+          <div class="li"><div class="lead"><svg><use href="#i-chat"/></svg></div><div class="mid"><div class="head">No objection from me.</div><div class="supp">10:40</div></div></div>
+          <div class="li"><div class="lead"><svg><use href="#i-chat"/></svg></div><div class="mid"><div class="head">On it, I’ll have it reviewed before lunch.</div><div class="supp">10:05</div></div></div>
+        </div>
+        <div class="m3snack"><span>Couldn’t load older messages</span><b>Retry</b></div>
+      </div>
+      <figcaption><b>Load error</b>A Material snackbar with a Retry action. The list keeps its rows.</figcaption>
+    </figure>
+    <figure>
+      <div class="phone m3">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="ttl"><b>Your messages</b><span>Thread in Release crew</span></div></div>
+        <div class="empty" style="margin-top:120px">
+          <div class="ico"><svg width="22" height="22"><use href="#i-chat"/></svg></div>
+          <b>You haven’t posted in this thread</b>
+          <p>Messages you send in this thread will appear here.</p>
+        </div>
+      </div>
+      <figcaption><b>Empty</b>Shown once the start of the thread is reached with no messages from you.</figcaption>
+    </figure>
+  </div>
+
+  <h3 style="margin:26px 0 4px;font-size:15px">5C · Material 3 modal bottom sheet</h3>
+  <p class="sub">Section 2's sheet restyled to Material 3: 28dp top corners, a drag handle, a left-aligned title and the same list items as 5B. It opens half-expanded and drags to full height. “Load older messages” is a tonal button and loading uses a circular indicator.</p>
+  <div class="row">
+    <figure>
+      <div class="phone m3">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="av c1">R</div><div class="ttl"><b>Thread</b><span>Release crew</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline"></div>
+        <div class="scrim"></div>
+        <div class="m3sheet">
+          <div class="grab"></div>
+          <h3>Your messages</h3>
+          <div class="seg" style="padding-top:4px">Today</div>
+          <div class="li"><div class="lead"><svg><use href="#i-chat"/></svg></div><div class="mid"><div class="head">No objection from me.</div><div class="supp">10:40</div></div></div>
+          <div class="li"><div class="lead"><svg><use href="#i-chat"/></svg></div><div class="mid"><div class="head">On it, I’ll have it reviewed before lunch.</div><div class="supp">10:05</div></div></div>
+          <div class="seg">Yesterday</div>
+          <div class="li"><div class="lead"><svg><use href="#i-img"/></svg></div><div class="mid"><div class="head">Image · release-notes-draft.png</div><div class="supp">17:12</div></div></div>
+          <div class="m3foot"><span class="tonal">Load older messages</span></div>
+        </div>
+      </div>
+      <figcaption><b>Half-expanded</b>Keeps the thread visible behind the scrim. Drag up for full height.</figcaption>
+    </figure>
+    <figure>
+      <div class="phone m3">
+        <div class="status"></div>
+        <div class="topbar"><div class="ib"><svg><use href="#i-back"/></svg></div><div class="av c1">R</div><div class="ttl"><b>Thread</b><span>Release crew</span></div><div class="ib"><svg><use href="#i-me"/></svg></div></div>
+        <div class="timeline"></div>
+        <div class="scrim"></div>
+        <div class="m3sheet">
+          <div class="grab"></div>
+          <h3>Your messages</h3>
+          <div class="seg" style="padding-top:4px">Today</div>
+          <div class="li"><div class="lead"><svg><use href="#i-chat"/></svg></div><div class="mid"><div class="head">No objection from me.</div><div class="supp">10:40</div></div></div>
+          <div class="circ"></div>
+        </div>
+      </div>
+      <figcaption><b>Loading older</b>A circular indicator at the end of the list.</figcaption>
+    </figure>
+  </div>
+
+  <div class="notes">
+    <div class="note"><h4>What counts as “my messages”</h4><ul>
+      <li><b>Included:</b> every message event you sent in this thread: text, notices, emotes, media, files, voice, polls, location and stickers. Includes the thread root if you started the thread.</li>
+      <li><b>Excluded:</b> redacted messages, state or membership events, and local echoes that are still sending or failed (they have no event ID yet).</li>
+      <li>“You” means the current session’s user ID (<code>TimelineItem.Event.isMine</code>), so it includes messages sent from your other devices.</li>
+    </ul></div>
+    <div class="note"><h4>Ordering</h4><ul>
+      <li><b>Newest first</b> (recommended): matches “jump back to something I said” and keeps the most likely target at the top. Older rows are added at the bottom as history loads.</li>
+      <li>Chronological is the alternative. It mirrors the timeline but puts the most recent message at the end of a growing list.</li>
+    </ul></div>
+    <div class="note"><h4>Navigation</h4><ul>
+      <li>Tap: the sheet closes, then the existing <code>FocusOnEvent</code> runs and the message is centered and highlighted.</li>
+      <li>Swipe down, tap the scrim or press Back: the sheet closes and the timeline doesn't move.</li>
+      <li>Reopening the sheet keeps the loaded history. Nothing is cached after you leave the thread.</li>
+    </ul></div>
+  </div>
+</main>
+</body>
+</html>
