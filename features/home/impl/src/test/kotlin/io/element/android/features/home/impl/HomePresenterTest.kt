@@ -14,6 +14,7 @@ import io.element.android.features.home.impl.spaces.HomeSpacesState
 import io.element.android.features.home.impl.spaces.aHomeSpacesState
 import io.element.android.features.logout.api.direct.aDirectLogoutState
 import io.element.android.features.rageshake.api.RageshakeFeatureAvailability
+import io.element.android.features.threads.test.FakeThreadsDrawer
 import io.element.android.libraries.architecture.Presenter
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher
 import io.element.android.libraries.indicator.api.IndicatorService
@@ -131,27 +132,37 @@ class HomePresenterTest {
     }
 
     @Test
-    fun `threads entry requires both flags without badge count`() = runTest {
-        val flags = io.element.android.libraries.featureflag.test.FakeFeatureFlagService()
-        val badge = io.element.android.features.threads.test.FakeThreadsInboxBadgeProvider()
-        createHomePresenter(featureFlags = flags, threadsBadge = badge).test {
+    fun `threads button mirrors drawer flows without a badge`() = runTest {
+        val drawer = FakeThreadsDrawer()
+        drawer.isEnabled.value = false
+        createHomePresenter(threadsDrawer = drawer).test {
             var state = awaitItem()
-            flags.setFeatureEnabled(io.element.android.libraries.featureflag.api.FeatureFlags.CrossRoomThreads, true)
-            flags.setFeatureEnabled(io.element.android.libraries.featureflag.api.FeatureFlags.Threads, true)
+            assertThat(state.showThreads).isFalse()
+            assertThat(state.isThreadsDrawerOpen).isFalse()
+            drawer.isEnabled.value = true
             while (!state.showThreads) state = awaitItem()
-            badge.badge.value = io.element.android.features.threads.api.ThreadsBadge(123, true)
+            state.eventSink(HomeEvent.OpenThreadsDrawer)
+            while (!state.isThreadsDrawerOpen) state = awaitItem()
+            assertThat(drawer.calls).containsExactly("open")
             assertThat(state.threadsUnreadCount).isEqualTo(0)
             assertThat(state.threadsHaveMention).isFalse()
-            flags.setFeatureEnabled(io.element.android.libraries.featureflag.api.FeatureFlags.Threads, false)
-            while (state.showThreads) state = awaitItem()
-            assertThat(state.showThreads).isFalse()
+            drawer.isOpen.value = false
+            drawer.isEnabled.value = false
+            while (state.showThreads || state.isThreadsDrawerOpen) state = awaitItem()
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
+    fun `old Threads ordinal restores Chats`() {
+        assertThat(HomeNavigationBarItem.from(2)).isEqualTo(HomeNavigationBarItem.Chats)
+    }
+
+    @Test
     fun `present - NavigationBar change`() = runTest {
+        val drawer = FakeThreadsDrawer()
         val presenter = createHomePresenter(
+            threadsDrawer = drawer,
             sessionStore = InMemorySessionStore(
                 updateUserProfileResult = { _, _, _ -> },
             ),
@@ -162,6 +173,7 @@ class HomePresenterTest {
             initialState.eventSink(HomeEvent.SelectHomeNavigationBarItem(HomeNavigationBarItem.Spaces))
             val finalState = awaitItem()
             assertThat(finalState.currentHomeNavigationBarItem).isEqualTo(HomeNavigationBarItem.Spaces)
+            assertThat(drawer.calls).isEmpty()
         }
     }
 }
@@ -174,10 +186,7 @@ internal fun createHomePresenter(
     indicatorService: IndicatorService = FakeIndicatorService(),
     homeSpacesPresenter: Presenter<HomeSpacesState> = Presenter { aHomeSpacesState() },
     sessionStore: SessionStore = InMemorySessionStore(),
-    featureFlags: io.element.android.libraries.featureflag.api.FeatureFlagService = io.element.android.libraries.featureflag.test.FakeFeatureFlagService(
-        initialState = mapOf(io.element.android.libraries.featureflag.api.FeatureFlags.CrossRoomThreads.key to false),
-    ),
-    threadsBadge: io.element.android.features.threads.api.ThreadsInboxBadgeProvider = io.element.android.features.threads.test.FakeThreadsInboxBadgeProvider(),
+    threadsDrawer: FakeThreadsDrawer = FakeThreadsDrawer(),
 ) = HomePresenter(
     client = client,
     syncService = syncService,
@@ -188,7 +197,5 @@ internal fun createHomePresenter(
     logoutPresenter = { aDirectLogoutState() },
     rageshakeFeatureAvailability = rageshakeFeatureAvailability,
     sessionStore = sessionStore,
-    featureFlags = featureFlags,
-    threadsQueue = io.element.android.features.threads.test.FakeThreadsTriageQueue(),
-    threadsBadgeProvider = threadsBadge,
+    threadsDrawer = threadsDrawer,
 )

@@ -1,38 +1,61 @@
 appId: ${MAESTRO_APP_ID}
 ---
-# Preconditions: authenticated dedicated account on Home; Threads and Cross-room
-# threads enabled; at least four unread threads in dedicated rooms.
+# Preconditions: authenticated dedicated account on Home (Chats); Threads and
+# Cross-room threads enabled; at least three unread threads across two rooms.
+# Rows expose "<room>, thread: <root>, <reply>, <time>, <n> unread, <n> mentions".
 # This flow reads threads. Reseed unread replies before repeating it.
-- tapOn: "Threads"
+- assertVisible: "Chats"
+- assertVisible: "Spaces"
+- tapOn:
+    id: "home-threads_button"
 - extendedWaitUntil:
-    visible: "Open latest unread"
+    visible: "Mark loaded threads as read"
     timeout: 30000
-- assertVisible: "My threads.*"
-- tapOn: "Open latest unread"
+- assertVisible: "Close"
+- extendedWaitUntil:
+    visible: ".*, thread: .*, [1-9][0-9]* unread, .*"
+    timeout: 30000
+# Mark one row read without dismissing the drawer, then undo.
+- swipe:
+    from:
+      text: ".*, thread: .*, [1-9][0-9]* unread, .*"
+      index: 0
+    direction: LEFT
+- extendedWaitUntil:
+    visible: "1 thread marked as read"
+    timeout: 3000
+- assertVisible: "Mark loaded threads as read"
+- tapOn: "Undo"
+- assertNotVisible: "Undo"
+# Open the first unread thread and move to the next thread in the same visit.
+- tapOn:
+    text: ".*, thread: .*, [1-9][0-9]* unread, .*"
+    index: 0
 - extendedWaitUntil:
     visible: "Next .*"
     timeout: 30000
+- assertNotVisible: "Mark loaded threads as read"
 - assertVisible: "NEW"
-- assertVisible: "Open in room"
 - tapOn: "Next .*"
 - extendedWaitUntil:
     visible: "Next .*"
     timeout: 30000
-- tapOn: "Next .*"
-- extendedWaitUntil:
-    visible: "Next .*"
-    timeout: 30000
+# Back must return to the original Home page with the drawer closed.
 - back
 - extendedWaitUntil:
-    visible: "My threads.*"
+    visible:
+      id: "home-threads_button"
     timeout: 10000
-- assertVisible: "Mark all as read"
-- tapOn: "Mark all as read"
+- assertVisible: "Chats"
+- assertVisible: "Spaces"
+- assertNotVisible: "Mark loaded threads as read"
+# A new drawer visit can be dismissed with Back, preserving Home.
+- tapOn:
+    id: "home-threads_button"
 - extendedWaitUntil:
-    visible: "Undo"
-    timeout: 3000
-- tapOn: "Undo"
-- extendedWaitUntil:
-    visible: "Open latest unread"
+    visible: "Mark loaded threads as read"
     timeout: 10000
-- assertNotVisible: "Undo"
+- back
+- assertVisible:
+    id: "home-threads_button"
+- assertNotVisible: "Mark loaded threads as read"

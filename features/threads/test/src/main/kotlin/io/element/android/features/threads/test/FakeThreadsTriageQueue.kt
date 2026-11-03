@@ -21,8 +21,14 @@ class FakeThreadsTriageQueue : ThreadsTriageQueue {
         visited.value += key
         return Result.success(null)
     }
-    override fun startVisit() = Unit
+    var startVisitCount = 0
+    var endVisitCount = 0
+
+    override fun startVisit() {
+        startVisitCount++
+    }
     override fun endVisit() {
+        endVisitCount++
         visited.value = emptySet()
     }
 }

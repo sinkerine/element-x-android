@@ -10,6 +10,7 @@ package io.element.android.appnav
 
 import android.os.Parcelable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -26,6 +27,7 @@ import com.bumble.appyx.core.navigation.NavKey
 import com.bumble.appyx.core.navigation.model.permanent.PermanentNavModel
 import com.bumble.appyx.core.node.Node
 import com.bumble.appyx.core.plugin.Plugin
+import com.bumble.appyx.core.state.MutableSavedStateMap
 import com.bumble.appyx.navmodel.backstack.BackStack
 import com.bumble.appyx.navmodel.backstack.BackStack.State.ACTIVE
 import com.bumble.appyx.navmodel.backstack.BackStack.State.CREATED
@@ -44,6 +46,7 @@ import io.element.android.annotations.ContributesNode
 import io.element.android.appnav.loggedin.LoggedInNode
 import io.element.android.appnav.loggedin.MediaPreviewConfigMigration
 import io.element.android.appnav.loggedin.SendQueues
+import io.element.android.appnav.loggedin.ThreadsDrawerOrigin
 import io.element.android.appnav.room.RoomFlowNode
 import io.element.android.appnav.room.RoomNavigationTarget
 import io.element.android.appnav.room.joined.JoinedRoomLoadedFlowNode
@@ -70,6 +73,8 @@ import io.element.android.features.securebackup.api.SecureBackupEntryPoint
 import io.element.android.features.share.api.ShareEntryPoint
 import io.element.android.features.share.api.ShareIntentData
 import io.element.android.features.startchat.api.StartChatEntryPoint
+import io.element.android.features.threads.api.ThreadsDrawer
+import io.element.android.features.threads.api.ThreadsInboxEntryPoint
 import io.element.android.features.userprofile.api.UserProfileEntryPoint
 import io.element.android.features.verifysession.api.IncomingVerificationEntryPoint
 import io.element.android.libraries.architecture.BackstackView
@@ -93,6 +98,7 @@ import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.matrix.api.core.toRoomIdOrAlias
 import io.element.android.libraries.matrix.api.permalink.PermalinkData
 import io.element.android.libraries.matrix.api.room.JoinedRoom
+import io.element.android.libraries.matrix.api.room.threads.InboxThreadKey
 import io.element.android.libraries.matrix.api.sync.SyncService
 import io.element.android.libraries.matrix.api.verification.SessionVerificationServiceListener
 import io.element.android.libraries.matrix.api.verification.VerificationRequest
@@ -130,6 +136,8 @@ class LoggedInFlowNode(
     @Assisted buildContext: BuildContext,
     @Assisted plugins: List<Plugin>,
     private val homeEntryPoint: HomeEntryPoint,
+    private val threadsDrawer: ThreadsDrawer,
+    private val threadsInboxEntryPoint: ThreadsInboxEntryPoint,
     private val preferencesEntryPoint: PreferencesEntryPoint,
     private val startChatEntryPoint: StartChatEntryPoint,
     private val appNavigationStateService: AppNavigationStateService,
@@ -166,7 +174,7 @@ class LoggedInFlowNode(
         savedStateMap = buildContext.savedStateMap,
     ),
     permanentNavModel = PermanentNavModel(
-        navTargets = setOf(NavTarget.LoggedInPermanent),
+        navTargets = setOf(NavTarget.LoggedInPermanent, NavTarget.ThreadsInbox),
         savedStateMap = buildContext.savedStateMap,
     ),
     buildContext = buildContext,
@@ -175,6 +183,17 @@ class LoggedInFlowNode(
     interface Callback : Plugin {
         fun navigateToBugReport()
         fun navigateToAddAccount()
+    }
+
+    private val drawerOrigin = ThreadsDrawerOrigin(threadsDrawer, backstack, buildContext.savedStateMap)
+
+    override fun onSaveInstanceState(state: MutableSavedStateMap) {
+        super.onSaveInstanceState(state)
+        drawerOrigin.saveInstanceState(state)
+    }
+
+    private fun openFromDrawer(target: NavTarget) {
+        drawerOrigin.openThread(target)
     }
 
     private val callback: Callback = callback()
@@ -218,6 +237,7 @@ class LoggedInFlowNode(
 
     override fun onBuilt() {
         super.onBuilt()
+        drawerOrigin.observe(lifecycleScope)
         lifecycleScope.launch {
             sessionEnterpriseService.init()
             activeLiveLocationShareManager.setup()
@@ -273,6 +293,9 @@ class LoggedInFlowNode(
 
         @Parcelize
         data object LoggedInPermanent : NavTarget
+
+        @Parcelize
+        data object ThreadsInbox : NavTarget
 
         @Parcelize
         data object Home : NavTarget
@@ -335,6 +358,29 @@ class LoggedInFlowNode(
                 }
                 createNode<LoggedInNode>(buildContext, listOf(callback))
             }
+            NavTarget.ThreadsInbox -> threadsInboxEntryPoint.createNode(
+                parentNode = this,
+                buildContext = buildContext,
+                callback = object : ThreadsInboxEntryPoint.Callback {
+                    override fun openThread(key: InboxThreadKey, focusedEventId: EventId?, focusCaptureFailed: Boolean) {
+                        openFromDrawer(
+                            NavTarget.Room(
+                                roomIdOrAlias = key.roomId.toRoomIdOrAlias(),
+                                initialElement = RoomNavigationTarget.Thread(key.threadId, focusedEventId, focusCaptureFailed = focusCaptureFailed),
+                            )
+                        )
+                    }
+
+                    override fun openRoom(key: InboxThreadKey) {
+                        openFromDrawer(
+                            NavTarget.Room(
+                                roomIdOrAlias = key.roomId.toRoomIdOrAlias(),
+                                initialElement = RoomNavigationTarget.Thread(key.threadId, null, triage = false),
+                            )
+                        )
+                    }
+                },
+            )
             NavTarget.Home -> {
                 val callback = object : HomeEntryPoint.Callback {
                     override fun navigateToRoom(roomId: RoomId, eventId: EventId?, joinedRoom: JoinedRoom?) {
@@ -345,20 +391,6 @@ class LoggedInFlowNode(
                                 clearBackstack = false,
                             )
                         }
-                    }
-
-                    override fun openThreadInRoom(roomId: RoomId, threadId: ThreadId) {
-                        backstack.push(NavTarget.Room(
-                            roomIdOrAlias = roomId.toRoomIdOrAlias(),
-                            initialElement = RoomNavigationTarget.Thread(threadId, null, triage = false),
-                        ))
-                    }
-
-                    override fun navigateToThread(roomId: RoomId, threadId: ThreadId, focusedEventId: EventId?, focusCaptureFailed: Boolean) {
-                        backstack.push(NavTarget.Room(
-                            roomIdOrAlias = roomId.toRoomIdOrAlias(),
-                            initialElement = RoomNavigationTarget.Thread(threadId, focusedEventId, focusCaptureFailed = focusCaptureFailed),
-                        ))
                     }
 
                     override fun navigateToSettings() {
@@ -722,7 +754,17 @@ class LoggedInFlowNode(
                 ) { contentModifier ->
                     Box(modifier = contentModifier) {
                         val ftueState by ftueService.state.collectAsState()
-                        BackstackView(transitionHandler = rememberLoggedInFlowTransitionHandler(backstack))
+                        threadsDrawer.Layout(
+                            isAvailable = ftueState is FtueState.Complete,
+                            inbox = { inboxModifier ->
+                                Box(inboxModifier) {
+                                    PermanentChild(permanentNavModel = permanentNavModel, navTarget = NavTarget.ThreadsInbox)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            BackstackView(transitionHandler = rememberLoggedInFlowTransitionHandler(backstack))
+                        }
                         if (ftueState is FtueState.Complete) {
                             PermanentChild(permanentNavModel = permanentNavModel, navTarget = NavTarget.LoggedInPermanent)
                         }

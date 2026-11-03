@@ -28,6 +28,7 @@ setupDependencyInjection()
 dependencies {
     implementation(projects.features.threads.api)
     testImplementation(projects.features.threads.test)
+    testImplementation(projects.features.threads.impl)
     api(projects.features.messages.api)
     implementation(projects.appconfig)
     implementation(projects.features.call.api)

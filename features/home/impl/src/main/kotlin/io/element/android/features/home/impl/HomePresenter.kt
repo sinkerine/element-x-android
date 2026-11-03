@@ -23,6 +23,7 @@ import io.element.android.features.home.impl.roomlist.RoomListState
 import io.element.android.features.home.impl.spaces.HomeSpacesState
 import io.element.android.features.logout.api.direct.DirectLogoutState
 import io.element.android.features.rageshake.api.RageshakeFeatureAvailability
+import io.element.android.features.threads.api.ThreadsDrawer
 import io.element.android.libraries.architecture.Presenter
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher
 import io.element.android.libraries.designsystem.utils.snackbar.collectSnackbarMessageAsState
@@ -45,18 +46,14 @@ class HomePresenter(
     private val logoutPresenter: Presenter<DirectLogoutState>,
     private val rageshakeFeatureAvailability: RageshakeFeatureAvailability,
     private val sessionStore: SessionStore,
-    private val featureFlags: io.element.android.libraries.featureflag.api.FeatureFlagService,
-    private val threadsQueue: io.element.android.features.threads.api.ThreadsTriageQueue,
-    private val threadsBadgeProvider: io.element.android.features.threads.api.ThreadsInboxBadgeProvider,
+    private val threadsDrawer: ThreadsDrawer,
 ) : Presenter<HomeState> {
     private val currentUserWithNeighborsBuilder = CurrentUserWithNeighborsBuilder()
 
     @Composable
     override fun present(): HomeState {
-        val crossRoomThreads by featureFlags.isFeatureEnabledFlow(
-            io.element.android.libraries.featureflag.api.FeatureFlags.CrossRoomThreads
-        ).collectAsState(false)
-        val threadsEnabled by featureFlags.isFeatureEnabledFlow(io.element.android.libraries.featureflag.api.FeatureFlags.Threads).collectAsState(false)
+        val showThreads by threadsDrawer.isEnabled.collectAsState()
+        val isThreadsDrawerOpen by threadsDrawer.isOpen.collectAsState()
         val coroutineState = rememberCoroutineScope()
         val matrixUser by client.userProfile.collectAsState()
         val currentUserAndNeighbors by remember {
@@ -87,13 +84,9 @@ class HomePresenter(
         fun handleEvent(event: HomeEvent) {
             when (event) {
                 is HomeEvent.SelectHomeNavigationBarItem -> {
-                    if (event.item == HomeNavigationBarItem.Threads) {
-                        threadsQueue.startVisit()
-                    } else if (currentHomeNavigationBarItem == HomeNavigationBarItem.Threads) {
-                        threadsQueue.endVisit()
-                    }
                     currentHomeNavigationBarItemOrdinal = event.item.ordinal
                 }
+                HomeEvent.OpenThreadsDrawer -> threadsDrawer.open()
                 is HomeEvent.SwitchToAccount -> coroutineState.launch {
                     sessionStore.setLatestSession(event.sessionId.value)
                 }
@@ -110,7 +103,8 @@ class HomePresenter(
             homeSpacesState = homeSpacesState,
             snackbarMessage = snackbarMessage,
             canReportBug = canReportBug,
-            showThreads = crossRoomThreads && threadsEnabled,
+            showThreads = showThreads,
+            isThreadsDrawerOpen = isThreadsDrawerOpen,
             threadsUnreadCount = 0,
             threadsHaveMention = false,
             directLogoutState = directLogoutState,

@@ -96,7 +96,6 @@ fun HomeView(
     acceptDeclineInviteView: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     leaveRoomView: @Composable () -> Unit,
-    threadsView: @Composable (Modifier) -> Unit = {},
 ) {
     val state: RoomListState = homeState.roomListState
     val coroutineScope = rememberCoroutineScope()
@@ -124,7 +123,6 @@ fun HomeView(
 
         HomeScaffold(
             state = homeState,
-            threadsView = threadsView,
             onSetUpRecoveryClick = onSetUpRecoveryClick,
             onConfirmRecoveryKeyClick = onConfirmRecoveryKeyClick,
             onRoomClick = { roomId -> if (firstThrottler.canHandle()) onRoomClick(roomId, null) },
@@ -171,7 +169,6 @@ private fun HomeScaffold(
     onCreateSpaceClick: () -> Unit,
     onMenuActionClick: (RoomListMenuAction) -> Unit,
     modifier: Modifier = Modifier,
-    threadsView: @Composable (Modifier) -> Unit,
 ) {
     fun onRoomClick(room: RoomListRoomSummary) {
         onRoomClick(room.roomId)
@@ -204,6 +201,9 @@ private fun HomeScaffold(
                 selectedNavigationItem = state.currentHomeNavigationBarItem,
                 currentUserAndNeighbors = state.currentUserAndNeighbors,
                 showAvatarIndicator = state.showAvatarIndicator,
+                showThreadsButton = state.showThreads,
+                isThreadsDrawerOpen = state.isThreadsDrawerOpen,
+                onThreadsClick = { state.eventSink(HomeEvent.OpenThreadsDrawer) },
                 areSearchResultsDisplayed = if (roomListState.globalSearchState.isEnabled) {
                     roomListState.globalSearchState.isSearchActive
                 } else {
@@ -239,15 +239,12 @@ private fun HomeScaffold(
                 // navigation bar, so the floating toolbar has to apply the bottom inset itself to avoid overlapping it.
                 modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
                 currentHomeNavigationBarItem = state.currentHomeNavigationBarItem,
-                showThreads = state.showThreads,
-                threadsUnreadCount = state.threadsUnreadCount,
-                threadsHaveMention = state.threadsHaveMention,
                 onItemClick = { item ->
                     // scroll to top if selecting the same item
                     if (item == state.currentHomeNavigationBarItem) {
                         val lazyListStateTarget = when (item) {
                             HomeNavigationBarItem.Chats -> roomsLazyListState
-                            HomeNavigationBarItem.Spaces, HomeNavigationBarItem.Threads -> spacesLazyListState
+                            HomeNavigationBarItem.Spaces -> spacesLazyListState
                         }
                         coroutineScope.launch {
                             if (lazyListStateTarget.firstVisibleItemIndex > 10) {
@@ -261,19 +258,10 @@ private fun HomeScaffold(
                         state.eventSink(HomeEvent.SelectHomeNavigationBarItem(item))
                     }
                 },
-                floatingActionButton = if (state.currentHomeNavigationBarItem == HomeNavigationBarItem.Threads) {
-                    null
-                } else {
-                    {
+                floatingActionButton = {
                     when (state.currentHomeNavigationBarItem) {
-                        HomeNavigationBarItem.Chats -> {
-                            HomeFloatingActionButton(onStartChatClick, CommonStrings.action_create_room)
-                        }
-                        HomeNavigationBarItem.Spaces -> {
-                            HomeFloatingActionButton(onCreateSpaceClick, CommonStrings.action_create_space)
-                        }
-                        HomeNavigationBarItem.Threads -> Unit
-                    }
+                        HomeNavigationBarItem.Chats -> HomeFloatingActionButton(onStartChatClick, CommonStrings.action_create_room)
+                        HomeNavigationBarItem.Spaces -> HomeFloatingActionButton(onCreateSpaceClick, CommonStrings.action_create_space)
                     }
                 },
             )
@@ -292,7 +280,6 @@ private fun HomeScaffold(
                 bottom = 96.dp,
             )
             when (state.currentHomeNavigationBarItem) {
-                HomeNavigationBarItem.Threads -> threadsView(Modifier.fillMaxSize().padding(outerPadding))
                 HomeNavigationBarItem.Chats -> {
                     RoomListContentView(
                         contentState = roomListState.contentState,
@@ -358,16 +345,13 @@ private fun HomeBottomBar(
     onItemClick: (HomeNavigationBarItem) -> Unit,
     modifier: Modifier = Modifier,
     floatingActionButton: (@Composable () -> Unit)?,
-    showThreads: Boolean = false,
-    threadsUnreadCount: Int = 0,
-    threadsHaveMention: Boolean = false,
 ) {
     HorizontalFloatingToolbar(
         floatingActionButton = floatingActionButton,
         modifier = modifier
             .zIndex(1f),
     ) {
-        HomeNavigationBarItem.entries.filter { it != HomeNavigationBarItem.Threads || showThreads }.forEachIndexed { index, item ->
+        HomeNavigationBarItem.entries.forEachIndexed { index, item ->
             if (index > 0) {
                 HorizontalFloatingToolbarSeparator()
             }
@@ -375,9 +359,6 @@ private fun HomeBottomBar(
             HorizontalFloatingToolbarItem(
                 icon = item.icon(isSelected),
                 tooltipLabel = stringResource(item.labelRes),
-                counter = threadsUnreadCount.takeIf { item == HomeNavigationBarItem.Threads && it > 0 },
-                counterIsCritical = item == HomeNavigationBarItem.Threads && threadsHaveMention,
-                counterOverflowText = if (item == HomeNavigationBarItem.Threads) "99+" else "+99",
                 isSelected = isSelected,
                 onClick = { onItemClick(item) },
             )

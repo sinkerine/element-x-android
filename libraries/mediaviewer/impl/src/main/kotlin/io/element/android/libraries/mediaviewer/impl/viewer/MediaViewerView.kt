@@ -93,6 +93,7 @@ import io.element.android.libraries.designsystem.theme.components.IconButton
 import io.element.android.libraries.designsystem.theme.components.Scaffold
 import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.designsystem.theme.components.TopAppBar
+import io.element.android.libraries.designsystem.utils.BlockAppDrawerGestures
 import io.element.android.libraries.designsystem.utils.hasCompactHeightWindowSize
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarHost
 import io.element.android.libraries.designsystem.utils.snackbar.rememberSnackbarHostState
@@ -129,6 +130,8 @@ fun MediaViewerView(
     audioFocus: AudioFocus?,
     modifier: Modifier = Modifier,
 ) {
+    BlockAppDrawerGestures()
+
     val snackbarHostState = rememberSnackbarHostState(snackbarMessage = state.snackbarMessage)
     var showOverlay by remember { mutableStateOf(true) }
 
