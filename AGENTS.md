@@ -68,6 +68,14 @@ Common Gradle tasks:
 - Format: `./gradlew ktlintFormat`
 - Update Docs TOC: `./gradlew generateDocsToc`
 
+### Sandbox End-to-End Testing
+
+- Test Android features on a dedicated test emulator using [.agents/skills/element-x-android-e2e/SKILL.md](.agents/skills/element-x-android-e2e/SKILL.md).
+- Follow that skill for environment checks, debug APK build/install, emulator control, dedicated Matrix test accounts and rooms, assertions, evidence, and cleanup.
+- Run from the current feature worktree so the APK exercises the feature branch. Follow the feature plan's E2E journey and record each observed result; report missing devices or test credentials as blockers.
+- Preserve existing sessions and use synthetic content in dedicated test fixtures. Never use personal rooms or clear an existing installation to prepare a test.
+- Keep raw evidence under ignored `build/e2e/`; do not record screenshot-test baselines locally.
+
 ### Local APK Signing Key
 
 - The locally generated APK signing key is stored outside the repository at `/home/sinkerine/.local/share/element-x-local-signing-0550e5GE/`.
