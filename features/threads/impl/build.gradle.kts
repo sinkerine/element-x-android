@@ -10,6 +10,8 @@ setupDependencyInjection()
 dependencies {
     api(projects.features.threads.api)
     implementation(libs.coroutines.core)
+    implementation(projects.libraries.featureflag.api)
+    testImplementation(projects.libraries.featureflag.test)
     implementation(projects.libraries.di)
     implementation(projects.libraries.eventformatter.api)
     testImplementation(projects.libraries.eventformatter.test)
