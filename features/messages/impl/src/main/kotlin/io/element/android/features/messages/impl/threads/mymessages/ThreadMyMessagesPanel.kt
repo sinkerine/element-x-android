@@ -9,7 +9,7 @@ package io.element.android.features.messages.impl.threads.mymessages
 
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,23 +31,29 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
@@ -102,6 +108,9 @@ internal fun ThreadMyMessagesLayout(
     }
     BoxWithConstraints(modifier) {
         val availableHeight = maxHeight
+        val panelHeight = maxOf(240.dp, availableHeight * 0.45f).coerceAtMost(availableHeight * 0.7f)
+        var measuredPanelHeight by remember { mutableStateOf(panelHeight) }
+        val density = LocalDensity.current
         Column {
             Column(
                 Modifier.weight(1f).then(
@@ -111,8 +120,14 @@ internal fun ThreadMyMessagesLayout(
             )
             if (state.isOpen) {
                 // Keep some timeline usable even when the available height is smaller than the preferred minimum.
-                val panelHeight = maxOf(240.dp, availableHeight * 0.45f).coerceAtMost(availableHeight * 0.7f)
-                ThreadMyMessagesPanel(state, Modifier.height(panelHeight).navigationBarsPadding())
+                ThreadMyMessagesPanel(state, Modifier.height(panelHeight).onSizeChanged {
+                    measuredPanelHeight = with(density) { it.height.toDp() }
+                }.navigationBarsPadding())
+            }
+        }
+        if (state.isOpen && state.peek is ThreadMyMessagePeek.Card) {
+            state.items.firstOrNull { it.eventId == state.peek.eventId }?.let {
+                ThreadMyMessagesPreviewCard(it, state.ownAvatar, Modifier.align(Alignment.BottomCenter).padding(bottom = measuredPanelHeight + 10.dp))
             }
         }
         Box(Modifier.size(1.dp).semantics {
@@ -125,6 +140,18 @@ internal fun ThreadMyMessagesLayout(
 @Composable
 internal fun ThreadMyMessagesPanel(state: ThreadMyMessagesState, modifier: Modifier = Modifier) {
     val close = { state.eventSink(ThreadMyMessagesEvent.Close) }
+    val listState = rememberLazyListState()
+    var positioned by remember { mutableStateOf(false) }
+    LaunchedEffect(state.isOpen, state.isReadingPositionReady, state.previousEventId, state.items) {
+        if (!state.isOpen) {
+            positioned = false
+        } else if (!positioned && state.isReadingPositionReady) {
+            state.items.indexOfFirst { it.eventId == state.previousEventId }.takeIf { it >= 0 }?.let {
+                listState.scrollToItem(it)
+                positioned = true
+            }
+        }
+    }
     Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp), color = ElementTheme.colors.bgCanvasDefault) {
         Column {
             Box(
@@ -154,21 +181,50 @@ internal fun ThreadMyMessagesPanel(state: ThreadMyMessagesState, modifier: Modif
                 }
                 Text(stringResource(R.string.screen_thread_my_messages_title), style = ElementTheme.typography.fontBodyLgMedium)
                 Text(" · $count", Modifier.weight(1f), color = ElementTheme.colors.textSecondary)
-                IconButton(onClick = close) { Icon(CompoundIcons.Close(), stringResource(CommonStrings.action_close)) }
+                IconButton(modifier = Modifier.size(48.dp), onClick = { state.eventSink(ThreadMyMessagesEvent.JumpToPrevious) }) {
+                    Icon(CompoundIcons.ArrowUp(), stringResource(R.string.a11y_thread_my_messages_previous))
+                }
+                IconButton(modifier = Modifier.size(48.dp), onClick = close) { Icon(CompoundIcons.Close(), stringResource(CommonStrings.action_close)) }
             }
             if (state.loadState == ThreadMyMessagesLoadState.Loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            LazyColumn(Modifier.weight(1f)) {
+            LazyColumn(Modifier.weight(1f), state = listState) {
                 items(state.items, key = { it.eventId.value }) { item ->
                     val isCurrent = state.currentEventId == item.eventId
                     val root = stringResource(R.string.a11y_thread_my_messages_root)
+                    val onScreen = stringResource(R.string.a11y_thread_my_messages_on_screen)
+                    val preview = stringResource(R.string.a11y_thread_my_messages_preview)
+                    val sink by rememberUpdatedState(state.eventSink)
+                    val description = listOfNotNull(item.fullTime, root.takeIf { item.isRoot }, onScreen.takeIf { item.isOnScreen }, item.snippet.take(80))
+                        .joinToString(", ")
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             .background(if (isCurrent) ElementTheme.colors.bgAccentSubtle else ElementTheme.colors.bgCanvasDefault)
-                            .clickable(role = Role.Button) { state.eventSink(ThreadMyMessagesEvent.JumpTo(item.eventId)) }
+                            .pointerInput(item.eventId) {
+                                var peeking = false
+                                detectTapGestures(
+                                    onTap = { sink(ThreadMyMessagesEvent.JumpTo(item.eventId)) },
+                                    onLongPress = {
+                                        peeking = true
+                                        sink(ThreadMyMessagesEvent.Peek(item.eventId))
+                                    },
+                                    onPress = {
+                                        peeking = false
+                                        try {
+                                            awaitRelease()
+                                        } finally {
+                                            if (peeking) sink(ThreadMyMessagesEvent.EndPeek)
+                                        }
+                                    },
+                                )
+                            }
                             .clearAndSetSemantics {
                                 selected = isCurrent
                                 role = Role.Button
-                                contentDescription = "${item.fullTime}${if (item.isRoot) ", $root" else ""}, ${item.snippet.take(80)}"
+                                contentDescription = description
+                                customActions = listOf(CustomAccessibilityAction(preview) {
+                                    state.eventSink(ThreadMyMessagesEvent.Preview(item.eventId))
+                                    true
+                                })
                                 onClick {
                                     state.eventSink(ThreadMyMessagesEvent.JumpTo(item.eventId))
                                     true
@@ -186,6 +242,14 @@ internal fun ThreadMyMessagesPanel(state: ThreadMyMessagesState, modifier: Modif
                             color = ElementTheme.colors.textSecondary
                         )
                         Text(item.snippet, Modifier.weight(1f).padding(vertical = 11.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (state.previousEventId == item.eventId) {
+                            Text(
+                                stringResource(R.string.screen_thread_my_messages_previous_label),
+                                Modifier.padding(horizontal = 4.dp),
+                                style = ElementTheme.typography.fontBodySmRegular
+                            )
+                        }
+                        if (item.isOnScreen) Box(Modifier.size(8.dp).background(ElementTheme.colors.iconAccentPrimary, RoundedCornerShape(4.dp)))
                         if (item.isRoot) {
                             Text(
                                 stringResource(R.string.screen_thread_my_messages_root_chip),

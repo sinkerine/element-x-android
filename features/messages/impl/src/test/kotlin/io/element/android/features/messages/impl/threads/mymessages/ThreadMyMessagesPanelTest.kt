@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
@@ -32,6 +33,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -48,10 +50,120 @@ import io.element.android.tests.testutils.EventsRecorder
 import io.element.android.tests.testutils.robolectric.RobolectricTest
 import io.element.android.tests.testutils.setSafeContent
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ThreadMyMessagesPanelTest : RobolectricTest() {
+    @Test
+    fun `previous button and label dispatch and visible row exposes on screen semantics`() = runAndroidComposeUiTest {
+        val events = EventsRecorder<ThreadMyMessagesEvent>()
+        setSafeContent {
+            ThreadMyMessagesPanel(aThreadMyMessagesState().copy(previousEventId = EventId("$" + "root"), eventSink = events), Modifier.height(360.dp))
+        }
+        onNodeWithContentDescription("Jump to your previous message").assertHeightIsAtLeast(48.dp).performClick()
+        events.assertSingle(ThreadMyMessagesEvent.JumpToPrevious)
+        onNodeWithText("Previous", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithContentDescription("Today at 09:15, thread root, on screen, Plans for this week").assertExists()
+    }
+
+    @Test
+    fun `hold release and cancel preview without jump while short touch still jumps`() = runAndroidComposeUiTest {
+        val events = mutableListOf<ThreadMyMessagesEvent>()
+        setSafeContent { ThreadMyMessagesPanel(aThreadMyMessagesState().copy(eventSink = { events.add(it) }), Modifier.height(360.dp)) }
+        val row = onNodeWithContentDescription("Today at 10:42, I can help with that.")
+        row.performTouchInput {
+            down(center)
+            advanceEventTime(700)
+        }
+        mainClock.advanceTimeBy(750)
+        waitForIdle()
+        runOnIdle { assertEquals(listOf(ThreadMyMessagesEvent.Peek(EventId("$" + "reply"))), events) }
+        row.performTouchInput { up() }
+        runOnIdle {
+            assertEquals(ThreadMyMessagesEvent.EndPeek, events.last())
+            events.clear()
+        }
+        row.performTouchInput {
+            down(center)
+            advanceEventTime(700)
+        }
+        mainClock.advanceTimeBy(750)
+        row.performTouchInput { cancel() }
+        runOnIdle {
+            assertEquals(listOf(ThreadMyMessagesEvent.Peek(EventId("$" + "reply")), ThreadMyMessagesEvent.EndPeek), events)
+            events.clear()
+        }
+        row.performTouchInput { click() }
+        runOnIdle {
+            assertEquals(1, events.count { it == ThreadMyMessagesEvent.JumpTo(EventId("$" + "reply")) })
+            assertEquals(0, events.count { it is ThreadMyMessagesEvent.Peek })
+        }
+    }
+
+    @Test
+    fun `TalkBack preview action dispatches accessible announcement event without held preview`() = runAndroidComposeUiTest {
+        val events = EventsRecorder<ThreadMyMessagesEvent>()
+        setSafeContent { ThreadMyMessagesPanel(aThreadMyMessagesState().copy(eventSink = events), Modifier.height(360.dp)) }
+        val actions = onNodeWithContentDescription("Today at 10:42, I can help with that.").fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        assertEquals(listOf("Preview"), actions.map { it.label })
+        runOnIdle { actions.single().action() }
+        events.assertSingle(ThreadMyMessagesEvent.Preview(EventId("$" + "reply")))
+    }
+
+    @Test
+    fun `opening scrolls panel to previous row once without following later reading changes`() = runAndroidComposeUiTest {
+        val base = aThreadMyMessagesState()
+        val rows = (0..30).map { base.items.first().copy(eventId = EventId("$" + "row$it"), snippet = "Row $it") }.toImmutableList()
+        val state = mutableStateOf(base.copy(items = rows, previousEventId = rows[20].eventId))
+        setSafeContent { ThreadMyMessagesPanel(state.value, Modifier.height(360.dp)) }
+        onNodeWithText("Row 20", useUnmergedTree = true).assertIsDisplayed()
+        runOnIdle { state.value = state.value.copy(previousEventId = rows[0].eventId) }
+        onNodeWithText("Row 20", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("Row 0", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `reopened panel waits for fresh reading position before its initial scroll`() = runAndroidComposeUiTest {
+        val base = aThreadMyMessagesState()
+        val rows = (0..30).map { base.items.first().copy(eventId = EventId("$" + "row$it"), snippet = "Row $it") }.toImmutableList()
+        val state = mutableStateOf(base.copy(items = rows, previousEventId = rows[20].eventId))
+        setSafeContent {
+            if (state.value.isOpen) ThreadMyMessagesPanel(state.value, Modifier.height(360.dp))
+        }
+        onNodeWithText("Row 20", useUnmergedTree = true).assertIsDisplayed()
+        runOnIdle { state.value = state.value.copy(isOpen = false, previousEventId = null, isReadingPositionReady = false) }
+        onNodeWithText("Your messages").assertDoesNotExist()
+        // The thread scrolls while closed, before the callback can report its new viewport.
+        runOnIdle { state.value = state.value.copy(isOpen = true) }
+        onNodeWithText("Row 0", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("Row 20", useUnmergedTree = true).assertDoesNotExist()
+        onNodeWithText("Previous", useUnmergedTree = true).assertDoesNotExist()
+        // A target alone is insufficient until mapping and visibility are both fresh.
+        runOnIdle { state.value = state.value.copy(previousEventId = rows[10].eventId) }
+        onNodeWithText("Row 0", useUnmergedTree = true).assertIsDisplayed()
+        runOnIdle { state.value = state.value.copy(isReadingPositionReady = true) }
+        onNodeWithText("Row 10", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("Previous", useUnmergedTree = true).assertIsDisplayed()
+        runOnIdle { state.value = state.value.copy(previousEventId = rows[25].eventId) }
+        onNodeWithText("Row 10", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("Row 25", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `card sits above measured panel and outline or close removes it`() = runAndroidComposeUiTest {
+        val state = mutableStateOf(aThreadMyMessagesState().copy(peek = ThreadMyMessagePeek.Card(EventId("$" + "reply"))))
+        setSafeContent { ThreadMyMessagesLayout(state.value, {}, Modifier.height(600.dp)) { Box(Modifier.fillMaxSize()) } }
+        onNodeWithText("You · Today at 10:42").assertIsDisplayed()
+        val cardText = onNodeWithText("You · Today at 10:42").fetchSemanticsNode().boundsInRoot
+        val header = onNodeWithText("Your messages").fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue(cardText.bottom < header.top)
+        runOnIdle { state.value = state.value.copy(peek = ThreadMyMessagePeek.Outline(EventId("$" + "reply"))) }
+        onNodeWithText("You · Today at 10:42").assertDoesNotExist()
+        runOnIdle { state.value = state.value.copy(isOpen = false, peek = ThreadMyMessagePeek.Card(EventId("$" + "reply"))) }
+        onNodeWithText("You · Today at 10:42").assertDoesNotExist()
+    }
+
     @Test
     fun `own avatar button exposes entry label and a 48dp touch target`() = runAndroidComposeUiTest {
         var clicks = 0
@@ -111,7 +223,7 @@ class ThreadMyMessagesPanelTest : RobolectricTest() {
         val events = EventsRecorder<ThreadMyMessagesEvent>()
         val state = aThreadMyMessagesState().copy(currentEventId = EventId("$" + "root"), eventSink = events)
         setSafeContent { ThreadMyMessagesPanel(state, Modifier.height(360.dp)) }
-        onNodeWithContentDescription("Today at 09:15, thread root, Plans for this week").assertIsSelected().performClick()
+        onNodeWithContentDescription("Today at 09:15, thread root, on screen, Plans for this week").assertIsSelected().performClick()
         events.assertSingle(ThreadMyMessagesEvent.JumpTo(EventId("$" + "root")))
         onNodeWithText("Your messages").assertIsDisplayed()
         onNodeWithContentDescription("Today at 10:42, I can help with that.").assertExists()

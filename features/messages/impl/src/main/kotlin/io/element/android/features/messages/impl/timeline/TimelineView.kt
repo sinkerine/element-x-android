@@ -111,7 +111,9 @@ import io.element.android.libraries.testtags.TestTags
 import io.element.android.libraries.testtags.testTag
 import io.element.android.libraries.ui.strings.CommonStrings
 import io.element.android.wysiwyg.link.Link
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -146,6 +148,8 @@ fun TimelineView(
     nestedScrollConnection: NestedScrollConnection = rememberNestedScrollInteropConnection(),
     floatingDateTopOffset: Dp = 0.dp,
     floatingActions: @Composable ColumnScope.() -> Unit = {},
+    outlinedEventId: EventId? = null,
+    onVisibleEventIdsChange: ((ImmutableList<EventId>) -> Unit)? = null,
 ) {
     fun clearFocusRequestState() {
         state.eventSink(TimelineEvent.ClearFocusRequestState)
@@ -171,6 +175,18 @@ fun TimelineView(
         state.eventSink(TimelineEvent.FocusOnEvent(eventId))
     }
 
+    val eventsByKey = remember(state.timelineItems) { state.timelineItems.filterIsInstance<TimelineItem.Event>().associateBy { it.identifier() } }
+    val latestEventsByKey by rememberUpdatedState(eventsByKey)
+    val latestVisibleCallback by rememberUpdatedState(onVisibleEventIdsChange)
+    LaunchedEffect(lazyListState, onVisibleEventIdsChange != null) {
+        if (onVisibleEventIdsChange != null) {
+            snapshotFlow {
+                lazyListState.layoutInfo.visibleItemsInfo.sortedBy { it.index }.mapNotNull { info ->
+                    latestEventsByKey[info.key]?.eventId
+                }.toImmutableList()
+            }.distinctUntilChanged().collect { latestVisibleCallback?.invoke(it) }
+        }
+    }
     val context = LocalContext.current
     val toastMessage = stringResource(CommonStrings.common_copied_to_clipboard)
     val view = LocalView.current
@@ -226,6 +242,7 @@ fun TimelineView(
                             timelineProtectionState = timelineProtectionState,
                             isLastOutgoingMessage = state.isLastOutgoingMessage(timelineItem.identifier()),
                             focusedEventId = state.focusedEventId,
+                            outlinedEventId = outlinedEventId,
                             displayThreadSummaries = state.displayThreadSummaries,
                             onUserDataClick = onUserDataClick,
                             onLinkClick = onLinkClick,

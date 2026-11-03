@@ -8,6 +8,7 @@
 package io.element.android.features.messages.impl.threads.mymessages
 
 import io.element.android.libraries.matrix.api.core.EventId
+import kotlinx.collections.immutable.ImmutableList
 
 sealed interface ThreadMyMessagesEvent {
     data object Open : ThreadMyMessagesEvent
@@ -15,5 +16,10 @@ sealed interface ThreadMyMessagesEvent {
     data object Retry : ThreadMyMessagesEvent
     data class JumpTo(val eventId: EventId) : ThreadMyMessagesEvent
     data object JumpConsumed : ThreadMyMessagesEvent
+    data object JumpToPrevious : ThreadMyMessagesEvent
+    data class Peek(val eventId: EventId) : ThreadMyMessagesEvent
+    data class Preview(val eventId: EventId) : ThreadMyMessagesEvent
+    data object EndPeek : ThreadMyMessagesEvent
+    data class VisibleEventsChanged(val newestFirst: ImmutableList<EventId>) : ThreadMyMessagesEvent
     data object AnnouncementConsumed : ThreadMyMessagesEvent
 }

@@ -20,7 +20,9 @@ internal class ThreadMyMessagesStateProvider : PreviewParameterProvider<ThreadMy
         aThreadMyMessagesState().copy(isComplete = true, loadState = ThreadMyMessagesLoadState.Idle),
         aThreadMyMessagesState().copy(items = persistentListOf()),
         aThreadMyMessagesState().copy(items = persistentListOf(), isComplete = true, loadState = ThreadMyMessagesLoadState.Idle),
-        aThreadMyMessagesState().copy(currentEventId = EventId("$" + "root")),
+        aThreadMyMessagesState().copy(currentEventId = EventId("$" + "root"), previousEventId = EventId("$" + "root")),
+        aThreadMyMessagesState().copy(peek = ThreadMyMessagePeek.Card(EventId("$" + "reply"))),
+        aThreadMyMessagesState().copy(peek = ThreadMyMessagePeek.Outline(EventId("$" + "root"))),
         aThreadMyMessagesState().copy(isLimitReached = true, loadState = ThreadMyMessagesLoadState.Idle),
     )
 }
@@ -30,8 +32,17 @@ internal fun aThreadMyMessagesState() = ThreadMyMessagesState(
     ownAvatar = AvatarData("@alex:example.org", "Alex", size = AvatarSize.ThreadMyMessagesButton),
     isOpen = true,
     items = persistentListOf(
-        ThreadMyMessageItem(EventId("$" + "reply"), "10:42", "Today at 10:42", "I can help with that.", "I can help with that.", false, false),
-        ThreadMyMessageItem(EventId("$" + "root"), "09:15", "Today at 09:15", "Plans for this week", "Plans for this week", true, false),
+        ThreadMyMessageItem(
+            EventId("$" + "reply"),
+            "10:42",
+            "Today at 10:42",
+            "I can help with that.",
+            "I can help with that.",
+            false,
+            true,
+            context = ThreadMyMessageContext("Sam", "Could someone help?")
+        ),
+        ThreadMyMessageItem(EventId("$" + "root"), "09:15", "Today at 09:15", "Plans for this week", "Plans for this week", true, false, isOnScreen = true),
     ),
     isComplete = false,
     isLimitReached = false,
@@ -39,5 +50,6 @@ internal fun aThreadMyMessagesState() = ThreadMyMessagesState(
     currentEventId = null,
     pendingJump = null,
     announcement = null,
+    isReadingPositionReady = true,
     eventSink = {},
 )

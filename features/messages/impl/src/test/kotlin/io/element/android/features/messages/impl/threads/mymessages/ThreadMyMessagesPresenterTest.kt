@@ -18,6 +18,7 @@ import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
 import io.element.android.features.messages.impl.R
 import io.element.android.libraries.architecture.Presenter
+import io.element.android.libraries.core.coroutine.CoroutineDispatchers
 import io.element.android.libraries.dateformatter.test.FakeDateFormatter
 import io.element.android.libraries.designsystem.components.avatar.AvatarSize
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher
@@ -26,12 +27,16 @@ import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.timeline.Timeline
 import io.element.android.libraries.matrix.api.timeline.item.event.MessageContent
 import io.element.android.libraries.matrix.api.timeline.item.event.PollContent
+import io.element.android.libraries.matrix.api.timeline.item.event.getDisambiguatedDisplayName
 import io.element.android.libraries.matrix.test.FakeMatrixClient
 import io.element.android.libraries.matrix.test.timeline.aMessageContent
 import io.element.android.libraries.matrix.test.timeline.aPollContent
 import io.element.android.tests.testutils.robolectric.RobolectricTest
 import io.element.android.tests.testutils.testCoroutineDispatchers
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +49,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Test
 import org.robolectric.RuntimeEnvironment
+import kotlin.coroutines.CoroutineContext
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ThreadMyMessagesPresenterTest : RobolectricTest() {
@@ -409,11 +415,386 @@ class ThreadMyMessagesPresenterTest : RobolectricTest() {
         }
     }
 
+    @Test
+    fun `previous uses chronological order oldest visible and current only while visible then steps before range arrives`() = runTest {
+        val timeline = RecordingThreadTimeline(hasMore = false).apply { timelineItems.value = (0..5).map { ownEvent(it) } }
+        presenter(timeline).testWithContext {
+            var state = awaitState { it.items.size == 6 }
+            fun id(index: Int) = requireNotNull(ownEvent(index).eventId)
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(id(5), id(4))))
+            state = awaitState { it.previousEventId == id(3) }
+            assertThat(state.items.map { it.isOnScreen }).containsExactly(true, true, false, false, false, false).inOrder()
+            state.eventSink(ThreadMyMessagesEvent.JumpTo(id(5)))
+            state = awaitState { it.pendingJump == id(5) }
+            assertThat(state.previousEventId).isEqualTo(id(4))
+            state.eventSink(ThreadMyMessagesEvent.JumpConsumed)
+            state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+            state = awaitState { it.pendingJump == id(4) }
+            state.eventSink(ThreadMyMessagesEvent.JumpConsumed)
+            state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+            state = awaitState { it.pendingJump == id(3) }
+            assertThat(state.previousEventId).isEqualTo(id(2))
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(id(4), id(3), id(2))))
+            state = awaitState { it.items.count { it.isOnScreen } == 3 }
+            assertThat(state.previousEventId).isEqualTo(id(2))
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(id(5), id(4))))
+            state = awaitState { it.previousEventId == id(3) }
+            // The old current mark is off screen; the oldest visible event now supplies the anchor.
+            assertThat(state.currentEventId).isEqualTo(id(3))
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf()))
+            state = awaitState { it.previousEventId == null }
+            assertThat(state.items.none { it.isOnScreen }).isTrue()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `close and reopen invalidate old viewport until new reading position arrives`() = runTest {
+        val timeline = RecordingThreadTimeline(hasMore = false).apply { timelineItems.value = (0..5).map { ownEvent(it) } }
+        presenter(timeline).testWithContext {
+            var state = awaitState { it.items.size == 6 }
+            fun id(index: Int) = requireNotNull(ownEvent(index).eventId)
+            state.eventSink(ThreadMyMessagesEvent.Open)
+            state = awaitState { it.isOpen }
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(id(5), id(4))))
+            state = awaitState { it.previousEventId == id(3) }
+            state.eventSink(ThreadMyMessagesEvent.JumpTo(id(5)))
+            state = awaitState { it.pendingJump == id(5) }
+            state.eventSink(ThreadMyMessagesEvent.JumpConsumed)
+            state.eventSink(ThreadMyMessagesEvent.Close)
+            state = awaitState { !it.isOpen }
+            assertThat(state.previousEventId).isNull()
+            assertThat(state.isReadingPositionReady).isFalse()
+            assertThat(state.items.none { it.isOnScreen }).isTrue()
+            // The timeline scrolls to 2, 1 while reporting is disabled in the node.
+            state.eventSink(ThreadMyMessagesEvent.Open)
+            state = awaitState { it.isOpen }
+            assertThat(state.previousEventId).isNull()
+            assertThat(state.isReadingPositionReady).isFalse()
+            assertThat(state.pendingJump).isNull()
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(id(2), id(1))))
+            state = awaitState { it.isReadingPositionReady }
+            assertThat(state.previousEventId).isEqualTo(id(0))
+            assertThat(state.items.filter { it.isOnScreen }.map { it.eventId }).containsExactly(id(2), id(1)).inOrder()
+            state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+            state = awaitState { it.pendingJump != null }
+            assertThat(state.pendingJump).isEqualTo(id(0))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `previous can anchor to another sender and ignores timestamps`() = runTest {
+        val other = ownEvent(3).let { it.copy(event = it.event.copy(isOwn = false, timestamp = 0)) }
+        val timeline = RecordingThreadTimeline(hasMore = false).apply {
+            timelineItems.value = listOf(ownEvent(0), ownEvent(1), ownEvent(2), other, ownEvent(4))
+        }
+        presenter(timeline).testWithContext {
+            var state = awaitState { it.items.size == 4 }
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(listOfNotNull(ownEvent(4).eventId, other.eventId).toImmutableList()))
+            state = awaitState { it.previousEventId != null }
+            assertThat(state.previousEventId).isEqualTo(ownEvent(2).eventId)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `deferred previous resolves once when older page arrives before completion`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val timeline = RecordingThreadTimeline().apply { timelineItems.value = listOf(ownEvent(3)) }
+        timeline.page = {
+            if (timeline.calls == 1) {
+                gate.await()
+                timeline.timelineItems.value = listOf(ownEvent(1), ownEvent(2), ownEvent(3))
+                Result.success(false)
+            } else {
+                finish.await()
+                Result.success(true)
+            }
+        }
+        presenter(timeline).testWithContext {
+            var state = awaitState { it.items.size == 1 }
+            state.eventSink(ThreadMyMessagesEvent.Open)
+            state = awaitState { it.loadState == ThreadMyMessagesLoadState.Loading }
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(requireNotNull(ownEvent(3).eventId))))
+            state = awaitState { it.isReadingPositionReady }
+            repeat(2) { state.eventSink(ThreadMyMessagesEvent.JumpToPrevious) }
+            runCurrent()
+            assertThat(state.pendingJump).isNull()
+            gate.complete(Unit)
+            state = awaitState { it.pendingJump != null }
+            assertThat(state.pendingJump).isEqualTo(ownEvent(2).eventId)
+            assertThat(state.isComplete).isFalse()
+            state.eventSink(ThreadMyMessagesEvent.JumpConsumed)
+            state = awaitState { it.pendingJump == null }
+            finish.complete(Unit)
+            state = awaitState { it.isComplete }
+            assertThat(state.pendingJump).isNull()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `immediate previous supersedes queued request before older pagination arrives`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val timeline = RecordingThreadTimeline().apply { timelineItems.value = listOf(ownEvent(2), ownEvent(4), ownEvent(6)) }
+        timeline.page = {
+            gate.await()
+            timeline.timelineItems.value = listOf(ownEvent(1), ownEvent(2), ownEvent(4), ownEvent(6))
+            Result.success(true)
+        }
+        presenter(timeline).testWithContext {
+            var state = awaitState { it.items.size == 3 }
+            fun id(index: Int) = requireNotNull(ownEvent(index).eventId)
+            state.eventSink(ThreadMyMessagesEvent.Open)
+            state = awaitState { it.loadState == ThreadMyMessagesLoadState.Loading }
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(id(2))))
+            state = awaitState { it.isReadingPositionReady }
+            state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+            runCurrent()
+            assertThat(state.pendingJump).isNull()
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(id(6))))
+            state = awaitState { it.previousEventId == id(4) }
+            state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+            state = awaitState { it.pendingJump == id(4) }
+            state.eventSink(ThreadMyMessagesEvent.JumpConsumed)
+            state = awaitState { it.pendingJump == null }
+            assertThat(state.currentEventId).isEqualTo(id(4))
+            gate.complete(Unit)
+            runCurrent()
+            state = expectMostRecentItem()
+            assertThat(state.items).hasSize(4)
+            assertThat(state.isComplete).isTrue()
+            assertThat(state.pendingJump).isNull()
+            assertThat(state.currentEventId).isEqualTo(id(4))
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `deferred previous sees older own message from final page instead of posting no earlier`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val snackbar = SnackbarDispatcher()
+        val timeline = RecordingThreadTimeline().apply { timelineItems.value = listOf(ownEvent(2)) }
+        timeline.page = {
+            gate.await()
+            timeline.timelineItems.value = listOf(ownEvent(1), ownEvent(2))
+            timeline.backwardPaginationStatus.value = Timeline.PaginationStatus(false, false)
+            Result.success(true)
+        }
+        presenter(timeline, snackbar = snackbar).testWithContext {
+            var state = awaitState { it.items.size == 1 }
+            state.eventSink(ThreadMyMessagesEvent.Open)
+            state = awaitState { it.loadState == ThreadMyMessagesLoadState.Loading }
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(requireNotNull(ownEvent(2).eventId))))
+            state = awaitState { it.isReadingPositionReady }
+            state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+            gate.complete(Unit)
+            state = awaitState { it.pendingJump != null }
+            assertThat(state.pendingJump).isEqualTo(ownEvent(1).eventId)
+            assertThat(snackbar.snackbarMessage.first()).isNull()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `previous pressed after completion waits for final mapping and close cancels the request`() = runTest {
+        for (closeBeforeMapping in listOf(false, true)) {
+            val computationTasks = ArrayDeque<Runnable>()
+            val computation = object : CoroutineDispatcher() {
+                override fun dispatch(context: CoroutineContext, block: Runnable) {
+                    computationTasks.addLast(block)
+                }
+            }
+            val gate = CompletableDeferred<Unit>()
+            val snackbar = SnackbarDispatcher()
+            val timeline = RecordingThreadTimeline().apply { timelineItems.value = listOf(ownEvent(2)) }
+            timeline.page = {
+                gate.await()
+                timeline.timelineItems.value = listOf(ownEvent(1), ownEvent(2))
+                timeline.backwardPaginationStatus.value = Timeline.PaginationStatus(false, false)
+                Result.success(true)
+            }
+            presenter(timeline, snackbar = snackbar, dispatchers = testCoroutineDispatchers().copy(computation = computation)).testWithContext {
+                runCurrent()
+                assertThat(computationTasks).isNotEmpty()
+                while (computationTasks.isNotEmpty()) computationTasks.removeFirst().run()
+                var state = awaitState { it.items.size == 1 }
+                state.eventSink(ThreadMyMessagesEvent.Open)
+                state = awaitState { it.loadState == ThreadMyMessagesLoadState.Loading }
+                state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(requireNotNull(ownEvent(2).eventId))))
+                state = awaitState { it.isReadingPositionReady }
+                gate.complete(Unit)
+                state = awaitState { it.isComplete && !it.isReadingPositionReady }
+                assertThat(state.items).hasSize(1)
+                assertThat(state.previousEventId).isNull()
+                state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+                runCurrent()
+                assertThat(snackbar.snackbarMessage.first()).isNull()
+                assertThat(computationTasks).isNotEmpty()
+                if (closeBeforeMapping) {
+                    state.eventSink(ThreadMyMessagesEvent.Close)
+                    state = awaitState { !it.isOpen }
+                }
+                while (computationTasks.isNotEmpty()) computationTasks.removeFirst().run()
+                state = awaitState { it.items.size == 2 && (closeBeforeMapping || it.pendingJump != null) }
+                runCurrent()
+                assertThat(state.pendingJump).isEqualTo(if (closeBeforeMapping) null else ownEvent(1).eventId)
+                assertThat(snackbar.snackbarMessage.first()).isNull()
+                if (!closeBeforeMapping) {
+                    state.eventSink(ThreadMyMessagesEvent.JumpConsumed)
+                    state = awaitState { it.pendingJump == null }
+                    state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+                    runCurrent()
+                    assertThat(snackbar.snackbarMessage.first()?.messageResId).isEqualTo(R.string.screen_thread_my_messages_no_earlier)
+                }
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+    }
+
+    @Test
+    fun `deferred previous reports true end only after final page mapping finishes`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val snackbar = SnackbarDispatcher()
+        val timeline = RecordingThreadTimeline().apply { timelineItems.value = listOf(ownEvent(2)) }
+        timeline.page = {
+            gate.await()
+            Result.success(true)
+        }
+        presenter(timeline, snackbar = snackbar).testWithContext {
+            var state = awaitState { it.items.size == 1 }
+            state.eventSink(ThreadMyMessagesEvent.Open)
+            state = awaitState { it.loadState == ThreadMyMessagesLoadState.Loading }
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(requireNotNull(ownEvent(2).eventId))))
+            state = awaitState { it.isReadingPositionReady }
+            state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+            gate.complete(Unit)
+            state = awaitState { it.isComplete }
+            runCurrent()
+            assertThat(snackbar.snackbarMessage.first()?.messageResId).isEqualTo(R.string.screen_thread_my_messages_no_earlier)
+            assertThat(state.pendingJump).isNull()
+            snackbar.clear()
+            state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+            runCurrent()
+            assertThat(snackbar.snackbarMessage.first()?.messageResId).isEqualTo(R.string.screen_thread_my_messages_no_earlier)
+            timeline.timelineItems.value = listOf(ownEvent(1), ownEvent(2))
+            runCurrent()
+            state = expectMostRecentItem()
+            assertThat(state.items).hasSize(2)
+            assertThat(state.pendingJump).isNull()
+            assertThat(state.currentEventId).isNull()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `capped or failed previous stops waiting without claiming no history and rows remain usable`() = runTest {
+        for (failure in listOf(false, true)) {
+            val gate = CompletableDeferred<Unit>()
+            val snackbar = SnackbarDispatcher()
+            val timeline = RecordingThreadTimeline().apply {
+                timelineItems.value = listOf(ownEvent(2))
+                page = {
+                    gate.await()
+                    if (failure) Result.failure(IllegalStateException("test")) else Result.success(false)
+                }
+            }
+            presenter(timeline, snackbar = snackbar).testWithContext {
+                var state = awaitState { it.items.size == 1 }
+                state.eventSink(ThreadMyMessagesEvent.Open)
+                state = awaitState { it.loadState == ThreadMyMessagesLoadState.Loading }
+                state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(requireNotNull(ownEvent(2).eventId))))
+                state = awaitState { it.isReadingPositionReady }
+                state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+                gate.complete(Unit)
+                state = awaitState { it.isLimitReached || it.loadState == ThreadMyMessagesLoadState.Failed }
+                runCurrent()
+                assertThat(snackbar.snackbarMessage.first()).isNull()
+                state.eventSink(ThreadMyMessagesEvent.JumpToPrevious)
+                runCurrent()
+                // An older item arriving after this terminal state must not trigger the cancelled request.
+                timeline.timelineItems.value = listOf(ownEvent(1), ownEvent(2))
+                state = awaitState { it.items.size == 2 }
+                assertThat(state.pendingJump).isNull()
+                state.eventSink(ThreadMyMessagesEvent.JumpTo(requireNotNull(ownEvent(1).eventId)))
+                state = awaitState { it.pendingJump != null }
+                assertThat(state.pendingJump).isEqualTo(ownEvent(1).eventId)
+                assertThat(snackbar.snackbarMessage.first()).isNull()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+    }
+
+    @Test
+    fun `hold follows visibility switches card outline and clears on release close or removed item`() = runTest {
+        val timeline = RecordingThreadTimeline(hasMore = false).apply { timelineItems.value = listOf(ownEvent(0), ownEvent(1)) }
+        presenter(timeline).testWithContext {
+            var state = awaitState { it.items.size == 2 }
+            val id = requireNotNull(ownEvent(1).eventId)
+            state.eventSink(ThreadMyMessagesEvent.Open)
+            state = awaitState { it.isOpen }
+            state.eventSink(ThreadMyMessagesEvent.Peek(id))
+            state = awaitState { it.peek is ThreadMyMessagePeek.Card }
+            assertThat(state.pendingJump).isNull()
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf(id)))
+            state = awaitState { it.peek is ThreadMyMessagePeek.Outline }
+            state.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(persistentListOf()))
+            state = awaitState { it.peek is ThreadMyMessagePeek.Card }
+            state.eventSink(ThreadMyMessagesEvent.EndPeek)
+            state = awaitState { it.peek == null }
+            state.eventSink(ThreadMyMessagesEvent.Peek(id))
+            state = awaitState { it.peek != null }
+            state.eventSink(ThreadMyMessagesEvent.Close)
+            state = awaitState { !it.isOpen }
+            assertThat(state.peek).isNull()
+            state.eventSink(ThreadMyMessagesEvent.Open)
+            state = awaitState { it.isOpen }
+            assertThat(state.peek).isNull()
+            state.eventSink(ThreadMyMessagesEvent.Peek(id))
+            state = awaitState { it.peek != null }
+            timeline.timelineItems.value = emptyList()
+            state = awaitState { it.items.isEmpty() }
+            assertThat(state.peek).isNull()
+            assertThat(state.pendingJump).isNull()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `preview context uses loaded predecessor and accessible action announces full content and badges`() = runTest {
+        val other = ownEvent(1).let { it.copy(event = it.event.copy(isOwn = false)) }
+        val timeline = RecordingThreadTimeline(hasMore = false).apply {
+            timelineItems.value = listOf(ownEvent(0), other, ownEvent(2, aMessageContent("edited body\nsecond line", isEdited = true)), ownEvent(3))
+        }
+        presenter(timeline).testWithContext {
+            var state = awaitState { it.items.size == 3 }
+            assertThat(state.items.last().context).isNull()
+            assertThat(state.items.first().context).isEqualTo(ThreadMyMessageContext("You", "edited body"))
+            assertThat(state.items[1].context?.snippet).isEqualTo("message 1")
+            assertThat(state.items[1].context?.senderName).isEqualTo(other.event.senderProfile.getDisambiguatedDisplayName(other.event.sender))
+            state.eventSink(ThreadMyMessagesEvent.Preview(requireNotNull(ownEvent(2).eventId)))
+            state = awaitState { it.announcement != null }
+            assertThat(state.announcement).contains("You · 2 Full true")
+            assertThat(state.announcement).contains("(edited)")
+            assertThat(state.announcement).contains("edited body\nsecond line")
+            assertThat(state.announcement).contains("After ")
+            assertThat(state.peek).isNull()
+            assertThat(state.pendingJump).isNull()
+            state.eventSink(ThreadMyMessagesEvent.Preview(requireNotNull(ownEvent(0).eventId)))
+            state = awaitState { it.announcement?.contains("Thread root") == true }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     private fun TestScope.presenter(
         timeline: RecordingThreadTimeline = RecordingThreadTimeline(),
         openedFromInbox: Boolean = false,
         client: FakeMatrixClient = FakeMatrixClient(),
         snackbar: SnackbarDispatcher = SnackbarDispatcher(),
+        dispatchers: CoroutineDispatchers = testCoroutineDispatchers(),
     ): Presenter<ThreadMyMessagesState> {
         val presenter = ThreadMyMessagesPresenter(
             timeline = timeline,
@@ -429,7 +810,7 @@ class ThreadMyMessagesPresenterTest : RobolectricTest() {
             },
             dateFormatter = FakeDateFormatter(),
             snackbarDispatcher = snackbar,
-            dispatchers = testCoroutineDispatchers(),
+            dispatchers = dispatchers,
         )
         return presenter
     }

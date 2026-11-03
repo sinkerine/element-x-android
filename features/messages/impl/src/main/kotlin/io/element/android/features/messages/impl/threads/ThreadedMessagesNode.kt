@@ -39,6 +39,7 @@ import io.element.android.features.messages.impl.actionlist.model.TimelineItemAc
 import io.element.android.features.messages.impl.attachments.Attachment
 import io.element.android.features.messages.impl.messagecomposer.MessageComposerEvent
 import io.element.android.features.messages.impl.messagecomposer.MessageComposerPresenter
+import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagePeek
 import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesButton
 import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesEvent
 import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesLayout
@@ -441,6 +442,14 @@ class ThreadedMessagesNode(
                         onViewAllPinnedMessagesClick = {},
                         modifier = Modifier,
                         isComposerHidden = myMessages.isOpen,
+                        outlinedEventId = (myMessages.peek as? ThreadMyMessagePeek.Outline)?.eventId,
+                        onVisibleEventIdsChange = if (myMessages.isOpen) {
+                            { ids ->
+                            myMessages.eventSink(ThreadMyMessagesEvent.VisibleEventsChanged(ids))
+                        }
+                        } else {
+                            null
+                        },
                         threadFloatingActions = {
                             if (myMessages.isEntryVisible && !myMessages.isOpen) {
                                 ThreadMyMessagesButton(myMessages.ownAvatar, { myMessages.eventSink(ThreadMyMessagesEvent.Open) })

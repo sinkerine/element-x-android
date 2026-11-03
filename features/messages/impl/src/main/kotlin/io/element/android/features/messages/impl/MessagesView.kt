@@ -134,6 +134,7 @@ import io.element.android.libraries.matrix.ui.media.contentvalidation.LocalEvent
 import io.element.android.libraries.textcomposer.model.TextEditorState
 import io.element.android.libraries.ui.strings.CommonStrings
 import io.element.android.wysiwyg.link.Link
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import timber.log.Timber
 import kotlin.time.Duration.Companion.milliseconds
@@ -161,6 +162,8 @@ fun MessagesView(
     onOpenThreadInRoom: (() -> Unit)? = null,
     isComposerHidden: Boolean = false,
     threadFloatingActions: @Composable ColumnScope.() -> Unit = {},
+    outlinedEventId: EventId? = null,
+    onVisibleEventIdsChange: ((ImmutableList<EventId>) -> Unit)? = null,
     customReactionBottomSheet: @Composable () -> Unit,
 ) {
     val eventContentValidationState = LocalEventContentValidationState.current
@@ -325,6 +328,8 @@ fun MessagesView(
                             onViewAllPinnedMessagesClick = onViewAllPinnedMessagesClick,
                             knockRequestsBannerView = knockRequestsBannerView,
                             threadFloatingActions = threadFloatingActions,
+                            outlinedEventId = outlinedEventId,
+                            onVisibleEventIdsChange = onVisibleEventIdsChange,
                         )
 
                         if (!isComposerHidden) {
@@ -547,6 +552,8 @@ private fun MessagesViewContent(
     modifier: Modifier = Modifier,
     knockRequestsBannerView: @Composable () -> Unit,
     threadFloatingActions: @Composable ColumnScope.() -> Unit,
+    outlinedEventId: EventId?,
+    onVisibleEventIdsChange: ((ImmutableList<EventId>) -> Unit)?,
 ) {
     Box(
         modifier = modifier
@@ -605,6 +612,8 @@ private fun MessagesViewContent(
                 nestedScrollConnection = scrollBehavior.nestedScrollConnection,
                 floatingDateTopOffset = topBannersHeightDp,
                 floatingActions = threadFloatingActions,
+                outlinedEventId = outlinedEventId,
+                onVisibleEventIdsChange = onVisibleEventIdsChange,
             )
 
             if (state.timelineState.timelineMode !is Timeline.Mode.Thread) {

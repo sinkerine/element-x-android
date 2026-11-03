@@ -22,6 +22,9 @@ data class ThreadMyMessagesState(
     val currentEventId: EventId?,
     val pendingJump: EventId?,
     val announcement: String?,
+    val previousEventId: EventId? = null,
+    val isReadingPositionReady: Boolean = false,
+    val peek: ThreadMyMessagePeek? = null,
     val eventSink: (ThreadMyMessagesEvent) -> Unit,
 )
 
@@ -33,6 +36,16 @@ data class ThreadMyMessageItem(
     val body: String,
     val isRoot: Boolean,
     val isEdited: Boolean,
+    val isOnScreen: Boolean = false,
+    val context: ThreadMyMessageContext? = null,
 )
+
+data class ThreadMyMessageContext(val senderName: String, val snippet: String)
+
+sealed interface ThreadMyMessagePeek {
+    val eventId: EventId
+    data class Card(override val eventId: EventId) : ThreadMyMessagePeek
+    data class Outline(override val eventId: EventId) : ThreadMyMessagePeek
+}
 
 enum class ThreadMyMessagesLoadState { Idle, Loading, Failed }

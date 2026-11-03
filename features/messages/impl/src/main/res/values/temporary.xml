@@ -17,4 +17,11 @@
     <string name="screen_thread_my_messages_empty">You haven’t posted in this thread yet</string>
     <string name="screen_thread_my_messages_limit_reached">Loading limit reached</string>
     <string name="a11y_thread_my_messages_root">thread root</string>
+    <string name="a11y_thread_my_messages_previous">Jump to your previous message</string>
+    <string name="screen_thread_my_messages_previous_label">Previous</string>
+    <string name="screen_thread_my_messages_no_earlier">No earlier messages from you in this thread</string>
+    <string name="screen_thread_my_messages_thread_root">Thread root</string>
+    <string name="screen_thread_my_messages_context">After %1$s: %2$s</string>
+    <string name="a11y_thread_my_messages_on_screen">on screen</string>
+    <string name="a11y_thread_my_messages_preview">Preview</string>
 </resources>

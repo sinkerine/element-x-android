@@ -18,9 +18,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.AndroidComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -30,6 +33,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.v2.runAndroidComposeUiTest
 import androidx.compose.ui.unit.dp
+import io.element.android.compound.theme.ElementTheme
 import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesLayout
 import io.element.android.features.messages.impl.threads.mymessages.aThreadMyMessagesState
 import io.element.android.features.messages.impl.timeline.components.MessageShieldData
@@ -62,14 +66,87 @@ import io.element.android.tests.testutils.clickOn
 import io.element.android.tests.testutils.robolectric.RobolectricTest
 import io.element.android.tests.testutils.setSafeContent
 import io.element.android.wysiwyg.link.Link
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Ignore
 import org.junit.Test
+import org.robolectric.annotation.GraphicsMode
 
 class TimelineViewTest : RobolectricTest() {
+    @Test
+    fun `visible ids follow reverse list order include partial events skip virtual rows and avoid duplicates`() = runAndroidComposeUiTest {
+        val listState = LazyListState()
+        val reports = mutableListOf<ImmutableList<EventId>>()
+        val events = (0..30).map { aTimelineItemEvent(eventId = EventId("$" + "visible$it"), content = aTimelineItemUnknownContent()) }
+        val items = (events.take(2) + TimelineItem.Virtual(
+            UniqueId("virtual"),
+            TimelineItemLoadingIndicatorModel(Timeline.PaginationDirection.BACKWARDS, 0)
+        ) + events.drop(2)).toImmutableList()
+        setTimelineView(
+            state = aTimelineState(timelineItems = items, isLive = false),
+            lazyListState = listState,
+            onVisibleEventIdsChange = { reports.add(it) },
+            layout = { content ->
+                androidx.compose.foundation.layout.Box(
+                Modifier.height(177.dp)
+            ) { content(aTimelineState(timelineItems = items, isLive = false)) }
+            }
+        )
+        fun assertVisible() {
+            runOnIdle {
+                val layout = listState.layoutInfo
+                val expected = layout.visibleItemsInfo.sortedBy { it.index }.mapNotNull { (items[it.index] as? TimelineItem.Event)?.eventId }
+                assertTrue(expected.isNotEmpty())
+                assertEquals(expected, reports.last())
+                assertTrue(reports.zipWithNext().none { (a, b) -> a == b })
+            }
+        }
+        assertVisible()
+        onNodeWithTag("timeline").performScrollToIndex(5)
+        assertVisible()
+        val count = runOnIdle { reports.size }
+        mainClock.advanceTimeBy(200)
+        runOnIdle { assertEquals(count, reports.size) }
+    }
+
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test
+    fun `outlined event draws accent border and clears without changing focus`() = runAndroidComposeUiTest {
+        val target = aTimelineItemEvent(eventId = EventId("$" + "outline"), content = aTimelineItemUnknownContent())
+        val outline = mutableStateOf<EventId?>(target.eventId)
+        var accent = Color.Transparent
+        setSafeContent {
+            accent = ElementTheme.colors.borderAccentSubtle
+            TimelineView(
+                state = aTimelineState(timelineItems = persistentListOf(target), isLive = false),
+                timelineProtectionState = aTimelineProtectionState(),
+                outlinedEventId = outline.value,
+                onUserDataClick = {},
+                onLinkClick = {},
+                onContentClick = {},
+                onGalleryItemClick = { _, _ -> },
+                onMessageLongClick = {},
+                onSwipeToReply = {},
+                onReactionClick = { _, _ -> },
+                onReactionLongClick = { _, _ -> },
+                onMoreReactionsClick = {},
+                onReadReceiptClick = {},
+                onJoinCallClick = {},
+                modifier = Modifier.height(200.dp),
+            )
+        }
+        fun accentPixels(): Int {
+            val pixels = onNodeWithTag("timeline").captureToImage().toPixelMap()
+            return (0 until pixels.height).count { pixels[1, it] == accent }
+        }
+        assertTrue("Outline must paint an accent border", accentPixels() > 10)
+        runOnIdle { outline.value = null }
+        assertEquals(0, accentPixels())
+    }
+
     @Test
     fun `thread focus centers highlighted target in viewport reduced by open panel`() = runAndroidComposeUiTest {
         val listState = LazyListState()
@@ -413,6 +490,7 @@ private fun AndroidComposeUiTest<ComponentActivity>.setTimelineView(
     onJoinCallClick: (isAudioCall: Boolean) -> Unit = EnsureNeverCalledWithParam(),
     floatingActions: @Composable ColumnScope.() -> Unit = {},
     lazyListState: LazyListState? = null,
+    onVisibleEventIdsChange: ((ImmutableList<EventId>) -> Unit)? = null,
     layout: @Composable (@Composable (TimelineState) -> Unit) -> Unit = { it(state) },
 ) {
     setSafeContent(clearAndroidUiDispatcher = true) {
@@ -434,6 +512,7 @@ private fun AndroidComposeUiTest<ComponentActivity>.setTimelineView(
                 forceJumpToBottomVisibility = forceJumpToBottomVisibility,
                 onJoinCallClick = onJoinCallClick,
                 floatingActions = floatingActions,
+                onVisibleEventIdsChange = onVisibleEventIdsChange,
             )
         }
     }
