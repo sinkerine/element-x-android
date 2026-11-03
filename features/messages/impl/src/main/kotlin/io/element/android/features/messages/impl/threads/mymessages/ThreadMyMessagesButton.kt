@@ -47,7 +47,8 @@ internal fun ThreadMyMessagesButton(avatar: AvatarData, onClick: () -> Unit, mod
                     contentDescription = null,
                     tint = ElementTheme.colors.iconOnSolidPrimary,
                     modifier = Modifier.align(Alignment.BottomEnd).background(ElementTheme.colors.iconAccentPrimary, CircleShape)
-                        .size(18.dp).padding(3.dp),
+                        .size(18.dp)
+                        .padding(3.dp),
                 )
             }
         }

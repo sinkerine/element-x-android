@@ -66,6 +66,6 @@ internal fun ThreadMyMessagesPreviewCard(item: ThreadMyMessageItem, avatar: Avat
 
 @PreviewsDayNight
 @Composable
-internal fun ThreadMyMessagesPreviewCardPreview(@PreviewParameter(ThreadMyMessagesStateProvider::class) state: ThreadMyMessagesState) = ElementPreview {
+internal fun ThreadMyMessagesPreviewCardPreview(@PreviewParameter(ThreadMyMessagesStatePreviewParam::class) state: ThreadMyMessagesState) = ElementPreview {
     state.items.firstOrNull()?.let { ThreadMyMessagesPreviewCard(it, state.ownAvatar) }
 }

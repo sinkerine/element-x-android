@@ -17,7 +17,8 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalResources
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedFactory
 import dev.zacsweers.metro.AssistedInject
@@ -44,7 +45,6 @@ import io.element.android.libraries.ui.strings.CommonStrings
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
-import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -72,12 +72,18 @@ class ThreadMyMessagesPresenter(
 
     @Composable
     override fun present(): ThreadMyMessagesState {
-        val context = LocalContext.current
+        val resources = LocalResources.current
+        val configuration = LocalConfiguration.current
         val scope = rememberCoroutineScope()
         val profile by matrixClient.userProfile.collectAsState()
         val pagination by timeline.backwardPaginationStatus.collectAsState()
         val events by timeline.timelineItems.collectAsState(initial = emptyList())
-        val mapped by produceState<Pair<List<MatrixTimelineItem>?, ImmutableList<ThreadMyMessageItem>>>(null to persistentListOf(), events) {
+        val mapped by produceState<Pair<List<MatrixTimelineItem>?, ImmutableList<ThreadMyMessageItem>>>(
+            initialValue = null to persistentListOf(),
+            key1 = events,
+            key2 = resources,
+            key3 = configuration,
+        ) {
             value = withContext(dispatchers.computation) {
                 val chronologicalEvents = events.filterIsInstance<MatrixTimelineItem.Event>()
                 val predecessors = chronologicalEvents.zipWithNext().associate { (before, after) -> after.eventId to before.event }
@@ -98,7 +104,7 @@ class ThreadMyMessagesPresenter(
                         },
                         context = predecessor?.let {
                             ThreadMyMessageContext(
-                                if (it.isOwn) context.getString(CommonStrings.common_you) else it.senderProfile.getDisambiguatedDisplayName(it.sender),
+                                if (it.isOwn) resources.getString(CommonStrings.common_you) else it.senderProfile.getDisambiguatedDisplayName(it.sender),
                                 summaryFormatter.format(it).toString().lineSequence().first().take(80),
                             )
                         },
@@ -106,7 +112,7 @@ class ThreadMyMessagesPresenter(
                 }.toImmutableList()
             }
         }
-        var visibleIds by remember { mutableStateOf(persistentListOf<EventId>()) }
+        var visibleIds by remember { mutableStateOf<ImmutableList<EventId>>(persistentListOf()) }
         var hasFreshVisibility by remember { mutableStateOf(false) }
         val isMappingFresh = mapped.first == events
         val items = mapped.second.map { it.copy(isOnScreen = it.eventId in visibleIds) }.toImmutableList()
@@ -127,7 +133,7 @@ class ThreadMyMessagesPresenter(
         val positions = events.mapIndexedNotNull { index, item -> (item as? MatrixTimelineItem.Event)?.eventId?.let { it to index } }.toMap()
         val anchor = currentEventId?.takeIf { it in visibleIds || awaitingVisibility } ?: visibleIds.lastOrNull()
         fun previous(anchorId: EventId?): EventId? = positions[anchorId]?.let { position ->
-            items.firstOrNull { (positions[it.eventId] ?: Int.MAX_VALUE) < position }?.eventId
+            items.firstOrNull { positions[it.eventId] ?: Int.MAX_VALUE < position }?.eventId
         }
         val previousEventId = previous(anchor)
         fun jump(eventId: EventId) {
@@ -138,7 +144,7 @@ class ThreadMyMessagesPresenter(
                     awaitingVisibility = true
                     pendingJump = eventId
                     val resource = if (item.isRoot) R.string.a11y_thread_my_messages_jumped_root else R.string.a11y_thread_my_messages_jumped
-                    announcement = context.getString(resource, item.time, item.snippet)
+                    announcement = resources.getString(resource, item.time, item.snippet)
                 } else {
                     snackbarDispatcher.post(SnackbarMessage(R.string.screen_thread_my_messages_jump_failed))
                 }
@@ -187,8 +193,8 @@ class ThreadMyMessagesPresenter(
                     visibleIds = persistentListOf()
                     awaitingVisibility = false
                     isOpen = true
-                    val count = if (isComplete) items.size.toString() else context.getString(R.string.screen_thread_my_messages_count_more, items.size)
-                    announcement = context.getString(R.string.a11y_thread_my_messages_opened, count)
+                    val count = if (isComplete) items.size.toString() else resources.getString(R.string.screen_thread_my_messages_count_more, items.size)
+                    announcement = resources.getString(R.string.a11y_thread_my_messages_opened, count)
                 }
                 ThreadMyMessagesEvent.Close -> {
                     hasFreshVisibility = false
@@ -217,7 +223,7 @@ class ThreadMyMessagesPresenter(
                     }
                 }
                 is ThreadMyMessagesEvent.VisibleEventsChanged -> {
-                    visibleIds = event.newestFirst.toPersistentList()
+                    visibleIds = event.newestFirst.toImmutableList()
                     hasFreshVisibility = true
                     awaitingVisibility = false
                 }
@@ -225,11 +231,11 @@ class ThreadMyMessagesPresenter(
                 ThreadMyMessagesEvent.EndPeek -> peekId = null
                 is ThreadMyMessagesEvent.Preview -> items.firstOrNull { it.eventId == event.eventId }?.let {
                     announcement = listOfNotNull(
-                        "${context.getString(CommonStrings.common_you)} · ${it.fullTime}",
-                        context.getString(CommonStrings.common_edited_suffix).takeIf { _ -> it.isEdited },
-                        context.getString(R.string.screen_thread_my_messages_thread_root).takeIf { _ -> it.isRoot },
+                        "${resources.getString(CommonStrings.common_you)} · ${it.fullTime}",
+                        resources.getString(CommonStrings.common_edited_suffix).takeIf { _ -> it.isEdited },
+                        resources.getString(R.string.screen_thread_my_messages_thread_root).takeIf { _ -> it.isRoot },
                         it.body,
-                        it.context?.let { context.getString(R.string.screen_thread_my_messages_context, it.senderName, it.snippet) },
+                        it.context?.let { resources.getString(R.string.screen_thread_my_messages_context, it.senderName, it.snippet) },
                     ).joinToString(", ")
                 }
                 ThreadMyMessagesEvent.JumpConsumed -> pendingJump = null

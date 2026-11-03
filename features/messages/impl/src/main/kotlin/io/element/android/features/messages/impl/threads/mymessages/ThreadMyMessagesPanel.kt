@@ -85,6 +85,7 @@ internal fun ThreadMyMessagesLayout(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val view = LocalView.current
+    val currentTimelineEventSink by rememberUpdatedState(timelineEventSink)
     PredictiveBackHandler(enabled = state.isOpen) { progress ->
         progress.collect { }
         state.eventSink(ThreadMyMessagesEvent.Close)
@@ -92,7 +93,7 @@ internal fun ThreadMyMessagesLayout(
     LaunchedEffect(state.isOpen) { if (state.isOpen) view.hideKeyboard() }
     LaunchedEffect(state.pendingJump) {
         state.pendingJump?.let {
-            timelineEventSink(TimelineEvent.FocusOnEvent(it))
+            currentTimelineEventSink(TimelineEvent.FocusOnEvent(it))
             state.eventSink(ThreadMyMessagesEvent.JumpConsumed)
         }
     }
@@ -291,12 +292,12 @@ internal fun ThreadMyMessagesPanel(state: ThreadMyMessagesState, modifier: Modif
 
 @PreviewsDayNight
 @Composable
-internal fun ThreadMyMessagesPanelPreview(@PreviewParameter(ThreadMyMessagesStateProvider::class) state: ThreadMyMessagesState) = ElementPreview {
+internal fun ThreadMyMessagesPanelPreview(@PreviewParameter(ThreadMyMessagesStatePreviewParam::class) state: ThreadMyMessagesState) = ElementPreview {
     ThreadMyMessagesPanel(state, Modifier.height(360.dp))
 }
 
 @PreviewsDayNight
 @Composable
 internal fun ThreadMyMessagesButtonPreview() = ElementPreview {
-    ThreadMyMessagesButton(ThreadMyMessagesStateProvider().values.first().ownAvatar, {})
+    ThreadMyMessagesButton(ThreadMyMessagesStatePreviewParam().values.first().ownAvatar, {})
 }

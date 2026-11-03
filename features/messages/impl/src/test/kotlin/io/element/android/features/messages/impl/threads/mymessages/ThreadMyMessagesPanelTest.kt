@@ -169,7 +169,9 @@ class ThreadMyMessagesPanelTest : RobolectricTest() {
         var clicks = 0
         setSafeContent { ThreadMyMessagesButton(aThreadMyMessagesState().ownAvatar, { clicks++ }) }
         onNodeWithContentDescription("Your messages in this thread")
-            .assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp).performClick()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
         runOnIdle { assertEquals(1, clicks) }
     }
 

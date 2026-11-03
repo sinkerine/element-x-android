@@ -7,9 +7,11 @@
 
 package io.element.android.features.messages.impl.threads.mymessages
 
+import android.content.res.Configuration
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import app.cash.molecule.RecompositionMode
 import app.cash.molecule.moleculeFlow
@@ -789,6 +791,32 @@ class ThreadMyMessagesPresenterTest : RobolectricTest() {
         }
     }
 
+    @Test
+    fun `configuration change remaps own predecessor label without new timeline events`() = runTest {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val resources = RuntimeEnvironment.getApplication().resources
+        val configuration = MutableStateFlow(Configuration(resources.configuration))
+        val timeline = RecordingThreadTimeline(hasMore = false).apply {
+            timelineItems.value = listOf(ownEvent(0), ownEvent(1))
+        }
+        try {
+            presenter(timeline).testWithContext(configuration = configuration) {
+                var state = awaitState { it.items.size == 2 }
+                assertThat(state.items.first().context?.senderName).isEqualTo("You")
+                RuntimeEnvironment.setQualifiers("+fr")
+                assertThat(RuntimeEnvironment.getApplication().resources).isSameInstanceAs(resources)
+                configuration.value = Configuration(resources.configuration)
+                state = awaitState { it.items.firstOrNull()?.context?.senderName == "Vous" }
+                state.eventSink(ThreadMyMessagesEvent.Preview(requireNotNull(ownEvent(1).eventId)))
+                state = awaitState { it.announcement != null }
+                assertThat(state.announcement).isEqualTo("Vous · 1 Full true, message 1, After Vous: message 0")
+                cancelAndIgnoreRemainingEvents()
+            }
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+        }
+    }
+
     private fun TestScope.presenter(
         timeline: RecordingThreadTimeline = RecordingThreadTimeline(),
         openedFromInbox: Boolean = false,
@@ -817,11 +845,15 @@ class ThreadMyMessagesPresenterTest : RobolectricTest() {
 
     private suspend fun Presenter<ThreadMyMessagesState>.testWithContext(
         isPresent: StateFlow<Boolean> = MutableStateFlow(true),
+        configuration: StateFlow<Configuration> = MutableStateFlow(Configuration(RuntimeEnvironment.getApplication().resources.configuration)),
         validate: suspend TurbineTestContext<ThreadMyMessagesState>.() -> Unit,
     ) {
         channelFlow {
             moleculeFlow(RecompositionMode.Immediate) {
-                CompositionLocalProvider(LocalContext provides RuntimeEnvironment.getApplication()) {
+                CompositionLocalProvider(
+                    LocalContext provides RuntimeEnvironment.getApplication(),
+                    LocalConfiguration provides configuration.collectAsState().value,
+                ) {
                     if (isPresent.collectAsState().value) {
                         val state = present()
                         SideEffect { trySend(state) }

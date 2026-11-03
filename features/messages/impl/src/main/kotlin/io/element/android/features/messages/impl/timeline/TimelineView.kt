@@ -147,9 +147,9 @@ fun TimelineView(
     forceJumpToReadMarkerVisibility: Boolean = false,
     nestedScrollConnection: NestedScrollConnection = rememberNestedScrollInteropConnection(),
     floatingDateTopOffset: Dp = 0.dp,
-    floatingActions: @Composable ColumnScope.() -> Unit = {},
     outlinedEventId: EventId? = null,
     onVisibleEventIdsChange: ((ImmutableList<EventId>) -> Unit)? = null,
+    floatingActions: @Composable ColumnScope.() -> Unit = {},
 ) {
     fun clearFocusRequestState() {
         state.eventSink(TimelineEvent.ClearFocusRequestState)

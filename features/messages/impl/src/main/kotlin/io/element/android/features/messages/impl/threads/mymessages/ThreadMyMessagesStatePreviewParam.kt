@@ -13,7 +13,7 @@ import io.element.android.libraries.designsystem.components.avatar.AvatarSize
 import io.element.android.libraries.matrix.api.core.EventId
 import kotlinx.collections.immutable.persistentListOf
 
-internal class ThreadMyMessagesStateProvider : PreviewParameterProvider<ThreadMyMessagesState> {
+internal class ThreadMyMessagesStatePreviewParam : PreviewParameterProvider<ThreadMyMessagesState> {
     override val values: Sequence<ThreadMyMessagesState> = sequenceOf(
         aThreadMyMessagesState(),
         aThreadMyMessagesState().copy(loadState = ThreadMyMessagesLoadState.Failed),
@@ -50,6 +50,8 @@ internal fun aThreadMyMessagesState() = ThreadMyMessagesState(
     currentEventId = null,
     pendingJump = null,
     announcement = null,
+    previousEventId = null,
     isReadingPositionReady = true,
+    peek = null,
     eventSink = {},
 )

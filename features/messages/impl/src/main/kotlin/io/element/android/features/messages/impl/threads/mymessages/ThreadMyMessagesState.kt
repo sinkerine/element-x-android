@@ -22,9 +22,9 @@ data class ThreadMyMessagesState(
     val currentEventId: EventId?,
     val pendingJump: EventId?,
     val announcement: String?,
-    val previousEventId: EventId? = null,
-    val isReadingPositionReady: Boolean = false,
-    val peek: ThreadMyMessagePeek? = null,
+    val previousEventId: EventId?,
+    val isReadingPositionReady: Boolean,
+    val peek: ThreadMyMessagePeek?,
     val eventSink: (ThreadMyMessagesEvent) -> Unit,
 )
 

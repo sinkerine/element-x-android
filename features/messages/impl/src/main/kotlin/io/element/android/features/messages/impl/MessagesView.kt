@@ -326,10 +326,10 @@ fun MessagesView(
                             onJoinCallClick = onJoinCallClick,
                             forceJumpToBottomVisibility = forceJumpToBottomVisibility,
                             onViewAllPinnedMessagesClick = onViewAllPinnedMessagesClick,
-                            knockRequestsBannerView = knockRequestsBannerView,
-                            threadFloatingActions = threadFloatingActions,
                             outlinedEventId = outlinedEventId,
                             onVisibleEventIdsChange = onVisibleEventIdsChange,
+                            knockRequestsBannerView = knockRequestsBannerView,
+                            threadFloatingActions = threadFloatingActions,
                         )
 
                         if (!isComposerHidden) {
@@ -549,11 +549,11 @@ private fun MessagesViewContent(
     onJoinCallClick: (isAudioCall: Boolean) -> Unit,
     forceJumpToBottomVisibility: Boolean,
     onSwipeToReply: (TimelineItem.Event) -> Unit,
-    modifier: Modifier = Modifier,
-    knockRequestsBannerView: @Composable () -> Unit,
-    threadFloatingActions: @Composable ColumnScope.() -> Unit,
     outlinedEventId: EventId?,
     onVisibleEventIdsChange: ((ImmutableList<EventId>) -> Unit)?,
+    knockRequestsBannerView: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    threadFloatingActions: @Composable ColumnScope.() -> Unit,
 ) {
     Box(
         modifier = modifier
@@ -611,9 +611,9 @@ private fun MessagesViewContent(
                 forceJumpToBottomVisibility = forceJumpToBottomVisibility,
                 nestedScrollConnection = scrollBehavior.nestedScrollConnection,
                 floatingDateTopOffset = topBannersHeightDp,
-                floatingActions = threadFloatingActions,
                 outlinedEventId = outlinedEventId,
                 onVisibleEventIdsChange = onVisibleEventIdsChange,
+                floatingActions = threadFloatingActions,
             )
 
             if (state.timelineState.timelineMode !is Timeline.Mode.Thread) {

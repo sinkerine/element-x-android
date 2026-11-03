@@ -26,9 +26,8 @@ internal const val MY_MESSAGES_MAX_PAGES = 50
 internal fun List<MatrixTimelineItem>.ownThreadMessages(): List<IndexedValue<EventTimelineItem>> =
     mapIndexedNotNull { index, item ->
         val event = (item as? MatrixTimelineItem.Event)?.event ?: return@mapIndexedNotNull null
-        if (event.isOwn && event.isRemote && event.eventId != null &&
-            (event.content is MessageContent || event.content is StickerContent || event.content is PollContent)
-        ) {
+        if (!event.isOwn || !event.isRemote || event.eventId == null) return@mapIndexedNotNull null
+        if (event.content is MessageContent || event.content is StickerContent || event.content is PollContent) {
             IndexedValue(index, event)
         } else {
             null
