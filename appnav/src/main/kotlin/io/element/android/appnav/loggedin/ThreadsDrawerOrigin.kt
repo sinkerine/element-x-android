@@ -63,7 +63,7 @@ internal class ThreadsDrawerOrigin<T : Any>(
     fun observe(scope: CoroutineScope) {
         invalidateStaleOrigin()
         if (origin == null) drawer.onReturnedToOrigin()
-        combine(backstack.elements, drawer.visitId) { _, _ -> Unit }
+        combine(backstack.elements, drawer.visitId) { _, _ -> }
             .onEach {
                 // Read current values together, rather than a possibly conflated or queued snapshot of either flow.
                 invalidateStaleOrigin()

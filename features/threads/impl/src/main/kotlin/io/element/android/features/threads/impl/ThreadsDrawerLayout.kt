@@ -82,7 +82,9 @@ internal fun ThreadsDrawerLayout(
             val value = drawerState.currentValue
             val anchor = if (value == DrawerValue.Open) 0f else -sheetWidth.toFloat()
             val atAnchor = sheetWidth > 0 && abs(drawerState.currentOffset - anchor) < 0.5f
-            if (synchronizing || pointerDown || drawerState.isAnimationRunning || !atAnchor) null else value
+            val interactionInProgress = pointerDown || drawerState.isAnimationRunning
+            val readyToReconcile = !synchronizing && !interactionInProgress && atAnchor
+            if (readyToReconcile) value else null
         }.collect { value ->
             when (value) {
                 DrawerValue.Open -> if (currentEnabled && !currentOpen) currentOnOpen()
