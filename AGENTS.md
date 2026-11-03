@@ -68,6 +68,13 @@ Common Gradle tasks:
 - Format: `./gradlew ktlintFormat`
 - Update Docs TOC: `./gradlew generateDocsToc`
 
+### End-to-end Feature Testing
+
+- Follow the [Element X Android e2e skill](.agents/skills/element-x-android-e2e/SKILL.md) to test features in a dedicated Android emulator sandbox.
+- Run from this worktree's repository root. Build the current branch with `./gradlew :app:assembleGplayDebug`, then install the matching ABI debug APK using the installation rules below.
+- Use Orca for interactive verification or Maestro for repeatable flows, with dedicated Matrix test accounts and rooms. Walk through the feature's journey and assert each expected result; launching the app alone is not verification.
+- Follow the skill's environment setup, fixture, evidence, and cleanup instructions. Keep local evidence under ignored `build/e2e/` and report missing dependencies or credentials as blockers.
+
 ### Local APK Signing Key
 
 - The locally generated APK signing key is stored outside the repository at `/home/sinkerine/.local/share/element-x-local-signing-0550e5GE/`.
