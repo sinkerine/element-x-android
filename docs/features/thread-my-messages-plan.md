@@ -233,6 +233,14 @@ fun TimelineView(
 | `a11y_thread_my_messages_on_screen` | on screen | T3 |
 | `a11y_thread_my_messages_preview` | Preview | T3 |
 
+### 2.8 Implementation rulings after T1 review
+
+- T1 exposes `announcement: String?` and `ThreadMyMessagesEvent.AnnouncementConsumed`. T2 delivers opening/jump announcements through a polite Compose live region, consuming each announcement after UI delivery. The presenter does not invoke Android View accessibility APIs. Repeated identical announcements must remain deliverable.
+- The 50-successful-page budget and loading mutex live on the presenter instance and survive composition replacement, panel close/reopen, and Retry. `loadWholeThread` adds optional `onPageLoaded: () -> Unit = {}`; only successful pages initiated by this loader count. Contention (`CannotPaginate`) retries through the status wait with a cancellable 100ms backoff and consumes no budget.
+- `ThreadMyMessagesState.isLimitReached` distinguishes capped incomplete history from completion and failure. T2 adds a "Loading limit reached" footer string, keeps the N+ count at the cap, and offers no ineffective Retry at the cap. T3 must not wait indefinitely for a previous message when capped or failed.
+- T1 injects `CoroutineDispatchers` for computation mapping. It temporarily uses `AvatarSize.CurrentUserTopBar`; T2 owns replacing this with `AvatarSize.ThreadMyMessagesButton(28.dp)` in the presenter as well as adding the size entry.
+- T1 accepted after two review rounds: 27 tests pass; no deferred findings. Production additions: 302 lines. T2 and T3 keep their independent <=500 production-line budgets; creating PRs remains subject to the final delivery gate.
+
 ## 3. Tasks
 
 Three waves, one task each. Each wave lands as **its own PR** to stay within the 500-line production budget (estimates: T1 ≈ 250, T2 ≈ 330, T3 ≈ 300). The user was told two PRs earlier; the detailed estimate needs three. Production line counts include previews.
