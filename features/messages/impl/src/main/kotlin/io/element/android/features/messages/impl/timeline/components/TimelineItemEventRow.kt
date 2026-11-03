@@ -45,8 +45,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalViewConfiguration
-import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -105,6 +103,8 @@ import io.element.android.libraries.designsystem.preview.ElementPreview
 import io.element.android.libraries.designsystem.preview.PreviewWithExtraLargeHeight
 import io.element.android.libraries.designsystem.preview.PreviewsDayNight
 import io.element.android.libraries.designsystem.preview.USER_NAME_ALICE
+import io.element.android.libraries.designsystem.swipe.HORIZONTAL_SWIPE_TOUCH_SLOP_MULTIPLIER
+import io.element.android.libraries.designsystem.swipe.SwipeSensitivity
 import io.element.android.libraries.designsystem.swipe.SwipeableActionsState
 import io.element.android.libraries.designsystem.swipe.rememberSwipeableActionsState
 import io.element.android.libraries.designsystem.text.toPx
@@ -241,7 +241,7 @@ fun TimelineItemEventRow(
             val offset = state.offset.floatValue
             val swipeThresholdPx = 40.dp.toPx()
             val thresholdCrossed = abs(offset) > swipeThresholdPx
-            SwipeSensitivity(3f) {
+            SwipeSensitivity(HORIZONTAL_SWIPE_TOUCH_SLOP_MULTIPLIER) {
                 Box(Modifier.fillMaxWidth()) {
                     Row(modifier = Modifier.matchParentSize()) {
                         ReplySwipeIndicator({ offset / 120 })
@@ -437,29 +437,6 @@ private fun ThreadSummaryView(
                 }
             }
         }
-    }
-}
-
-/**
- * Impact ViewConfiguration.touchSlop by [sensitivityFactor].
- * Inspired from https://issuetracker.google.com/u/1/issues/269627294.
- * @param sensitivityFactor the factor to multiply the touchSlop by. The highest value, the more the user will
- * have to drag to start the drag.
- * @param content the content to display.
- */
-@Composable
-private fun SwipeSensitivity(
-    sensitivityFactor: Float,
-    content: @Composable () -> Unit,
-) {
-    val current = LocalViewConfiguration.current
-    CompositionLocalProvider(
-        LocalViewConfiguration provides object : ViewConfiguration by current {
-            override val touchSlop: Float
-                get() = current.touchSlop * sensitivityFactor
-        }
-    ) {
-        content()
     }
 }
 

@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
@@ -43,6 +44,8 @@ import io.element.android.compound.theme.ElementTheme
 import io.element.android.compound.tokens.generated.CompoundIcons
 import io.element.android.libraries.designsystem.preview.ElementPreview
 import io.element.android.libraries.designsystem.preview.PreviewsDayNight
+import io.element.android.libraries.designsystem.swipe.HORIZONTAL_SWIPE_TOUCH_SLOP_MULTIPLIER
+import io.element.android.libraries.designsystem.swipe.SwipeSensitivity
 import io.element.android.libraries.designsystem.theme.components.Icon
 import io.element.android.libraries.designsystem.theme.components.IconButton
 import io.element.android.libraries.designsystem.theme.components.Text
@@ -111,39 +114,49 @@ internal fun ThreadsDrawerLayout(
         }
     }
     val title = stringResource(CommonStrings.screen_home_tab_threads)
-    ModalNavigationDrawer(
-        modifier = modifier.pointerInput(Unit) {
-            try {
-                awaitPointerEventScope {
-                    while (true) {
-                        // Observe without consuming so child gestures retain priority.
-                        pointerDown = awaitPointerEvent(PointerEventPass.Initial).changes.any { it.pressed }
+    val originalViewConfiguration = LocalViewConfiguration.current
+    // Match timeline reply slop so the child can consume first, even during a slow drag.
+    SwipeSensitivity(HORIZONTAL_SWIPE_TOUCH_SLOP_MULTIPLIER) {
+        ModalNavigationDrawer(
+            modifier = modifier.pointerInput(Unit) {
+                try {
+                    awaitPointerEventScope {
+                        while (true) {
+                            // Observe without consuming so child gestures retain priority.
+                            pointerDown = awaitPointerEvent(PointerEventPass.Initial).changes.any { it.pressed }
+                        }
+                    }
+                } finally {
+                    pointerDown = false
+                }
+            },
+            drawerState = drawerState,
+            gesturesEnabled = isEnabled && (isOpen || !blocker.isBlocked),
+            drawerContent = {
+                CompositionLocalProvider(LocalViewConfiguration provides originalViewConfiguration) {
+                    ModalDrawerSheet(
+                        Modifier.widthIn(max = 360.dp).onSizeChanged { sheetWidth = it.width }.semantics { paneTitle = title },
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(title, Modifier.weight(1f), style = ElementTheme.typography.fontHeadingSmMedium)
+                            IconButton(onClick = onClose) {
+                                Icon(CompoundIcons.Close(), stringResource(CommonStrings.action_close))
+                            }
+                        }
+                        if (isEnabled && (isOpen || retainInbox)) inbox(Modifier.fillMaxSize())
                     }
                 }
-            } finally {
-                pointerDown = false
-            }
-        },
-        drawerState = drawerState,
-        gesturesEnabled = isEnabled && (isOpen || !blocker.isBlocked),
-        drawerContent = {
-            ModalDrawerSheet(
-                Modifier.widthIn(max = 360.dp).onSizeChanged { sheetWidth = it.width }.semantics { paneTitle = title },
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(title, Modifier.weight(1f), style = ElementTheme.typography.fontHeadingSmMedium)
-                    IconButton(onClick = onClose) {
-                        Icon(CompoundIcons.Close(), stringResource(CommonStrings.action_close))
-                    }
-                }
-                if (isEnabled && (isOpen || retainInbox)) inbox(Modifier.fillMaxSize())
-            }
-        },
-    ) {
-        CompositionLocalProvider(LocalAppDrawerGestureBlocker provides blocker, content = content)
+            },
+        ) {
+            CompositionLocalProvider(
+                LocalViewConfiguration provides originalViewConfiguration,
+                LocalAppDrawerGestureBlocker provides blocker,
+                content = content,
+            )
+        }
     }
     // Compose after the page so this registration wins even when initially open or restored after rotation.
     if (isEnabled && isOpen) BackHandler(onBack = onClose)

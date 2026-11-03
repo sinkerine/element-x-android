@@ -18,11 +18,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.AndroidComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -276,6 +280,58 @@ class ThreadsDrawerLayoutTest : RobolectricTest() {
         onNodeWithTag("child").performTouchInput { swipeRight() }
         runOnIdle {
             assertThat(dragged).isGreaterThan(0f)
+            assertThat(fixture.openCalls).isEqualTo(0)
+            assertThat(fixture.inboxMounts).isEqualTo(0)
+        }
+    }
+
+    @Test
+    fun `page and inbox retain original touch slop`() = runAndroidComposeUiTest {
+        val fixture = Fixture()
+        var originalSlop = 0f
+        var pageSlop = 0f
+        var inboxSlop = 0f
+        setSafeContent {
+            originalSlop = LocalViewConfiguration.current.touchSlop
+            ElementTheme {
+                ThreadsDrawerLayout(
+                    isEnabled = true,
+                    isOpen = fixture.open.value,
+                    onOpen = { fixture.open.value = true },
+                    onClose = { fixture.open.value = false },
+                    inbox = {
+                        val slop = LocalViewConfiguration.current.touchSlop
+                        SideEffect { inboxSlop = slop }
+                        Box(it)
+                    },
+                ) {
+                    val slop = LocalViewConfiguration.current.touchSlop
+                    SideEffect { pageSlop = slop }
+                }
+            }
+        }
+        runOnIdle {
+            assertThat(pageSlop).isEqualTo(originalSlop)
+            fixture.open.value = true
+        }
+        runOnIdle { assertThat(inboxSlop).isEqualTo(originalSlop) }
+    }
+
+    @Test
+    fun `horizontal pager consumes swipe before drawer`() = runAndroidComposeUiTest {
+        val fixture = Fixture()
+        var page = 1
+        setDrawer(fixture) {
+            val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
+            val currentPage = pagerState.currentPage
+            SideEffect { page = currentPage }
+            HorizontalPager(pagerState, Modifier.fillMaxSize().testTag("pager")) {
+                Text("Page $it")
+            }
+        }
+        onNodeWithTag("pager").performTouchInput { swipeRight() }
+        runOnIdle {
+            assertThat(page).isEqualTo(0)
             assertThat(fixture.openCalls).isEqualTo(0)
             assertThat(fixture.inboxMounts).isEqualTo(0)
         }
