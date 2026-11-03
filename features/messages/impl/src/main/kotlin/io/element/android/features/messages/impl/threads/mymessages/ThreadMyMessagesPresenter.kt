@@ -154,7 +154,7 @@ class ThreadMyMessagesPresenter(
 
         return ThreadMyMessagesState(
             isEntryVisible = openedFromThreadsInbox || items.isNotEmpty() || isOpen,
-            ownAvatar = profile.getAvatarData(AvatarSize.CurrentUserTopBar),
+            ownAvatar = profile.getAvatarData(AvatarSize.ThreadMyMessagesButton),
             isOpen = isOpen,
             items = items,
             isComplete = isComplete,

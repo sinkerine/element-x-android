@@ -10,8 +10,12 @@
 
 package io.element.android.features.messages.impl
 
+import android.widget.EditText
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.AndroidComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -57,17 +61,22 @@ import io.element.android.features.messages.impl.timeline.model.TimelineItem
 import io.element.android.features.messages.impl.timeline.model.event.aTimelineItemTextContent
 import io.element.android.features.messages.impl.timeline.sendfailure.SendFailureDialogState
 import io.element.android.features.roomcall.api.aStandByCallState
+import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.emoji.impl.picker.DefaultEmojiPickerRenderer
 import io.element.android.libraries.emoji.impl.picker.anEmojiPickerState
 import io.element.android.libraries.matrix.api.core.RoomId
+import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.matrix.api.room.tombstone.SuccessorRoom
+import io.element.android.libraries.matrix.api.timeline.Timeline
 import io.element.android.libraries.matrix.api.timeline.item.event.LocalEventSendState
 import io.element.android.libraries.matrix.api.timeline.item.event.getAvatarUrl
 import io.element.android.libraries.matrix.api.timeline.item.event.getDisplayName
 import io.element.android.libraries.matrix.api.user.MatrixUser
 import io.element.android.libraries.matrix.test.AN_EVENT_ID
 import io.element.android.libraries.testtags.TestTags
+import io.element.android.libraries.textcomposer.model.TextEditorState
+import io.element.android.libraries.textcomposer.model.aTextEditorStateMarkdown
 import io.element.android.libraries.ui.strings.CommonStrings
 import io.element.android.tests.testutils.EnsureCalledOnceWithTwoParamsAndResult
 import io.element.android.tests.testutils.EnsureNeverCalled
@@ -86,11 +95,46 @@ import io.element.android.tests.testutils.robolectric.RobolectricTest
 import io.element.android.tests.testutils.setSafeContent
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.robolectric.annotation.Config
 import kotlin.time.Duration.Companion.milliseconds
 
 class MessagesViewTest : RobolectricTest() {
+    @Test
+    fun `thread floating slot is rendered and composer draft survives hiding and restoring`() = runAndroidComposeUiTest {
+        val hidden = mutableStateOf(false)
+        val editor = aTextEditorStateMarkdown(initialText = "Draft before opening")
+        setMessagesView(
+            state = aMessagesState(
+                timelineState = aTimelineState(timelineMode = Timeline.Mode.Thread(ThreadId(AN_EVENT_ID.value))),
+                composerState = aMessageComposerState(textEditorState = editor),
+            ),
+            isComposerHidden = { hidden.value },
+            inspectionMode = false,
+            threadFloatingActions = { Text("Thread floating action") },
+        )
+        onNodeWithText("Thread floating action").assertExists()
+        runOnIdle {
+            val input = activity!!.window.decorView.findViewWithTag<EditText>(TestTags.plainTextEditor.value)
+            assertNotNull(input)
+            input.setText("Edited unsent draft")
+            hidden.value = true
+        }
+        waitForIdle()
+        runOnIdle {
+            assertNull(activity!!.window.decorView.findViewWithTag<EditText>(TestTags.plainTextEditor.value))
+            assertEquals("Edited unsent draft", (editor as TextEditorState.Markdown).state.text.value().toString())
+            hidden.value = false
+        }
+        waitForIdle()
+        runOnIdle {
+            assertEquals("Edited unsent draft", activity!!.window.decorView.findViewWithTag<EditText>(TestTags.plainTextEditor.value).text.toString())
+        }
+    }
+
     @Test
     fun `clicking on back invoke expected callback`() = runAndroidComposeUiTest {
         val eventsRecorder = EventsRecorder<MessagesEvent>(expectEvents = false)
@@ -798,11 +842,14 @@ private fun AndroidComposeUiTest<ComponentActivity>.setMessagesView(
     onJoinCallClick: (Boolean) -> Unit = EnsureNeverCalledWithParam(),
     onViewAllPinnedMessagesClick: () -> Unit = EnsureNeverCalled(),
     onThreadsListClicked: () -> Unit = EnsureNeverCalled(),
+    isComposerHidden: () -> Boolean = { false },
+    inspectionMode: Boolean = true,
+    threadFloatingActions: @Composable ColumnScope.() -> Unit = {},
 ) {
     val emojiPickerRenderer = DefaultEmojiPickerRenderer()
     setSafeContent {
         // Cannot use the RichTextEditor, so simulate a LocalInspectionMode
-        CompositionLocalProvider(LocalInspectionMode provides true) {
+        CompositionLocalProvider(LocalInspectionMode provides inspectionMode) {
             MessagesView(
                 state = state,
                 onBackClick = onBackClick,
@@ -826,6 +873,8 @@ private fun AndroidComposeUiTest<ComponentActivity>.setMessagesView(
                     )
                 },
                 onThreadsListClick = onThreadsListClicked,
+                isComposerHidden = isComposerHidden(),
+                threadFloatingActions = threadFloatingActions,
             )
         }
     }

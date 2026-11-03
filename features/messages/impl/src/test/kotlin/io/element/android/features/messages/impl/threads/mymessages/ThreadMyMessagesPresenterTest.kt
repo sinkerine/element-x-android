@@ -96,7 +96,7 @@ class ThreadMyMessagesPresenterTest : RobolectricTest() {
             assertThat(state.ownAvatar.id).isEqualTo(client.sessionId.value)
             assertThat(state.ownAvatar.name).isEqualTo("My name")
             assertThat(state.ownAvatar.url).isEqualTo("mxc://example/avatar")
-            assertThat(state.ownAvatar.size).isEqualTo(AvatarSize.CurrentUserTopBar)
+            assertThat(state.ownAvatar.size).isEqualTo(AvatarSize.ThreadMyMessagesButton)
             cancelAndIgnoreRemainingEvents()
         }
     }

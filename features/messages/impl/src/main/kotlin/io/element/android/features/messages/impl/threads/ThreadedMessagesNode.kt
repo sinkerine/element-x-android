@@ -39,6 +39,10 @@ import io.element.android.features.messages.impl.actionlist.model.TimelineItemAc
 import io.element.android.features.messages.impl.attachments.Attachment
 import io.element.android.features.messages.impl.messagecomposer.MessageComposerEvent
 import io.element.android.features.messages.impl.messagecomposer.MessageComposerPresenter
+import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesButton
+import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesEvent
+import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesLayout
+import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesPresenter
 import io.element.android.features.messages.impl.timeline.TimelineController
 import io.element.android.features.messages.impl.timeline.TimelineEvent
 import io.element.android.features.messages.impl.timeline.TimelinePresenter
@@ -93,6 +97,7 @@ class ThreadedMessagesNode(
     private val messageComposerPresenterFactory: MessageComposerPresenter.Factory,
     private val timelinePresenterFactory: TimelinePresenter.Factory,
     private val presenterFactory: MessagesPresenter.Factory,
+    private val myMessagesPresenterFactory: ThreadMyMessagesPresenter.Factory,
     private val actionListPresenterFactory: ActionListPresenter.Factory,
     private val timelineItemPresenterFactories: TimelineItemPresenterFactories,
     private val permalinkParser: PermalinkParser,
@@ -117,6 +122,7 @@ class ThreadedMessagesNode(
     private var timelineController: TimelineController? by mutableStateOf(null)
     private var ownedThreadTimeline: Timeline? = null
     private var presenter: Presenter<MessagesState>? by mutableStateOf(null)
+    private var myMessagesPresenter: ThreadMyMessagesPresenter? by mutableStateOf(null)
     private var loadFailed by mutableStateOf(false)
     private val openedAtNanos = System.nanoTime()
     private var focusTimingRecorded = false
@@ -163,6 +169,7 @@ class ThreadedMessagesNode(
         )
         this.timelineController = timelineController
         ownedThreadTimeline = threadedTimeline
+        myMessagesPresenter = myMessagesPresenterFactory.create(threadedTimeline, inputs.threadRootEventId, inputs.triage)
         return presenterFactory.create(
             navigator = this,
             composerPresenter = messageComposerPresenterFactory.create(timelineController, this, threadRoot = inputs.threadRootEventId),
@@ -382,111 +389,120 @@ class ThreadedMessagesNode(
                     }
                 }
 
-                MessagesView(
-                    state = state,
-                    onBackClick = this::navigateUp,
-                    onRoomDetailsClick = {},
-                    onEventContentClick = { isLive, event ->
-                        timelineController?.let { controller ->
-                            if (isLive) {
-                                callback.handleEventClick(controller.mainTimelineMode(), event, canUseOverlay)
-                            } else {
-                                val detachedTimelineMode = controller.detachedTimelineMode()
-                                if (detachedTimelineMode != null) {
-                                    callback.handleEventClick(detachedTimelineMode, event, canUseOverlay)
+                val myMessages = requireNotNull(myMessagesPresenter).present()
+                ThreadMyMessagesLayout(myMessages, state.timelineState.eventSink, modifier) {
+                    MessagesView(
+                        state = state,
+                        onBackClick = this@ThreadedMessagesNode::navigateUp,
+                        onRoomDetailsClick = {},
+                        onEventContentClick = { isLive, event ->
+                            timelineController?.let { controller ->
+                                if (isLive) {
+                                    callback.handleEventClick(controller.mainTimelineMode(), event, canUseOverlay)
                                 } else {
-                                    false
+                                    val detachedTimelineMode = controller.detachedTimelineMode()
+                                    if (detachedTimelineMode != null) {
+                                        callback.handleEventClick(detachedTimelineMode, event, canUseOverlay)
+                                    } else {
+                                        false
+                                    }
+                                }
+                            } == true
+                        },
+                        onGalleryEventItemClick = { isLive, event, index ->
+                            timelineController?.let { controller ->
+                                if (isLive) {
+                                    callback.handleGalleryItemClick(controller.mainTimelineMode(), event, index, canUseOverlay)
+                                } else {
+                                    val detachedTimelineMode = controller.detachedTimelineMode()
+                                    if (detachedTimelineMode != null) {
+                                        callback.handleGalleryItemClick(detachedTimelineMode, event, index, canUseOverlay)
+                                    } else {
+                                        false
+                                    }
+                                }
+                            } == true
+                        },
+                        onUserDataClick = callback::navigateToRoomMemberDetails,
+                        onLinkClick = { url, customTab ->
+                            onLinkClick(
+                                activity = activity,
+                                darkTheme = isDark,
+                                url = url,
+                                eventSink = state.timelineState.eventSink,
+                                customTab = customTab,
+                            )
+                        },
+                        onSendLocationClick = callback::navigateToSendLocation,
+                        onCreatePollClick = callback::navigateToCreatePoll,
+                        onJoinCallClick = { isAudioCall ->
+                            callback.navigateToRoomCall(room.roomId, isAudioCall)
+                        },
+                        onViewAllPinnedMessagesClick = {},
+                        modifier = Modifier,
+                        isComposerHidden = myMessages.isOpen,
+                        threadFloatingActions = {
+                            if (myMessages.isEntryVisible && !myMessages.isOpen) {
+                                ThreadMyMessagesButton(myMessages.ownAvatar, { myMessages.eventSink(ThreadMyMessagesEvent.Open) })
+                            }
+                        },
+                        knockRequestsBannerView = {},
+                        customReactionBottomSheet = {
+                            CustomReactionBottomSheet(
+                                state = state.customReactionState,
+                                onSelectEmoji = { uniqueId, emoji ->
+                                    state.eventSink(MessagesEvent.ToggleReaction(emoji.unicode, uniqueId))
+                                },
+                                emojiPickerRenderer = emojiPickerRenderer,
+                            )
+                        },
+                        onThreadsListClick = {},
+                        threadReplyCount = if (inputs.triage) {
+                            triageQueue.thread(
+                            io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(room.roomId, inputs.threadRootEventId),
+                        )?.numberOfReplies
+                        } else {
+                            null
+                        },
+                        onOpenThreadInRoom = if (inputs.triage) callback::openInRoom else null,
+                        triageBar = {
+                            if (focusUnavailable) {
+                                androidx.compose.material3.Snackbar {
+                                    io.element.android.libraries.designsystem.theme.components.Text(
+                                        androidx.compose.ui.res.stringResource(
+                                            io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed
+                                        ),
+                                    )
                                 }
                             }
-                        } == true
-                    },
-                    onGalleryEventItemClick = { isLive, event, index ->
-                        timelineController?.let { controller ->
-                            if (isLive) {
-                                callback.handleGalleryItemClick(controller.mainTimelineMode(), event, index, canUseOverlay)
-                            } else {
-                                val detachedTimelineMode = controller.detachedTimelineMode()
-                                if (detachedTimelineMode != null) {
-                                    callback.handleGalleryItemClick(detachedTimelineMode, event, index, canUseOverlay)
-                                } else {
-                                    false
+                        },
+                        threadHeader = {
+                            if (inputs.triage) {
+                                val next by triageQueue.upNext.collectAsState()
+                                val unreadCount by triageQueue.unreadCount.collectAsState()
+                                androidx.compose.foundation.layout.Column {
+                                    UpNextBar(
+                                        preview = next?.let { thread ->
+                                            val latest = thread.latestEvent
+                                            val summary = latest?.content?.let { content ->
+                                                previewFormatter.format(io.element.android.libraries.matrix.api.roomlist.LatestEventValue.Remote(
+                                                    latest.timestamp,
+                                                    content,
+                                                    latest.senderId,
+                                                    latest.senderProfile,
+                                                    latest.isOwn,
+                                                ), isDmRoom = false)?.toString().orEmpty()
+                                            }.orEmpty()
+                                            thread.roomName.orEmpty() + " · " + summary
+                                        },
+                                        count = unreadCount,
+                                        onNext = callback::navigateToNextTriageThread,
+                                    )
                                 }
                             }
-                        } == true
-                    },
-                    onUserDataClick = callback::navigateToRoomMemberDetails,
-                    onLinkClick = { url, customTab ->
-                        onLinkClick(
-                            activity = activity,
-                            darkTheme = isDark,
-                            url = url,
-                            eventSink = state.timelineState.eventSink,
-                            customTab = customTab,
-                        )
-                    },
-                    onSendLocationClick = callback::navigateToSendLocation,
-                    onCreatePollClick = callback::navigateToCreatePoll,
-                    onJoinCallClick = { isAudioCall ->
-                        callback.navigateToRoomCall(room.roomId, isAudioCall)
-                    },
-                    onViewAllPinnedMessagesClick = {},
-                    modifier = modifier,
-                    knockRequestsBannerView = {},
-                    customReactionBottomSheet = {
-                        CustomReactionBottomSheet(
-                            state = state.customReactionState,
-                            onSelectEmoji = { uniqueId, emoji ->
-                                state.eventSink(MessagesEvent.ToggleReaction(emoji.unicode, uniqueId))
-                            },
-                            emojiPickerRenderer = emojiPickerRenderer,
-                        )
-                    },
-                    onThreadsListClick = {},
-                    threadReplyCount = if (inputs.triage) {
-                        triageQueue.thread(
-                        io.element.android.libraries.matrix.api.room.threads.InboxThreadKey(room.roomId, inputs.threadRootEventId),
-                    )?.numberOfReplies
-                    } else {
-                        null
-                    },
-                    onOpenThreadInRoom = if (inputs.triage) callback::openInRoom else null,
-                    triageBar = {
-                        if (focusUnavailable) {
-                            androidx.compose.material3.Snackbar {
-                                io.element.android.libraries.designsystem.theme.components.Text(
-                                    androidx.compose.ui.res.stringResource(
-                                        io.element.android.libraries.ui.strings.CommonStrings.screen_threads_inbox_focus_failed
-                                    ),
-                                )
-                            }
-                        }
-                    },
-                    threadHeader = {
-                        if (inputs.triage) {
-                            val next by triageQueue.upNext.collectAsState()
-                            val unreadCount by triageQueue.unreadCount.collectAsState()
-                            androidx.compose.foundation.layout.Column {
-                                UpNextBar(
-                                    preview = next?.let { thread ->
-                                        val latest = thread.latestEvent
-                                        val summary = latest?.content?.let { content ->
-                                            previewFormatter.format(io.element.android.libraries.matrix.api.roomlist.LatestEventValue.Remote(
-                                                latest.timestamp,
-                                                content,
-                                                latest.senderId,
-                                                latest.senderProfile,
-                                                latest.isOwn,
-                                            ), isDmRoom = false)?.toString().orEmpty()
-                                        }.orEmpty()
-                                        thread.roomName.orEmpty() + " · " + summary
-                                    },
-                                    count = unreadCount,
-                                    onNext = callback::navigateToNextTriageThread,
-                                )
-                            }
-                        }
-                    },
-                )
+                        },
+                    )
+                }
 
                 roomMemberModerationRenderer.Render(
                     state = state.roomMemberModerationState,

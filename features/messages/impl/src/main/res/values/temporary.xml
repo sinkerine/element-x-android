@@ -9,4 +9,12 @@
     <string name="a11y_thread_my_messages_opened">Your messages in this thread, %1$s</string>
     <string name="a11y_thread_my_messages_jumped">Your message from %1$s: %2$s</string>
     <string name="a11y_thread_my_messages_jumped_root">Your message from %1$s, thread root: %2$s</string>
+    <string name="a11y_thread_my_messages_open">Your messages in this thread</string>
+    <string name="screen_thread_my_messages_root_chip">Root</string>
+    <string name="screen_thread_my_messages_loading">Loading older messages…</string>
+    <string name="screen_thread_my_messages_start_of_thread">Start of thread</string>
+    <string name="screen_thread_my_messages_load_error">Couldn’t load older messages</string>
+    <string name="screen_thread_my_messages_empty">You haven’t posted in this thread yet</string>
+    <string name="screen_thread_my_messages_limit_reached">Loading limit reached</string>
+    <string name="a11y_thread_my_messages_root">thread root</string>
 </resources>

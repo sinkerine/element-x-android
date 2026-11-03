@@ -24,6 +24,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -57,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.TransformOrigin
@@ -118,6 +120,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -142,6 +145,7 @@ fun TimelineView(
     forceJumpToReadMarkerVisibility: Boolean = false,
     nestedScrollConnection: NestedScrollConnection = rememberNestedScrollInteropConnection(),
     floatingDateTopOffset: Dp = 0.dp,
+    floatingActions: @Composable ColumnScope.() -> Unit = {},
 ) {
     fun clearFocusRequestState() {
         state.eventSink(TimelineEvent.ClearFocusRequestState)
@@ -267,6 +271,7 @@ fun TimelineView(
                     onFocusEventRender = ::onFocusEventRender,
                     onMarkAllAsRead = ::onMarkAllAsRead,
                     onFocusOnEvent = ::onFocusOnEvent,
+                    floatingActions = floatingActions,
                 )
 
                 FloatingDateBadgeOverlay(
@@ -354,6 +359,7 @@ private fun BoxScope.TimelineScrollHelper(
     onFocusEventRender: () -> Unit,
     onMarkAllAsRead: () -> Unit,
     onFocusOnEvent: (EventId) -> Unit,
+    floatingActions: @Composable ColumnScope.() -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val isScrollFinished by remember { derivedStateOf { !lazyListState.isScrollInProgress } }
@@ -425,7 +431,12 @@ private fun BoxScope.TimelineScrollHelper(
     LaunchedEffect(focusRequestState) {
         if (focusRequestState is FocusRequestState.Success && focusRequestState.isIndexed && !focusRequestState.rendered) {
             if (timelineMode is Timeline.Mode.Thread) {
-                lazyListState.scrollToItem(focusRequestState.index)
+                // Preserve immediate initial thread focus while centering in the current viewport.
+                withContext(object : MotionDurationScale {
+                    override val scaleFactor = 0f
+                }) {
+                    lazyListState.animateScrollToItemCenter(focusRequestState.index)
+                }
             } else {
                 lazyListState.animateScrollToItemCenter(focusRequestState.index)
             }
@@ -455,8 +466,10 @@ private fun BoxScope.TimelineScrollHelper(
     Column(
         modifier = Modifier
             .align(Alignment.BottomEnd)
-            .padding(end = 24.dp, bottom = 16.dp)
+            .padding(end = 24.dp, bottom = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        floatingActions()
         JumpToPositionButton(
             icon = CompoundIcons.ChevronUp(),
             contentDescription = stringResource(id = CommonStrings.a11y_jump_to_unread_messages),

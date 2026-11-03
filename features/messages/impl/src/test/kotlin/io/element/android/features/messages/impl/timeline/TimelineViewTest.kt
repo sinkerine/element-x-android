@@ -11,6 +11,13 @@
 package io.element.android.features.messages.impl.timeline
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.AndroidComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
@@ -22,6 +29,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.v2.runAndroidComposeUiTest
+import androidx.compose.ui.unit.dp
+import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesLayout
+import io.element.android.features.messages.impl.threads.mymessages.aThreadMyMessagesState
 import io.element.android.features.messages.impl.timeline.components.MessageShieldData
 import io.element.android.features.messages.impl.timeline.components.aCriticalShield
 import io.element.android.features.messages.impl.timeline.model.TimelineItem
@@ -30,7 +40,9 @@ import io.element.android.features.messages.impl.timeline.model.event.aTimelineI
 import io.element.android.features.messages.impl.timeline.model.virtual.TimelineItemLoadingIndicatorModel
 import io.element.android.features.messages.impl.timeline.protection.TimelineProtectionState
 import io.element.android.features.messages.impl.timeline.protection.aTimelineProtectionState
+import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.matrix.api.core.EventId
+import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UniqueId
 import io.element.android.libraries.matrix.api.timeline.Timeline
 import io.element.android.libraries.matrix.api.timeline.item.event.LocalEventSendState
@@ -52,10 +64,84 @@ import io.element.android.tests.testutils.setSafeContent
 import io.element.android.wysiwyg.link.Link
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Ignore
 import org.junit.Test
 
 class TimelineViewTest : RobolectricTest() {
+    @Test
+    fun `thread focus centers highlighted target in viewport reduced by open panel`() = runAndroidComposeUiTest {
+        val listState = LazyListState()
+        val panelState = mutableStateOf(aThreadMyMessagesState().copy(isOpen = false))
+        val targetIndex = 30
+        val items = List(60) {
+            aTimelineItemEvent(eventId = EventId("\$event_$it"), content = aTimelineItemTextContent(body = "Message $it"))
+        }.toImmutableList()
+        var rendered = false
+        val state = mutableStateOf(
+            aTimelineState(
+                timelineItems = items,
+                timelineMode = Timeline.Mode.Thread(ThreadId("\$root")),
+                isLive = false,
+                eventSink = { if (it == TimelineEvent.OnFocusEventRender) rendered = true },
+            )
+        )
+        setTimelineView(
+            state = state.value,
+            lazyListState = listState,
+            layout = { content ->
+                ThreadMyMessagesLayout(panelState.value, {}, Modifier.height(600.dp)) { content(state.value) }
+            },
+        )
+        val fullHeight = runOnIdle { listState.layoutInfo.viewportSize.height }
+        runOnIdle { panelState.value = panelState.value.copy(isOpen = true) }
+        runOnIdle {
+            state.value = state.value.copy(
+                focusRequestState = FocusRequestState.Success(items[targetIndex].eventId!!, targetIndex),
+            )
+        }
+        waitUntil(timeoutMillis = 5_000) { rendered }
+        runOnIdle { state.value = state.value.copy(focusRequestState = (state.value.focusRequestState as FocusRequestState.Success).copy(rendered = true)) }
+        waitForIdle()
+        val highlightedSize = runOnIdle {
+            val info = listState.layoutInfo
+            assertTrue("Panel must shrink the timeline", info.viewportSize.height < fullHeight)
+            assertTrue("Focus must complete rendering", rendered)
+            val target = info.visibleItemsInfo.single { it.index == targetIndex }
+            val usableCenter = (info.viewportEndOffset + info.viewportStartOffset + info.beforeContentPadding - info.afterContentPadding) / 2f
+            assertEquals("Target must be centered in the reduced viewport", usableCenter, target.offset + target.size / 2f, 1f)
+            target.size
+        }
+        runOnIdle { state.value = state.value.copy(focusRequestState = FocusRequestState.None) }
+        waitForIdle()
+        runOnIdle {
+            val target = listState.layoutInfo.visibleItemsInfo.single { it.index == targetIndex }
+            assertEquals(
+                "Focus styling remains after rendering, adding its 4dp highlight padding",
+                with(density) { 4.dp.roundToPx() },
+                highlightedSize - target.size
+            )
+        }
+    }
+
+    @Test
+    fun `default timeline has no own messages entry`() = runAndroidComposeUiTest {
+        setTimelineView(state = aTimelineState())
+        onNodeWithContentDescription("Your messages in this thread").assertDoesNotExist()
+    }
+
+    @Test
+    fun `floating slot is optional and renders alongside existing jump control`() = runAndroidComposeUiTest {
+        setTimelineView(
+            state = aTimelineState(),
+            forceJumpToBottomVisibility = true,
+            floatingActions = { Text("Own messages action") },
+        )
+        onNodeWithText("Own messages action").assertIsDisplayed()
+        onNodeWithContentDescription(activity!!.getString(CommonStrings.a11y_jump_to_bottom)).assertIsDisplayed()
+    }
+
     @Test
     fun `reaching the end of the timeline with more events to load emits a LoadMore event`() = runAndroidComposeUiTest {
         val eventsRecorder = EventsRecorder<TimelineEvent>()
@@ -325,23 +411,30 @@ private fun AndroidComposeUiTest<ComponentActivity>.setTimelineView(
     onGalleryItemClick: (TimelineItem.Event, Int) -> Unit = EnsureNeverCalledWithTwoParams(),
     forceJumpToBottomVisibility: Boolean = false,
     onJoinCallClick: (isAudioCall: Boolean) -> Unit = EnsureNeverCalledWithParam(),
+    floatingActions: @Composable ColumnScope.() -> Unit = {},
+    lazyListState: LazyListState? = null,
+    layout: @Composable (@Composable (TimelineState) -> Unit) -> Unit = { it(state) },
 ) {
     setSafeContent(clearAndroidUiDispatcher = true) {
-        TimelineView(
-            state = state,
-            timelineProtectionState = timelineProtectionState,
-            onUserDataClick = onUserDataClick,
-            onLinkClick = onLinkClick,
-            onContentClick = onMessageClick,
-            onMessageLongClick = onMessageLongClick,
-            onSwipeToReply = onSwipeToReply,
-            onReactionClick = onReactionClick,
-            onReactionLongClick = onReactionLongClick,
-            onMoreReactionsClick = onMoreReactionsClick,
-            onReadReceiptClick = onReadReceiptClick,
-            onGalleryItemClick = onGalleryItemClick,
-            forceJumpToBottomVisibility = forceJumpToBottomVisibility,
-            onJoinCallClick = onJoinCallClick,
-        )
+        layout { currentState ->
+            TimelineView(
+                state = currentState,
+                lazyListState = lazyListState ?: rememberLazyListState(),
+                timelineProtectionState = timelineProtectionState,
+                onUserDataClick = onUserDataClick,
+                onLinkClick = onLinkClick,
+                onContentClick = onMessageClick,
+                onMessageLongClick = onMessageLongClick,
+                onSwipeToReply = onSwipeToReply,
+                onReactionClick = onReactionClick,
+                onReactionLongClick = onReactionLongClick,
+                onMoreReactionsClick = onMoreReactionsClick,
+                onReadReceiptClick = onReadReceiptClick,
+                onGalleryItemClick = onGalleryItemClick,
+                forceJumpToBottomVisibility = forceJumpToBottomVisibility,
+                onJoinCallClick = onJoinCallClick,
+                floatingActions = floatingActions,
+            )
+        }
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -158,6 +159,8 @@ fun MessagesView(
     threadHeader: @Composable () -> Unit = {},
     threadReplyCount: Long? = null,
     onOpenThreadInRoom: (() -> Unit)? = null,
+    isComposerHidden: Boolean = false,
+    threadFloatingActions: @Composable ColumnScope.() -> Unit = {},
     customReactionBottomSheet: @Composable () -> Unit,
 ) {
     val eventContentValidationState = LocalEventContentValidationState.current
@@ -321,9 +324,11 @@ fun MessagesView(
                             forceJumpToBottomVisibility = forceJumpToBottomVisibility,
                             onViewAllPinnedMessagesClick = onViewAllPinnedMessagesClick,
                             knockRequestsBannerView = knockRequestsBannerView,
+                            threadFloatingActions = threadFloatingActions,
                         )
 
-                        SuggestionsPickerView(
+                        if (!isComposerHidden) {
+                            SuggestionsPickerView(
                             modifier = Modifier
                                 .shadow(10.dp)
                                 .background(ElementTheme.colors.bgCanvasDefault)
@@ -337,6 +342,7 @@ fun MessagesView(
                                 state.composerState.eventSink(MessageComposerEvent.InsertSuggestion(it))
                             }
                         )
+                        }
                     }
                 },
                 snackbarHost = {
@@ -349,16 +355,18 @@ fun MessagesView(
         },
         bottomSheetContent = {
             triageBar()
-            MessagesViewComposerBottomSheetContents(
+            if (!isComposerHidden) {
+                MessagesViewComposerBottomSheetContents(
                 state = state,
                 onLinkClick = { url, customTab -> onLinkClick(url, customTab) },
                 onRoomSuccessorClick = { roomId ->
                     state.timelineState.eventSink(TimelineEvent.NavigateToPredecessorOrSuccessorRoom(roomId = roomId))
                 },
             )
+            }
         },
         sheetDragHandle = @Composable { toggleAction ->
-            if (state.composerState.showTextFormatting) {
+            if (!isComposerHidden && state.composerState.showTextFormatting) {
                 val expandA11yLabel = stringResource(CommonStrings.a11y_expand_message_text_field)
                 val collapseA11yLabel = stringResource(CommonStrings.a11y_collapse_message_text_field)
                 BottomSheetDragHandle(
@@ -384,7 +392,7 @@ fun MessagesView(
                 }
             }
         },
-        isSwipeGestureEnabled = state.composerState.showTextFormatting,
+        isSwipeGestureEnabled = !isComposerHidden && state.composerState.showTextFormatting,
         state = expandableState,
         sheetShape = if (state.composerState.showTextFormatting || state.composerState.suggestions.isNotEmpty()) {
             MaterialTheme.shapes.large
@@ -538,6 +546,7 @@ private fun MessagesViewContent(
     onSwipeToReply: (TimelineItem.Event) -> Unit,
     modifier: Modifier = Modifier,
     knockRequestsBannerView: @Composable () -> Unit,
+    threadFloatingActions: @Composable ColumnScope.() -> Unit,
 ) {
     Box(
         modifier = modifier
@@ -595,6 +604,7 @@ private fun MessagesViewContent(
                 forceJumpToBottomVisibility = forceJumpToBottomVisibility,
                 nestedScrollConnection = scrollBehavior.nestedScrollConnection,
                 floatingDateTopOffset = topBannersHeightDp,
+                floatingActions = threadFloatingActions,
             )
 
             if (state.timelineState.timelineMode !is Timeline.Mode.Thread) {
