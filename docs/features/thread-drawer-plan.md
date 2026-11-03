@@ -69,7 +69,7 @@ Rejected alternatives: B (navigation-menu drawer; reworks Settings and account s
 
 | Module | Change |
 | --- | --- |
-| `libraries/designsystem` | New generic gesture-blocking primitive (`AppDrawerGestures.kt`) so libraries and features can disable drawer swipes without depending on threads. |
+| `libraries/designsystem` | New generic gesture-blocking primitive (`BlockAppDrawerGestures.kt`) so libraries and features can disable drawer swipes without depending on threads. |
 | `features/threads/api` | New `ThreadsDrawer` interface. `ThreadsInboxEntryPoint`, `ThreadsTriageQueue` and `ThreadsInboxBadgeProvider` are unchanged. |
 | `features/threads/impl` | `DefaultThreadsDrawer` (state machine, visit ownership) and `ThreadsDrawerLayout` (UI). The inbox screen files are unchanged. Adds the `libraries.featureflag.api` dependency. |
 | `features/threads/test` | `FakeThreadsDrawer`; `FakeThreadsTriageQueue` gains visit counters. |
@@ -80,7 +80,7 @@ Rejected alternatives: B (navigation-menu drawer; reworks Settings and account s
 
 ### Interfaces (exact signatures)
 
-`libraries/designsystem/src/main/kotlin/io/element/android/libraries/designsystem/utils/AppDrawerGestures.kt`
+`libraries/designsystem/src/main/kotlin/io/element/android/libraries/designsystem/utils/BlockAppDrawerGestures.kt`
 
 ```kotlin
 /** Counts on-screen requests to disable the app drawer's open swipe. */
@@ -137,7 +137,6 @@ interface ThreadsDrawer {
 ```kotlin
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
-@Inject
 class DefaultThreadsDrawer(
     private val queue: ThreadsTriageQueue,
     featureFlagService: FeatureFlagService,
@@ -255,7 +254,7 @@ internal class ThreadsDrawerOrigin<T : Any>(
 
 - `HomeNavigationBarItem { Chats, Spaces }`. `from(index)` maps an unknown index (the old Threads = 2) to Chats.
 - `HomeEvent`: add `data object OpenThreadsDrawer : HomeEvent`.
-- `HomeState`: add `val isThreadsDrawerOpen: Boolean = false`. `showThreads` keeps its name. `isBackHandlerEnabled` is unchanged apart from the Threads case going away.
+- `HomeState`: add `val isThreadsDrawerOpen: Boolean`. `showThreads` keeps its name. `isBackHandlerEnabled` is unchanged apart from the Threads case going away.
 - `HomePresenter`:
   - Replace the `threadsQueue: ThreadsTriageQueue` constructor dependency with `threadsDrawer: ThreadsDrawer`.
   - `showThreads = threadsDrawer.isEnabled.collectAsState()`.
@@ -314,7 +313,7 @@ Timber only; never log thread content (Matrix IDs only). No `localazy.xml` edits
 
 - Goal: provide the app-wide drawer building blocks. These are the generic gesture blocker, the `ThreadsDrawer` API, the `DefaultThreadsDrawer` state machine (sole owner of `startVisit`/`endVisit` for drawer and triage sessions), `ThreadsDrawerLayout` with previews, and the test fakes.
 - Owned files:
-  - `libraries/designsystem/src/main/kotlin/io/element/android/libraries/designsystem/utils/AppDrawerGestures.kt` (new)
+  - `libraries/designsystem/src/main/kotlin/io/element/android/libraries/designsystem/utils/BlockAppDrawerGestures.kt` (new)
   - `features/threads/api/src/main/kotlin/io/element/android/features/threads/api/ThreadsDrawer.kt` (new)
   - `features/threads/impl/build.gradle.kts`
   - `features/threads/impl/src/main/kotlin/io/element/android/features/threads/impl/DefaultThreadsDrawer.kt` (new)

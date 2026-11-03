@@ -147,13 +147,13 @@ internal fun ThreadsDrawerLayout(
     if (isEnabled && isOpen) BackHandler(onBack = onClose)
 }
 
-internal class ThreadsDrawerOpenPreviewParam : PreviewParameterProvider<Boolean> {
+internal class ThreadsDrawerOpenBooleanPreviewParam : PreviewParameterProvider<Boolean> {
     override val values = sequenceOf(false, true)
 }
 
 @PreviewsDayNight
 @Composable
-internal fun ThreadsDrawerLayoutPreview(@PreviewParameter(ThreadsDrawerOpenPreviewParam::class) isOpen: Boolean) = ElementPreview {
+internal fun ThreadsDrawerLayoutPreview(@PreviewParameter(ThreadsDrawerOpenBooleanPreviewParam::class) isOpen: Boolean) = ElementPreview {
     ThreadsDrawerLayout(
         isEnabled = true,
         isOpen = isOpen,

@@ -13,7 +13,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.element.android.features.threads.api.ThreadsDrawer
 import io.element.android.features.threads.api.ThreadsTriageQueue
@@ -31,7 +30,6 @@ import java.util.UUID
 
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
-@Inject
 class DefaultThreadsDrawer(
     private val queue: ThreadsTriageQueue,
     featureFlagService: FeatureFlagService,
