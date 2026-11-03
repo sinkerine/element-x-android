@@ -310,6 +310,10 @@ class JoinedRustRoom(
         }
     }
 
+    override suspend fun sendRaw(eventType: String, content: String): Result<EventId> = withContext(roomDispatcher) {
+        runCatchingExceptions { EventId(innerRoom.sendRaw(eventType, content, null)) }
+    }
+
     override suspend fun typingNotice(isTyping: Boolean) = withContext(roomDispatcher) {
         runCatchingExceptions {
             innerRoom.typingNotice(isTyping)

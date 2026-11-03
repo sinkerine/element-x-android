@@ -74,6 +74,12 @@ interface JoinedRoom : BaseRoom {
     ): Result<Timeline>
 
     /**
+     * Sends a raw, client-built event of [eventType] (encrypted when the room is) and returns its event id once the
+     * homeserver accepts it. Bypasses the send queue, so there is no local echo.
+     */
+    suspend fun sendRaw(eventType: String, content: String): Result<EventId>
+
+    /**
      * Replaces the content of an event previously sent by the current user, by sending an edit of it.
      *
      * @param eventId the event to edit.

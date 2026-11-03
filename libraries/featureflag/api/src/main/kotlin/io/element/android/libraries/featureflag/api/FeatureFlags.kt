@@ -167,6 +167,14 @@ enum class FeatureFlags(
         defaultValue = { false },
         isFinished = false,
     ),
+    InteractiveUi(
+        key = "feature.interactive_ui",
+        title = "Interactive messages",
+        description = "Render interactive cards, forms, charts and knowledge maps sent with net.15cm.matrix.interactive_ui.",
+        defaultValue = { false },
+        isFinished = false,
+        isInLabs = true,
+    ),
     NewTimelineEventRenderer(
         key = "feature.new_timeline_event_renderer",
         title = "New timeline event renderer",

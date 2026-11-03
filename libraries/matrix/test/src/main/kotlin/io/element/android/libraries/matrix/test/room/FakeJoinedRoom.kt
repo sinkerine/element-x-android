@@ -92,6 +92,7 @@ class FakeJoinedRoom(
     private val startLiveLocationShareResult: (Long) -> Result<EventId> = { lambdaError() },
     private val stopLiveLocationShareResult: () -> Result<Unit> = { lambdaError() },
     private val sendLiveLocationResult: (String) -> Result<Unit> = { lambdaError() },
+    private val sendRawResult: (String, String) -> Result<EventId> = { _, _ -> lambdaError() },
     private val setOwnMemberDisplayNameResult: (String) -> Result<Unit> = { lambdaError() },
 ) : JoinedRoom, BaseRoom by baseRoom {
     private val sendQueueUpdates = MutableSharedFlow<SendQueueUpdate>(extraBufferCapacity = 10)
@@ -115,6 +116,10 @@ class FakeJoinedRoom(
         intentionalMentions: List<IntentionalMention>
     ): Result<Unit> = simulateLongTask {
         editMessageLambda(eventId, body, htmlBody, intentionalMentions)
+    }
+
+    override suspend fun sendRaw(eventType: String, content: String): Result<EventId> = simulateLongTask {
+        sendRawResult(eventType, content)
     }
 
     override suspend fun typingNotice(isTyping: Boolean): Result<Unit> = simulateLongTask {

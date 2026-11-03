@@ -14,9 +14,11 @@ import io.element.android.libraries.matrix.test.A_ROOM_ID
 import io.element.android.tests.testutils.lambda.lambdaError
 import org.matrix.rustcomponents.sdk.LatestEventValue
 import org.matrix.rustcomponents.sdk.NoHandle
+import org.matrix.rustcomponents.sdk.RequestConfigOverride
 import org.matrix.rustcomponents.sdk.Room
 import org.matrix.rustcomponents.sdk.RoomInfo
 import org.matrix.rustcomponents.sdk.RoomMembersIterator
+import org.matrix.rustcomponents.sdk.ThreadListService
 import uniffi.matrix_sdk.RoomMemberRole
 
 class FakeFfiRoom(
@@ -27,6 +29,8 @@ class FakeFfiRoom(
     private val latestEventLambda: () -> LatestEventValue = { lambdaError() },
     private val suggestedRoleForUserLambda: (String) -> RoomMemberRole = { lambdaError() },
     private val roomInfo: RoomInfo = aRustRoomInfo(id = roomId.value),
+    private val sendRawLambda: suspend (String, String, RequestConfigOverride?) -> String = { _, _, _ -> lambdaError() },
+    private val threadListServiceLambda: () -> ThreadListService = { lambdaError() },
 ) : Room(NoHandle) {
     override fun id(): String {
         return roomId.value
@@ -54,6 +58,14 @@ class FakeFfiRoom(
 
     override suspend fun suggestedRoleForUser(userId: String): RoomMemberRole {
         return suggestedRoleForUserLambda(userId)
+    }
+
+    override suspend fun sendRaw(eventType: String, content: String, requestConfigOverride: RequestConfigOverride?): String {
+        return sendRawLambda(eventType, content, requestConfigOverride)
+    }
+
+    override fun threadListService(): ThreadListService {
+        return threadListServiceLambda()
     }
 
     override fun close() {
