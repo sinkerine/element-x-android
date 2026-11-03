@@ -75,6 +75,7 @@ import io.element.android.libraries.designsystem.theme.components.Switch
 import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.designsystem.theme.components.TopAppBar
 import io.element.android.libraries.designsystem.theme.floatingDateBadgeBackground
+import io.element.android.libraries.designsystem.utils.BlockAppDrawerGestures
 import io.element.android.libraries.mediaviewer.api.local.LocalMediaRenderer
 import io.element.android.libraries.preferences.api.store.VideoCompressionPreset
 import io.element.android.libraries.textcomposer.TextComposer
@@ -99,6 +100,8 @@ fun AttachmentsPreviewView(
     localMediaRenderer: LocalMediaRenderer,
     modifier: Modifier = Modifier,
 ) {
+    BlockAppDrawerGestures()
+
     val canShowEditAction = when (state.sendActionState) {
         is SendActionState.Sending.Uploading -> false
         is SendActionState.Sending.Processing -> !state.sendActionState.displayProgress

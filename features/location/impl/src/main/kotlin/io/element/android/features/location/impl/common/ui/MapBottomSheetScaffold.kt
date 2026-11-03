@@ -53,6 +53,7 @@ import io.element.android.libraries.core.data.tryOrNull
 import io.element.android.libraries.designsystem.text.toDp
 import io.element.android.libraries.designsystem.theme.components.BottomSheetScaffold
 import io.element.android.libraries.designsystem.theme.components.CircularProgressIndicator
+import io.element.android.libraries.designsystem.utils.BlockAppDrawerGestures
 import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.camera.rememberCameraState
 import org.maplibre.compose.map.MapOptions
@@ -107,6 +108,8 @@ fun MapBottomSheetScaffold(
     mapContent: @Composable @MaplibreComposable () -> Unit = {},
     overlayContent: @Composable BoxScope.(sheetPadding: PaddingValues) -> Unit = {},
 ) {
+    BlockAppDrawerGestures()
+
     val density = LocalDensity.current
 
     val windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
