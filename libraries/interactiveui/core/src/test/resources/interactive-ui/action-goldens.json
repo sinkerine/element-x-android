@@ -1,0 +1,231 @@
+[
+  {
+    "name": "plain",
+    "fixture": "knowledge-map.en",
+    "values": {
+      "focus": "maillard"
+    },
+    "triggerLabel": "Explain this mechanism",
+    "expected": {
+      "msgtype": "m.text",
+      "body": "“Explain this mechanism” — focus: Maillard reaction",
+      "m.mentions": {
+        "user_ids": [
+          "@bot:example.org"
+        ]
+      },
+      "net.15cm.matrix.interactive_ui.action": {
+        "version": 1,
+        "ui_event_id": "$original",
+        "ui_id": "knowledge-map",
+        "revision": 0,
+        "action_id": "answer",
+        "values": {
+          "focus": "maillard"
+        },
+        "nonce": "abcdefghijklmnopqrstuvwxyz012345"
+      },
+      "m.relates_to": {
+        "m.in_reply_to": {
+          "event_id": "$original"
+        }
+      }
+    }
+  },
+  {
+    "name": "thread",
+    "fixture": "knowledge-map.en",
+    "values": {
+      "focus": "maillard"
+    },
+    "triggerLabel": "Explain this mechanism",
+    "threadRootId": "$thread",
+    "expected": {
+      "msgtype": "m.text",
+      "body": "“Explain this mechanism” — focus: Maillard reaction",
+      "m.mentions": {
+        "user_ids": [
+          "@bot:example.org"
+        ]
+      },
+      "net.15cm.matrix.interactive_ui.action": {
+        "version": 1,
+        "ui_event_id": "$original",
+        "ui_id": "knowledge-map",
+        "revision": 0,
+        "action_id": "answer",
+        "values": {
+          "focus": "maillard"
+        },
+        "nonce": "abcdefghijklmnopqrstuvwxyz012345"
+      },
+      "m.relates_to": {
+        "rel_type": "m.thread",
+        "event_id": "$thread",
+        "m.in_reply_to": {
+          "event_id": "$original"
+        },
+        "is_falling_back": false
+      }
+    }
+  },
+  {
+    "name": "edited-original",
+    "fixture": "knowledge-map.en",
+    "values": {
+      "focus": "maillard"
+    },
+    "triggerLabel": "Explain",
+    "threadRootId": "$thread",
+    "revision": 2,
+    "expected": {
+      "msgtype": "m.text",
+      "body": "“Explain” — focus: Maillard reaction",
+      "m.mentions": {
+        "user_ids": [
+          "@bot:example.org"
+        ]
+      },
+      "net.15cm.matrix.interactive_ui.action": {
+        "version": 1,
+        "ui_event_id": "$original",
+        "ui_id": "knowledge-map",
+        "revision": 2,
+        "action_id": "answer",
+        "values": {
+          "focus": "maillard"
+        },
+        "nonce": "abcdefghijklmnopqrstuvwxyz012345"
+      },
+      "m.relates_to": {
+        "rel_type": "m.thread",
+        "event_id": "$thread",
+        "m.in_reply_to": {
+          "event_id": "$original"
+        },
+        "is_falling_back": false
+      }
+    }
+  },
+  {
+    "name": "labels-and-values",
+    "fixture": "controls",
+    "values": {
+      "plan": "plus",
+      "features": [
+        "a",
+        "b"
+      ],
+      "enabled": true,
+      "name": null,
+      "quantity": 2
+    },
+    "triggerLabel": "Submit",
+    "expected": {
+      "msgtype": "m.text",
+      "body": "“Submit” — Plan: Plus; Features: Feature A, Feature B; Enabled: true; Name: —; Quantity: 2",
+      "m.mentions": {
+        "user_ids": [
+          "@bot:example.org"
+        ]
+      },
+      "net.15cm.matrix.interactive_ui.action": {
+        "version": 1,
+        "ui_event_id": "$original",
+        "ui_id": "example",
+        "revision": 0,
+        "action_id": "answer",
+        "values": {
+          "plan": "plus",
+          "features": [
+            "a",
+            "b"
+          ],
+          "enabled": true,
+          "name": null,
+          "quantity": 2
+        },
+        "nonce": "abcdefghijklmnopqrstuvwxyz012345"
+      },
+      "m.relates_to": {
+        "m.in_reply_to": {
+          "event_id": "$original"
+        }
+      }
+    }
+  },
+  {
+    "name": "unicode-truncation",
+    "fixture": "controls",
+    "values": {},
+    "triggerLabel": "中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀",
+    "expected": {
+      "msgtype": "m.text",
+      "body": "“中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中😀中",
+      "m.mentions": {
+        "user_ids": [
+          "@bot:example.org"
+        ]
+      },
+      "net.15cm.matrix.interactive_ui.action": {
+        "version": 1,
+        "ui_event_id": "$original",
+        "ui_id": "example",
+        "revision": 0,
+        "action_id": "answer",
+        "values": {},
+        "nonce": "abcdefghijklmnopqrstuvwxyz012345"
+      },
+      "m.relates_to": {
+        "m.in_reply_to": {
+          "event_id": "$original"
+        }
+      }
+    }
+  },
+  {
+    "name": "number-formatting",
+    "fixture": "controls",
+    "values": {
+      "a": 0,
+      "b": 1e-7,
+      "c": 0.000001,
+      "d": 100000000000000000000,
+      "e": 1e+21,
+      "f": 1000000000000000100,
+      "g": 5e-324
+    },
+    "triggerLabel": "Numbers",
+    "expected": {
+      "msgtype": "m.text",
+      "body": "“Numbers” — a: 0; b: 1e-7; c: 0.000001; d: 100000000000000000000; e: 1e+21; f: 1000000000000000100; g: 5e-324",
+      "m.mentions": {
+        "user_ids": [
+          "@bot:example.org"
+        ]
+      },
+      "net.15cm.matrix.interactive_ui.action": {
+        "version": 1,
+        "ui_event_id": "$original",
+        "ui_id": "example",
+        "revision": 0,
+        "action_id": "answer",
+        "values": {
+          "a": 0,
+          "b": 1e-7,
+          "c": 0.000001,
+          "d": 100000000000000000000,
+          "e": 1e+21,
+          "f": 1000000000000000100,
+          "g": 5e-324
+        },
+        "nonce": "abcdefghijklmnopqrstuvwxyz012345"
+      },
+      "m.relates_to": {
+        "m.in_reply_to": {
+          "event_id": "$original"
+        }
+      }
+    }
+  }
+]
