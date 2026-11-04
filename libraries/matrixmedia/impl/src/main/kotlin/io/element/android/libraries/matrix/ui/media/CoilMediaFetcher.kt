@@ -17,6 +17,8 @@ import io.element.android.libraries.matrix.api.exception.isNetworkError
 import io.element.android.libraries.matrix.api.media.MatrixMediaLoader
 import io.element.android.libraries.matrix.api.media.MediaSource
 import io.element.android.libraries.matrix.api.media.toFile
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import okio.Buffer
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
@@ -33,6 +35,11 @@ internal class CoilMediaFetcher(
             Timber.e("MediaData source is null")
             return null
         }
+        if (mediaSource.isEncrypted) {
+            // The SDK content/thumbnail cache uses only the URI and can bypass descriptor verification.
+            val fileKind = mediaData.kind as? MediaRequestData.Kind.File
+            return fetchFile(mediaSource, fileKind?.mimeType, fileKind?.fileName, useCache = false)
+        }
         return when (val kind = mediaData.kind) {
             is MediaRequestData.Kind.Content -> fetchContent(mediaSource)
             is MediaRequestData.Kind.Thumbnail -> {
@@ -47,7 +54,7 @@ internal class CoilMediaFetcher(
                     }
                 )
             }
-            is MediaRequestData.Kind.File -> fetchFile(mediaSource, kind)
+            is MediaRequestData.Kind.File -> fetchFile(mediaSource, kind.mimeType, kind.fileName)
         }
     }
 
@@ -56,24 +63,28 @@ internal class CoilMediaFetcher(
      * The MediaFile will be closed (and so destroyed from disk) when the image source is closed.
      *
      */
-    private suspend fun fetchFile(mediaSource: MediaSource, kind: MediaRequestData.Kind.File): FetchResult? {
-        return mediaLoader.downloadMediaFile(mediaSource, kind.mimeType, kind.fileName)
-            .map { mediaFile ->
-                val file = mediaFile.toFile()
-                SourceFetchResult(
-                    source = ImageSource(
-                        file = file.toOkioPath(),
-                        fileSystem = FileSystem.SYSTEM,
-                        closeable = mediaFile,
-                    ),
-                    mimeType = null,
-                    dataSource = DataSource.DISK
-                )
-            }
-            .onFailure {
-                Timber.e(it)
-            }
-            .getOrThrow()
+    private suspend fun fetchFile(
+        mediaSource: MediaSource,
+        mimeType: String?,
+        fileName: String?,
+        useCache: Boolean = true,
+    ): FetchResult {
+        val mediaFile = mediaLoader.downloadMediaFile(mediaSource, mimeType, fileName, useCache).getOrThrow()
+        try {
+            currentCoroutineContext().ensureActive()
+            return SourceFetchResult(
+                source = ImageSource(
+                    file = mediaFile.toFile().toOkioPath(),
+                    fileSystem = FileSystem.SYSTEM,
+                    closeable = mediaFile,
+                ),
+                mimeType = null,
+                dataSource = DataSource.DISK
+            )
+        } catch (error: Throwable) {
+            mediaFile.close()
+            throw error
+        }
     }
 
     private suspend fun fetchContent(mediaSource: MediaSource): FetchResult? {

@@ -24,6 +24,7 @@ dependencies {
     implementation(projects.libraries.matrixmedia.api)
     implementation(projects.libraries.sessionStorage.api)
     implementation(projects.libraries.designsystem)
+    implementation(libs.serialization.json)
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
     implementation(libs.coil.svg)

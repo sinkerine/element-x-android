@@ -64,22 +64,30 @@ class RustMediaLoader(
         mimeType: String?,
         filename: String?,
         useCache: Boolean,
-    ): Result<MediaFile> =
-        withContext(mediaDispatcher) {
-            runCatchingExceptions {
-                source.toRustMediaSource().use { mediaSource ->
-                    val mediaFile = innerClient.getMediaFile(
-                        mediaSource = mediaSource,
-                        filename = filename,
-                        // Fallback to a default mime type based on the main type, so that the SDK can create a file with the correct extension.
-                        mimeType = mimeType.ensureDefaultSubtype(),
-                        useCache = useCache,
-                        tempDir = cacheDirectory.path,
-                    )
-                    RustMediaFile(mediaFile)
-                }
+    ): Result<MediaFile> {
+        // withContext can discard a successful result when the caller is cancelled during dispatcher handoff.
+        var downloadedFile: MediaFile? = null
+        return try {
+            withContext(mediaDispatcher) {
+                runCatchingExceptions {
+                    source.toRustMediaSource().use { mediaSource ->
+                        val mediaFile = innerClient.getMediaFile(
+                            mediaSource = mediaSource,
+                            filename = filename,
+                            // Fallback to a default mime type so the SDK can create a file with the correct extension.
+                            mimeType = mimeType.ensureDefaultSubtype(),
+                            useCache = useCache,
+                            tempDir = cacheDirectory.path,
+                        )
+                        RustMediaFile(mediaFile).also { downloadedFile = it }
+                    }
+                }.onFailure { downloadedFile?.close() }
             }
+        } catch (error: Throwable) {
+            downloadedFile?.close()
+            throw error
         }
+    }
 
     private fun MediaSource.toRustMediaSource(): RustMediaSource {
         val json = this.json
