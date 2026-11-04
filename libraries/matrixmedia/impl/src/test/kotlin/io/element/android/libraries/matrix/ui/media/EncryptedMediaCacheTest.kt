@@ -82,8 +82,48 @@ class EncryptedMediaCacheTest : RobolectricTest() {
             assertThat(coil.execute(request(MediaSource(valid.safeUrl)))).isInstanceOf(SuccessResult::class.java)
             loader.corruptDownload = true
             assertThat(coil.execute(request(valid))).isInstanceOf(ErrorResult::class.java)
+            assertThat(loader.downloads).isEqualTo(2)
+            assertThat(loader.closedFiles).isEqualTo(2)
+        } finally {
+            coil.shutdown()
+        }
+    }
+
+    @Test
+    fun `legacy decrypted plain content and thumbnail entries cannot decode after loader restart`() = runTest {
+        val valid = encryptedMediaSource()
+        val loader = DescriptorCheckingLoader(valid).apply { plainCiphertext = true }
+        // Preseed both URI-only SDK cache paths with a decodable old image.
+        loader.loadMediaContent(valid).getOrThrow()
+        loader.loadMediaThumbnail(valid, 32, 64).getOrThrow()
+        repeat(2) {
+            val coil = newImageLoader(loader)
+            try {
+                for (kind in listOf(MediaRequestData.Kind.Content, MediaRequestData.Kind.Thumbnail(32, 64))) {
+                    assertThat(coil.execute(request(MediaSource(valid.safeUrl), kind))).isInstanceOf(ErrorResult::class.java)
+                }
+                assertThat(coil.execute(request(valid))).isInstanceOf(SuccessResult::class.java)
+            } finally {
+                coil.shutdown()
+            }
+        }
+        assertThat(loader.cachedReads).isEqualTo(2)
+        assertThat(loader.downloads).isEqualTo(6)
+        assertThat(loader.closedFiles).isEqualTo(6)
+    }
+
+    @Test
+    fun `plain thumbnail miss decodes full content at Coil target size and reuses decoded memory`() = runTest {
+        val loader = DescriptorCheckingLoader(encryptedMediaSource())
+        val coil = newImageLoader(loader)
+        try {
+            val request = request(MediaSource("mxc://server/plain"), MediaRequestData.Kind.Thumbnail(1, 1))
+            val result = coil.execute(request) as SuccessResult
+            assertThat(result.image.width).isEqualTo(1)
+            assertThat(result.image.height).isEqualTo(1)
+            assertThat((coil.execute(request) as SuccessResult).dataSource).isEqualTo(DataSource.MEMORY_CACHE)
             assertThat(loader.downloads).isEqualTo(1)
-            assertThat(loader.closedFiles).isEqualTo(1)
+            assertThat(loader.cachedReads).isEqualTo(0)
         } finally {
             coil.shutdown()
         }
@@ -96,9 +136,11 @@ class EncryptedMediaCacheTest : RobolectricTest() {
         }
         .build()
 
-    private fun request(source: MediaSource) = ImageRequest.Builder(ApplicationProvider.getApplicationContext())
-        .data(MediaRequestData(source, MediaRequestData.Kind.Content))
-        .size(2, 2)
+    private fun request(source: MediaSource, kind: MediaRequestData.Kind = MediaRequestData.Kind.Content) = ImageRequest.Builder(
+        ApplicationProvider.getApplicationContext()
+    )
+        .data(MediaRequestData(source, kind))
+        .size(if (kind is MediaRequestData.Kind.Thumbnail) 1 else 2)
         .build()
 
     private inner class DescriptorCheckingLoader(private val valid: MediaSource) : MatrixMediaLoader {
@@ -106,6 +148,7 @@ class EncryptedMediaCacheTest : RobolectricTest() {
         var cachedReads = 0
         var closedFiles = 0
         var corruptDownload = false
+        var plainCiphertext = false
         private val image = temporaryFolder.newFile().apply {
             outputStream().use { Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it) }
         }.readBytes()
@@ -120,8 +163,15 @@ class EncryptedMediaCacheTest : RobolectricTest() {
         override suspend fun downloadMediaFile(source: MediaSource, mimeType: String?, filename: String?, useCache: Boolean): Result<MediaFile> {
             downloads++
             check(!useCache) { "Encrypted request must bypass URI cache" }
-            if (source != valid) return Result.failure(IOException("Descriptor verification failed"))
-            val file = temporaryFolder.newFile().apply { writeBytes(if (corruptDownload) byteArrayOf(1, 2, 3) else image) }
+            if (source.isEncrypted && source != valid) return Result.failure(IOException("Descriptor verification failed"))
+            val file = temporaryFolder.newFile().apply {
+                writeBytes(if (corruptDownload ||
+                plainCiphertext && !source.isEncrypted) {
+                    byteArrayOf(1, 2, 3)
+                } else {
+                    image
+                })
+            }
             return Result.success(object : MediaFile {
                 override fun path() = file.path
                 override fun persist(path: String) = false

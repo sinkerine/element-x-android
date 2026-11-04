@@ -103,6 +103,7 @@ dependencies {
     testImplementation(libs.coil.test)
     testImplementation(projects.libraries.matrix.test)
     testImplementation(projects.libraries.matrixmedia.test)
+    testImplementation(projects.libraries.matrixmedia.impl)
     testImplementation(projects.libraries.preferences.test)
     testImplementation(projects.libraries.sessionStorage.test)
     testImplementation(projects.libraries.push.test)

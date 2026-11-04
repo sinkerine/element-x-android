@@ -118,24 +118,64 @@ class CoilMediaFetcherTest {
     }
 
     @Test
-    fun `plain content thumbnail fallback and file retain cached loader paths`() = runTest {
+    fun `plain misses bypass preseeded legacy decrypted content and thumbnail caches after restart`() = runTest {
+        val ciphertext = byteArrayOf(9, 8, 7)
+        val decrypted = byteArrayOf(1, 2, 3)
         val source = MediaSource("mxc://server/image", """{"url":"mxc://server/image"}""")
-        val loader = mockk<MatrixMediaLoader>()
-        coEvery { loader.loadMediaContent(source) } returns Result.success(byteArrayOf(1))
-        coEvery { loader.loadMediaThumbnail(source, 32, 64) } returns Result.failure(IOException("No thumbnail"))
-        val handle = mockk<MediaFile>(relaxed = true)
-        every { handle.path() } returns temporaryFolder.newFile().path
-        coEvery { loader.downloadMediaFile(source, "image/png", "image.png", true) } returns Result.success(handle)
-        for (kind in listOf(
-            MediaRequestData.Kind.Content,
-            MediaRequestData.Kind.Thumbnail(32, 64),
-            MediaRequestData.Kind.File("image.png", "image/png"),
-        )) {
-            (CoilMediaFetcher(loader, MediaRequestData(source, kind)).fetch() as SourceFetchResult).source.close()
+        // The same persistent cache is retained when the loader and fetcher are recreated.
+        val legacyCache = mutableMapOf(source.safeUrl to decrypted)
+        repeat(2) {
+            val loader = mockk<MatrixMediaLoader>()
+            coEvery { loader.loadMediaContent(source) } answers { Result.success(legacyCache.getValue(source.safeUrl)) }
+            coEvery { loader.loadMediaThumbnail(source, any(), any()) } answers { Result.success(legacyCache.getValue(source.safeUrl)) }
+            coEvery { loader.downloadMediaFile(source, any(), any(), any()) } answers {
+                val bytes = if (arg<Boolean>(3)) legacyCache.getValue(source.safeUrl) else ciphertext
+                val file = temporaryFolder.newFile().apply { writeBytes(bytes) }
+                val handle = mockk<MediaFile>(relaxed = true)
+                every { handle.path() } returns file.path
+                Result.success(handle)
+            }
+            for (kind in listOf(
+                MediaRequestData.Kind.Content,
+                MediaRequestData.Kind.Thumbnail(32, 64),
+                MediaRequestData.Kind.File("image.png", "image/png"),
+            )) {
+                val result = CoilMediaFetcher(loader, MediaRequestData(source, kind)).fetch() as SourceFetchResult
+                assertThat(result.source.source().readByteArray()).isEqualTo(ciphertext)
+                result.source.close()
+                val fileKind = kind as? MediaRequestData.Kind.File
+                coVerify { loader.downloadMediaFile(source, fileKind?.mimeType, fileKind?.fileName, false) }
+            }
+            coVerify(exactly = 0) { loader.loadMediaContent(any()) }
+            coVerify(exactly = 0) { loader.loadMediaThumbnail(any(), any(), any()) }
+            assertThat(legacyCache.getValue(source.safeUrl)).isEqualTo(decrypted)
         }
-        coVerify(exactly = 2) { loader.loadMediaContent(source) }
-        coVerify(exactly = 1) { loader.loadMediaThumbnail(source, 32, 64) }
-        coVerify(exactly = 1) { loader.downloadMediaFile(source, "image/png", "image.png", true) }
+    }
+
+    @Test
+    fun `fresh plain encrypted plain sequence never writes decrypted bytes into URI cache`() = runTest {
+        val encrypted = encryptedMediaSource()
+        val plain = MediaSource(encrypted.safeUrl, null)
+        val ciphertext = byteArrayOf(9, 8, 7)
+        val decrypted = byteArrayOf(1, 2, 3)
+        val cache = mutableMapOf<String, ByteArray>()
+        val loader = mockk<MatrixMediaLoader>()
+        coEvery { loader.loadMediaContent(any()) } answers { Result.success(cache.getOrPut(plain.safeUrl) { ciphertext }) }
+        coEvery { loader.downloadMediaFile(any(), any(), any(), any()) } answers {
+            val source = arg<MediaSource>(0)
+            val bytes = if (source.isEncrypted) decrypted else ciphertext
+            if (arg<Boolean>(3)) cache[source.safeUrl] = bytes
+            val file = temporaryFolder.newFile().apply { writeBytes(bytes) }
+            val handle = mockk<MediaFile>(relaxed = true)
+            every { handle.path() } returns file.path
+            Result.success(handle)
+        }
+        for (source in listOf(plain, encrypted, plain, encrypted)) {
+            val result = CoilMediaFetcher(loader, MediaRequestData(source, MediaRequestData.Kind.Content)).fetch() as SourceFetchResult
+            assertThat(result.source.source().readByteArray()).isEqualTo(if (source.isEncrypted) decrypted else ciphertext)
+            result.source.close()
+        }
+        assertThat(cache).isEmpty()
     }
 
     private fun encryptedRequest() = MediaRequestData(encryptedMediaSource(), MediaRequestData.Kind.Content)

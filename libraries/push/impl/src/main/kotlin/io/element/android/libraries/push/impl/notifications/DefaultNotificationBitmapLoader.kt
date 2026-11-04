@@ -97,6 +97,7 @@ class DefaultNotificationBitmapLoader(
         }
         val imageRequest = ImageRequest.Builder(context)
             .data(data)
+            .size(targetSize.toInt())
             .transformations(CircleCropTransformation())
             .build()
         return imageLoader.execute(imageRequest).image?.toBitmap()
