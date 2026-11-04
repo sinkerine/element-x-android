@@ -17,6 +17,11 @@ android {
 }
 
 dependencies {
+    implementation(projects.libraries.interactiveui.core)
+    implementation(projects.libraries.matrixmedia.api)
+    implementation(projects.libraries.matrix.api)
+    implementation(projects.libraries.htmlrenderer.api)
+    implementation(libs.coil.compose)
     implementation(projects.libraries.designsystem)
     implementation(projects.libraries.uiStrings)
     implementation(libs.coroutines.core)

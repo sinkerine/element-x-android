@@ -23,4 +23,27 @@
     <string name="a11y_interactive_ui_sorted_ascending">Sorted ascending</string>
     <string name="a11y_interactive_ui_sorted_descending">Sorted descending</string>
     <string name="a11y_interactive_ui_not_sorted">Not sorted</string>
+    <string name="screen_interactive_ui_choose_option">Choose an option</string>
+    <string name="screen_interactive_ui_confirmation_overdue">No confirmation yet</string>
+    <string name="screen_interactive_ui_waiting_for_sender">No confirmation from %1$s yet</string>
+    <string name="screen_interactive_ui_show_as_text">Show as text</string>
+    <string name="screen_interactive_ui_external_link">External link</string>
+    <string name="screen_interactive_ui_source">Source</string>
+    <string name="screen_interactive_ui_invalid_value">Enter a valid value</string>
+    <string name="screen_interactive_ui_unknown_content">This content cannot be displayed.</string>
+    <string name="screen_interactive_ui_item_position">Item %1$d of %2$d</string>
+    <string name="screen_interactive_ui_carousel">Carousel</string>
+    <string name="screen_interactive_ui_tabs">Tabs</string>
+    <string name="screen_interactive_ui_open_link_title">Open link?</string>
+    <string name="screen_interactive_ui_send_failed">Could not send your response</string>
+    <string name="screen_interactive_ui_invalid_content">Couldn’t show interactive content.</string>
+    <string name="screen_interactive_ui_status_sending">Sending…</string>
+    <string name="screen_interactive_ui_status_awaiting_confirmation">Waiting for confirmation…</string>
+    <string name="screen_interactive_ui_status_submitted">Submitted</string>
+    <string name="screen_interactive_ui_status_expired">Expired</string>
+    <string name="screen_interactive_ui_status_superseded">Superseded</string>
+    <string name="a11y_interactive_ui_expanded">Expanded</string>
+    <string name="a11y_interactive_ui_collapsed">Collapsed</string>
+    <string name="screen_interactive_ui_previous">Previous</string>
+    <string name="screen_interactive_ui_required">Required</string>
 </resources>
