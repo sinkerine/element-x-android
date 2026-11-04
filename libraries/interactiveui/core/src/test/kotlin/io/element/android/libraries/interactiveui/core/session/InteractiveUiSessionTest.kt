@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -661,6 +662,54 @@ class InteractiveUiSessionTest {
         session.onRevision(payload.copy(revision = 1))
         session.applySavedState(json("""{"ui_id":"example","revision":0,"state":{"name":"loaded"}}"""))
         assertEquals(text("loaded"), session.state.value.values["name"])
+    }
+
+    @Test
+    fun `settled carousel selection survives session recreation without persisting transient state`() = runTest {
+        val payload = catalog()
+        val first = session(payload)
+        first.setCarouselIndex("carousel", 3)
+        first.setGraphListMode("graph", true)
+        first.openLink("link")
+        advanceTimeBy(200)
+        runCurrent()
+        val restored = session(payload, savedState = saved.single())
+        assertEquals(3, restored.state.value.carouselIndex["carousel"])
+        assertTrue(restored.state.value.graphListMode.isEmpty())
+        assertNull(restored.state.value.urlRequest)
+        assertEquals(InteractiveUiPhase.Active, restored.state.value.phase)
+        assertTrue(sent.isEmpty())
+    }
+
+    @Test
+    fun `carousel restore validates envelope identity revision shape and item ids`() = runTest {
+        val payload = catalog()
+        val first = session(payload)
+        first.setCarouselIndex("carousel", 3)
+        advanceTimeBy(200)
+        runCurrent()
+        val envelope = saved.single()
+        val invalid = listOf(
+            JsonObject(envelope - "state"),
+            JsonObject(envelope + ("ui_id" to JsonPrimitive("other"))),
+            JsonObject(envelope + ("revision" to JsonPrimitive(1))),
+            JsonObject(envelope + ("revision" to JsonPrimitive("0"))),
+            JsonObject(envelope + ("android_view" to json("[]"))),
+            JsonObject(envelope + ("android_view" to json("""{"carousel_selected_items":{"carousel":"removed","unknown":"item1"}}"""))),
+            JsonObject(envelope + ("android_view" to json("""{"carousel_selected_items":{"carousel":3}}"""))),
+        )
+        invalid.forEach { assertTrue(session(payload, savedState = it).state.value.carouselIndex.isEmpty()) }
+        assertTrue(session(payload.copy(revision = 1), savedState = envelope).state.value.carouselIndex.isEmpty())
+        val legacy = JsonObject(envelope - "android_view")
+        assertEquals(text("Alice"), session(payload, savedState = legacy).state.value.values["name"])
+        assertTrue(session(payload, savedState = legacy).state.value.carouselIndex.isEmpty())
+        val late = session(payload)
+        late.applySavedState(envelope)
+        assertEquals(3, late.state.value.carouselIndex["carousel"])
+        val touched = session(payload)
+        touched.setCarouselIndex("carousel", 1)
+        touched.applySavedState(envelope)
+        assertEquals(1, touched.state.value.carouselIndex["carousel"])
     }
 
     @Test

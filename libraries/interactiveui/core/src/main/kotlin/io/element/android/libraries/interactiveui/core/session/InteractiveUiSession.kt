@@ -31,7 +31,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import timber.log.Timber
 
@@ -72,7 +74,10 @@ class InteractiveUiSession(
     private val persistState: suspend (envelope: JsonObject) -> Unit,
     private val nonce: () -> String = { InteractiveUiNonce.generate() },
 ) {
-    private val mutableState = MutableStateFlow(initialState(initialPayload, InteractiveUiStateRules.mergeSavedState(initialPayload, savedState)))
+    private val mutableState = MutableStateFlow(
+        initialState(initialPayload, InteractiveUiStateRules.mergeSavedState(initialPayload, savedState))
+            .copy(carouselIndex = restoredCarouselIndices(initialPayload, savedState))
+    )
     val state: StateFlow<InteractiveUiSessionState> = mutableState.asStateFlow()
     private val current get() = mutableState.value
     private var disposed = false
@@ -86,7 +91,7 @@ class InteractiveUiSession(
     @Synchronized
     fun onRevision(payload: InteractiveUiPayload) {
         if (disposed || payload.revision <= current.payload.revision) return
-        val values = InteractiveUiStateRules.mergeSavedState(payload, envelope())
+        val values = InteractiveUiStateRules.mergeSavedState(payload, savedStateEnvelope())
         confirmationJob?.cancel()
         val phase = if (sendInFlight && payload.status == InteractiveUiStatus.Active) InteractiveUiPhase.Sending else phase(payload)
         changed(initialState(payload, values).copy(phase = phase, showAsText = current.showAsText, pendingNodeId = current.pendingNodeId), userChange = false)
@@ -95,7 +100,10 @@ class InteractiveUiSession(
     @Synchronized
     fun applySavedState(savedState: JsonElement) {
         if (disposed || !pristine) return
-        changed(current.copy(values = InteractiveUiStateRules.mergeSavedState(current.payload, savedState)), userChange = false)
+        changed(current.copy(
+            values = InteractiveUiStateRules.mergeSavedState(current.payload, savedState),
+            carouselIndex = restoredCarouselIndices(current.payload, savedState)
+        ), userChange = false)
     }
 
     @Synchronized
@@ -217,7 +225,7 @@ class InteractiveUiSession(
         disposed = true
         confirmationJob?.cancel()
         persistJob?.cancel()
-        val saved = envelope()
+        val saved = savedStateEnvelope()
         scope.launch { persist(saved) }
     }
 
@@ -315,17 +323,44 @@ class InteractiveUiSession(
         if (userChange) pristine = false
         mutableState.value = value
         persistJob?.cancel()
-        val saved = envelope()
+        val saved = savedStateEnvelope()
         persistJob = scope.launch {
             delay(InteractiveUiConstants.PERSIST_DEBOUNCE_MILLIS)
             persist(saved)
         }
     }
 
-    private fun envelope(): JsonObject = buildJsonObject {
+    /**
+     * Device-local extension of the Web bound-state envelope. Only settled carousel item IDs are retained;
+     * pending actions, URL requests and other transient view state never cross session recreation.
+     */
+    @Synchronized
+    fun savedStateEnvelope(): JsonObject = buildJsonObject {
         put("ui_id", current.payload.uiId)
         put("revision", current.payload.revision)
         put("state", JsonObject(current.values.mapValues { it.value.toJsonElement() }))
+        val selectedItems = buildJsonObject {
+            current.payload.nodes.filterIsInstance<InteractiveUiNode.Carousel>().forEach { node ->
+                current.carouselIndex[node.id]?.let { index -> node.items.getOrNull(index)?.let { put(node.id, it.id) } }
+            }
+        }
+        if (selectedItems.isNotEmpty()) put("android_view", buildJsonObject { put("carousel_selected_items", selectedItems) })
+    }
+
+    private fun restoredCarouselIndices(payload: InteractiveUiPayload, saved: JsonElement?): Map<String, Int> {
+        val envelope = saved as? JsonObject ?: return emptyMap()
+        if (envelope["state"] !is JsonObject) return emptyMap()
+        if ((envelope["ui_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content != payload.uiId) return emptyMap()
+        // Revisions intentionally reset view state. Never restore an old item selection onto a new payload.
+        val revision = (envelope["revision"] as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
+        if (revision != payload.revision) return emptyMap()
+        val view = envelope["android_view"] as? JsonObject ?: return emptyMap()
+        val selectedItems = view["carousel_selected_items"] as? JsonObject ?: return emptyMap()
+        return payload.nodes.filterIsInstance<InteractiveUiNode.Carousel>().mapNotNull { node ->
+            val itemId = (selectedItems[node.id] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            val index = node.items.indexOfFirst { it.id == itemId }
+            if (index < 0) null else node.id to index
+        }.toMap()
     }
 
     private suspend fun persist(saved: JsonObject) {
