@@ -329,7 +329,10 @@ fun TimelineItemEventRow(
                 receipts = event.readReceiptState.receipts,
             ),
             onReadReceiptsClick = { onReadReceiptClick(event) },
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier.padding(top = 4.dp),
+            // Receipts move to the action reply when the sender confirms a card. Keep the
+            // card's extent stable so the reversed timeline preserves its visible position.
+            reserveSpace = (event.content as? TimelineItemInteractiveUiContent)?.model is InteractiveUiTimelineModel.Valid,
         )
     }
 }

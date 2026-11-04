@@ -56,6 +56,7 @@ fun TimelineItemReadReceiptView(
     state: ReadReceiptViewState,
     onReadReceiptsClick: () -> Unit,
     modifier: Modifier = Modifier,
+    reserveSpace: Boolean = false,
 ) {
     if (state.receipts.isNotEmpty()) {
         ReadReceiptsRow(modifier = modifier) {
@@ -77,7 +78,8 @@ fun TimelineItemReadReceiptView(
                 }
             }
             is LocalEventSendState.Failed -> {
-                // Error? The timestamp is already displayed in red
+                // The timestamp already displays the error.
+                if (reserveSpace) ReadReceiptsRow(modifier)
             }
             null,
             is LocalEventSendState.Sent -> {
@@ -90,6 +92,8 @@ fun TimelineItemReadReceiptView(
                             tint = ElementTheme.colors.iconSecondary
                         )
                     }
+                } else if (reserveSpace) {
+                    ReadReceiptsRow(modifier)
                 }
             }
         }
