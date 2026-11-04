@@ -3,4 +3,5 @@
     <string name="screen_threads_empty">No threads in this room yet.</string>
     <string name="screen_threads_load_error">Threads could not be loaded.</string>
     <string name="screen_threads_pagination_error">More threads could not be loaded.</string>
+    <string name="screen_interactive_ui_invalid_content">Couldn\'t show interactive content.</string>
 </resources>

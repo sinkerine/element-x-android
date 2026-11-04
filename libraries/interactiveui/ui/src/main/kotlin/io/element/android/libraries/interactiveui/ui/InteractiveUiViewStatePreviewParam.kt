@@ -99,11 +99,11 @@ internal class InteractiveUiViewStatePreviewParam : PreviewParameterProvider<Int
 @Preview(widthDp = 360, fontScale = 2f)
 @Composable
 internal fun InteractiveUiLargeFontPreview() = ElementPreview {
-    InteractiveUiView(InteractiveUiViewStatePreviewParam().values.first(), {}, { Text("Original message text") })
+    InteractiveUiView(InteractiveUiViewStatePreviewParam().values.first(), {}, fallback = { Text("Original message text") })
 }
 
 @PreviewsDayNight
 @Composable
 internal fun InteractiveUiViewPreview(@PreviewParameter(InteractiveUiViewStatePreviewParam::class) state: InteractiveUiViewState) = ElementPreview {
-    InteractiveUiView(state, {}, { Text("Original message text") }, Modifier.width(360.dp))
+    InteractiveUiView(state, {}, fallback = { Text("Original message text") }, modifier = Modifier.width(360.dp))
 }

@@ -407,7 +407,7 @@ class InteractiveUiChartViewTest : RobolectricTest() {
     fun `single positive pie renders and negative or zero pies show explanations and all values`() = runAndroidComposeUiTest {
         val chart = mutableStateOf<InteractiveUiChartModel>(InteractiveUiChartModel.Pie("Pie", "kg", persistentListOf("A"), persistentListOf(2.0)))
         setSafeContent { ElementPreview { InteractiveUiChartView(chart.value, false, true, {}) } }
-        onNodeWithContentDescription("Pie. Pie chart with 1 data rows.").assertExists()
+        onNodeWithContentDescription("Pie. Pie chart with 1 data row.").assertExists()
         onNodeWithText("1. A: 2 kg").assertExists()
         runOnIdle { chart.value = InteractiveUiChartModel.Pie("Pie", "kg", persistentListOf("A", "B"), persistentListOf(-2.0, 3.0)) }
         onNodeWithText("A pie chart cannot display negative values. All values are shown in the data table.").assertExists()

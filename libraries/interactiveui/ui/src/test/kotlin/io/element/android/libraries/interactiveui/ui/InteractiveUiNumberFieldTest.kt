@@ -57,7 +57,7 @@ class InteractiveUiNumberFieldTest : RobolectricTest() {
                         // Mirrors the session contract: invalid drafts do not replace the accepted value.
                         if (value != null && value in 0.0..100.0) model.value = model.value.copy(value = value)
                     }
-                }.copy(title = title.value), {}, {})
+                }.copy(title = title.value), {}, fallback = {})
             }
         }
         val field = onNodeWithContentDescription("Amount")
@@ -87,7 +87,7 @@ class InteractiveUiNumberFieldTest : RobolectricTest() {
     @Test
     fun `external value changes replace draft`() = runAndroidComposeUiTest {
         val model = mutableStateOf(node)
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, fallback = {}) } }
         val field = onNodeWithContentDescription("Amount")
         field.performTextReplacement("-")
         runOnIdle { model.value = model.value.copy(value = 5.0) }
@@ -103,7 +103,7 @@ class InteractiveUiNumberFieldTest : RobolectricTest() {
                 InteractiveUiView(viewState(model.value) { event ->
                     events.add(event)
                     if (event is InteractiveUiViewEvent.SetValue) model.value = model.value.copy(value = (event.value as? InteractiveUiValue.Number)?.value)
-                }, {}, {})
+                }, {}, fallback = {})
             }
         }
         val field = onNodeWithContentDescription("Amount")
@@ -119,7 +119,7 @@ class InteractiveUiNumberFieldTest : RobolectricTest() {
     @Test
     fun `external replacement invalidates unacknowledged number null and zero emissions`() = runAndroidComposeUiTest {
         val model = mutableStateOf(node.copy(value = 1.0))
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, fallback = {}) } }
         val field = onNodeWithContentDescription("Amount")
         listOf("2" to 2.0, "-" to null, "0,00" to 0.0).forEach { (draft, value) ->
             field.performTextReplacement(draft)
@@ -134,7 +134,7 @@ class InteractiveUiNumberFieldTest : RobolectricTest() {
     @Test
     fun `delayed and unchanged number echoes retain raw decimal and selection after external replacement`() = runAndroidComposeUiTest {
         val model = mutableStateOf(node.copy(value = 1.0))
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, fallback = {}) } }
         val field = onNodeWithContentDescription("Amount")
         runOnIdle { model.value = model.value.copy(value = 3.0) }
         field.assertTextContains("3")
@@ -230,7 +230,7 @@ class InteractiveUiNumberFieldTest : RobolectricTest() {
                         assertThat(InteractiveUiStateRules.acceptsStateValue(payload, "amount", event.value)).isTrue()
                         model.value = model.value.copy(value = (event.value as InteractiveUiValue.Number).value)
                     }
-                }, {}, {})
+                }, {}, fallback = {})
             }
         }
         val slider = onNodeWithContentDescription("Amount")
@@ -247,7 +247,7 @@ class InteractiveUiNumberFieldTest : RobolectricTest() {
     @Test
     fun `invalid slider displays localized error and exposes error semantics`() = runAndroidComposeUiTest {
         val model = mutableStateOf(node.copy(slider = true, invalid = true))
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, fallback = {}) } }
         onNodeWithText("Enter a valid value").assertIsDisplayed()
         onNodeWithContentDescription("Amount").assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, "Enter a valid value"))
         runOnIdle { model.value = model.value.copy(invalid = false) }
@@ -259,7 +259,7 @@ class InteractiveUiNumberFieldTest : RobolectricTest() {
     fun `inverted constant and extreme slider ranges fall back to number field`() = runAndroidComposeUiTest {
         val events = mutableListOf<InteractiveUiViewEvent>()
         val model = mutableStateOf(node.copy(slider = true))
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value, events::add), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value, events::add), {}, fallback = {}) } }
         val expected = mutableListOf<InteractiveUiViewEvent>()
         listOf(1.0 to 0.0, 0.1 to 0.1, -3e38 to 3e38, -Double.MAX_VALUE to Double.MAX_VALUE, 0.0 to Double.MIN_VALUE).forEachIndexed { index, (min, max) ->
             runOnIdle { model.value = model.value.copy(min = min, max = max) }
@@ -273,7 +273,7 @@ class InteractiveUiNumberFieldTest : RobolectricTest() {
     @Test
     fun `slider exposes label and emits finite value`() = runAndroidComposeUiTest {
         val events = mutableListOf<InteractiveUiViewEvent>()
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(node.copy(slider = true, value = 5.0), events::add), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(node.copy(slider = true, value = 5.0), events::add), {}, fallback = {}) } }
         onNodeWithContentDescription("Amount").performSemanticsAction(SemanticsActions.SetProgress) { it(20f) }
         assertThat(events).containsExactly(InteractiveUiViewEvent.SetValue("number", InteractiveUiValue.Number(20.0)))
     }

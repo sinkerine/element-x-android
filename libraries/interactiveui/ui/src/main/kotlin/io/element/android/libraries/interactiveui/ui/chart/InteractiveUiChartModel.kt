@@ -7,11 +7,13 @@
 
 package io.element.android.libraries.interactiveui.ui.chart
 
+import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
 
 /** Ported from element-web packages/shared-components/src/room/timeline/event-tile/body/InteractiveUiView/chart/ChartModel.ts
  * at bcb08017 (Copyright 2026 sinkerine, AGPL-3.0-only OR LicenseRef-Element-Commercial).
  */
+@Immutable
 sealed interface InteractiveUiChartModel {
     val title: String?
     val unit: String?

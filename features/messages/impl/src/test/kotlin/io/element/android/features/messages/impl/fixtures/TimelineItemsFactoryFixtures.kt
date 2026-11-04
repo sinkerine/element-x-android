@@ -14,6 +14,7 @@ import io.element.android.features.messages.impl.timeline.factories.TimelineItem
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentFactory
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentFailedToParseMessageFactory
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentFailedToParseStateFactory
+import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentInteractiveUiFactory
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentMessageFactory
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentPollFactory
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentProfileChangeFactory
@@ -30,6 +31,7 @@ import io.element.android.features.messages.impl.utils.FakeTextPillificationHelp
 import io.element.android.features.messages.test.timeline.FakeHtmlConverterProvider
 import io.element.android.features.poll.test.pollcontent.FakePollContentStateFactory
 import io.element.android.libraries.androidutils.filesize.FakeFileSizeFormatter
+import io.element.android.libraries.core.coroutine.CoroutineDispatchers
 import io.element.android.libraries.dateformatter.test.FakeDateFormatter
 import io.element.android.libraries.eventformatter.api.TimelineEventFormatter
 import io.element.android.libraries.featureflag.test.FakeFeatureFlagService
@@ -54,7 +56,14 @@ internal fun TestScope.aTimelineItemsFactoryCreator(): TimelineItemsFactory.Crea
 internal fun aTimelineItemContentFactory(
     timelineEventFormatter: TimelineEventFormatter = aTimelineEventFormatter(),
     matrixClient: FakeMatrixClient = FakeMatrixClient(),
+    interactiveUiFactory: TimelineItemContentInteractiveUiFactory = TimelineItemContentInteractiveUiFactory(
+        FakeFeatureFlagService(),
+        FakePermalinkParser(),
+        FakeHtmlMessageParser(),
+        CoroutineDispatchers.Default,
+    ),
 ): TimelineItemContentFactory = TimelineItemContentFactory(
+    interactiveUiFactory = interactiveUiFactory,
     messageFactory = TimelineItemContentMessageFactory(
         fileSizeFormatter = FakeFileSizeFormatter(),
         fileExtensionExtractor = FileExtensionExtractorWithoutValidation(),

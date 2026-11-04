@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -105,7 +106,7 @@ fun InteractiveUiChartView(
     } else {
         null
     }
-    val summary = stringResource(R.string.screen_interactive_ui_chart_summary, title, kind, rows.size)
+    val summary = pluralStringResource(R.plurals.screen_interactive_ui_chart_summary, rows.size, title, kind, rows.size)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, Modifier.semantics { heading() }, style = ElementTheme.typography.fontHeadingSmMedium)
         Text(summary)

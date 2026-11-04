@@ -13,6 +13,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -136,12 +137,16 @@ fun MessageEventBubble(
         Box(
             modifier = Modifier
                 .testTag(TestTags.messageBubble)
-                .widthIn(
+                .then(if (state.isFullWidth) {
+                    Modifier.widthIn(max = 680.dp).fillMaxWidth()
+                } else {
+                    Modifier.widthIn(
                     min = MIN_BUBBLE_WIDTH,
                     max = (constraints.maxWidth * MessageEventBubbleDefaults.BUBBLE_WIDTH_RATIO)
                         .toInt()
                         .toDp()
                 )
+                })
                 .then(clickableModifier),
             content = content,
         )

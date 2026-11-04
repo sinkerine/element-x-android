@@ -55,7 +55,7 @@ class InteractiveUiResponsiveTest : RobolectricTest() {
         setSafeContent {
             ElementPreview {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f), LocalLayoutDirection provides LayoutDirection.Rtl) {
-                    Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) { InteractiveUiView(viewState(root), {}, {}) }
+                    Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) { InteractiveUiView(viewState(root), {}, fallback = {}) }
                 }
             }
         }

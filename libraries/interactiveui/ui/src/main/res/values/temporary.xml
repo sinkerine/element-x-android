@@ -5,7 +5,10 @@
     <string name="screen_interactive_ui_chart_line">Line chart</string>
     <string name="screen_interactive_ui_chart_pie">Pie chart</string>
     <string name="screen_interactive_ui_chart_scatter">Scatter chart</string>
-    <string name="screen_interactive_ui_chart_summary">%1$s. %2$s with %3$d data rows.</string>
+    <plurals name="screen_interactive_ui_chart_summary">
+        <item quantity="one">%1$s. %2$s with %3$d data row.</item>
+        <item quantity="other">%1$s. %2$s with %3$d data rows.</item>
+    </plurals>
     <string name="screen_interactive_ui_data_table">Data table</string>
     <string name="screen_interactive_ui_graph">Graph</string>
     <string name="screen_interactive_ui_legend">Legend</string>
@@ -14,7 +17,10 @@
     <string name="screen_interactive_ui_pie_zero_total">The pie chart total is zero. All values are shown in the data table.</string>
     <string name="screen_interactive_ui_relationships_list">Relationships as list</string>
     <string name="screen_interactive_ui_relationship">%1$s → %2$s: %3$s</string>
-    <string name="screen_interactive_ui_show_all_rows">Show all %1$d rows</string>
+    <plurals name="screen_interactive_ui_show_all_rows">
+        <item quantity="one">Show all %1$d row</item>
+        <item quantity="other">Show all %1$d rows</item>
+    </plurals>
     <string name="screen_interactive_ui_value">Value</string>
     <string name="screen_interactive_ui_x_axis">X axis</string>
     <string name="screen_interactive_ui_y_axis">Y axis</string>

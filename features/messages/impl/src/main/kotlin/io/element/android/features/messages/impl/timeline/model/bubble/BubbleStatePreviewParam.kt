@@ -39,4 +39,5 @@ internal fun aBubbleState(
     groupPosition = groupPosition,
     isMine = isMine,
     timelineRoomInfo = timelineRoomInfo,
+    isFullWidth = false,
 )

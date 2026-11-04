@@ -45,7 +45,7 @@ class InteractiveUiDelegationTest : RobolectricTest() {
             true,
             true
         )
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(table, events::add), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(table, events::add), {}, fallback = {}) } }
         onNodeWithText("Price ↓").performClick()
         assertThat(events).containsExactly(InteractiveUiViewEvent.SortTable("table", "price"))
     }
@@ -56,7 +56,7 @@ class InteractiveUiDelegationTest : RobolectricTest() {
         val chart = InteractiveUiRenderNode.Chart("chart", InteractiveUiChartModelPreviewParam().values.first(), false, true)
         setSafeContent {
             ElementPreview {
-                Column(Modifier.verticalScroll(rememberScrollState())) { InteractiveUiView(viewState(chart, events::add), {}, {}) }
+                Column(Modifier.verticalScroll(rememberScrollState())) { InteractiveUiView(viewState(chart, events::add), {}, fallback = {}) }
             }
         }
         onNodeWithText("Data table").performScrollTo().performClick()
@@ -69,7 +69,7 @@ class InteractiveUiDelegationTest : RobolectricTest() {
         val graph = InteractiveUiRenderNode.Graph("graph", InteractiveUiGraphLayoutPreviewParam().values.first(), null, true, true)
         setSafeContent {
             ElementPreview {
-                Column(Modifier.verticalScroll(rememberScrollState())) { InteractiveUiView(viewState(graph, events::add), {}, {}) }
+                Column(Modifier.verticalScroll(rememberScrollState())) { InteractiveUiView(viewState(graph, events::add), {}, fallback = {}) }
             }
         }
         onNodeWithText("Sugar").performScrollTo().performClick()

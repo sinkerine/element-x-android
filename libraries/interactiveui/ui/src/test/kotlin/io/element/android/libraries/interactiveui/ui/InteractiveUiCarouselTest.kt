@@ -62,7 +62,7 @@ class InteractiveUiCarouselTest : RobolectricTest() {
                 InteractiveUiView(viewState(model.value) { event ->
                     events.add(event)
                     if (event is InteractiveUiViewEvent.SetCarouselIndex) model.value = model.value.copy(index = event.index)
-                }, {}, {})
+                }, {}, fallback = {})
             }
         }
         onNodeWithText("Item 1 of 3").assertIsDisplayed()
@@ -92,7 +92,7 @@ class InteractiveUiCarouselTest : RobolectricTest() {
                     InteractiveUiView(viewState(model.value) { event ->
                         events.add(event)
                         if (event is InteractiveUiViewEvent.SetCarouselIndex) model.value = model.value.copy(index = event.index)
-                    }.copy(title = title.value), {}, {})
+                    }.copy(title = title.value), {}, fallback = {})
                 }
             }
         }
@@ -113,7 +113,7 @@ class InteractiveUiCarouselTest : RobolectricTest() {
     @Test
     fun `single item has no paging controls and inactive multiple items cannot move`() = runAndroidComposeUiTest {
         val model = mutableStateOf(carousel.copy(items = persistentListOf(item("A"))))
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, fallback = {}) } }
         onNodeWithText("Item 1 of 1").assertIsDisplayed()
         onNodeWithText("Previous").assertDoesNotExist()
         onNodeWithText("Next").assertDoesNotExist()

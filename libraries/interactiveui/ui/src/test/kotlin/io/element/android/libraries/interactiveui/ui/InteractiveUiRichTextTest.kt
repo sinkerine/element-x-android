@@ -34,7 +34,7 @@ class InteractiveUiRichTextTest : RobolectricTest() {
         val document = DocumentNode(persistentListOf(ParagraphNode(AnnotatedString("Static rich text"))))
         setSafeContent {
             ElementPreview {
-                InteractiveUiView(viewState(InteractiveUiRenderNode.RichText("rich", "Plain fallback", document), events::add), opened::add, {})
+                InteractiveUiView(viewState(InteractiveUiRenderNode.RichText("rich", "Plain fallback", document), events::add), opened::add, fallback = {})
             }
         }
         onNodeWithText("Static rich text").assertIsDisplayed().performClick()

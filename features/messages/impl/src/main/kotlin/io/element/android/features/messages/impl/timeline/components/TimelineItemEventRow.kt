@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.constraintlayout.compose.ConstrainScope
 import androidx.constraintlayout.compose.ConstraintLayout
+import androidx.constraintlayout.compose.atMost
 import io.element.android.compound.theme.ElementTheme
 import io.element.android.compound.tokens.generated.CompoundIcons
 import io.element.android.features.messages.impl.timeline.TimelineEvent
@@ -77,9 +78,11 @@ import io.element.android.features.messages.impl.timeline.model.TimelineItemGrou
 import io.element.android.features.messages.impl.timeline.model.TimelineItemReactions
 import io.element.android.features.messages.impl.timeline.model.TimelineItemThreadInfo
 import io.element.android.features.messages.impl.timeline.model.bubble.BubbleState
+import io.element.android.features.messages.impl.timeline.model.event.InteractiveUiTimelineModel
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemAttachmentsContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemGalleryContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemImageContent
+import io.element.android.features.messages.impl.timeline.model.event.TimelineItemInteractiveUiContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemLocationContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemPollContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemStickerContent
@@ -516,6 +519,7 @@ private fun TimelineItemEventRowContent(
             groupPosition = event.groupPosition,
             isMine = event.isMine,
             timelineRoomInfo = timelineRoomInfo,
+            isFullWidth = (event.content as? TimelineItemInteractiveUiContent)?.model is InteractiveUiTimelineModel.Valid,
         )
         MessageEventBubble(
             modifier = Modifier
@@ -526,7 +530,12 @@ private fun TimelineItemEventRowContent(
                         0.dp
                     }
                     top.linkTo(sender.bottom, margin = topMargin)
-                    if (event.isMine) {
+                    if (bubbleState.isFullWidth) {
+                        val startMargin = if (event.isMine || timelineRoomInfo.isDm) 16.dp else 16.dp + BUBBLE_INCOMING_OFFSET
+                        start.linkTo(parent.start, margin = startMargin)
+                        end.linkTo(parent.end, margin = 16.dp)
+                        width = androidx.constraintlayout.compose.Dimension.fillToConstraints.atMost(680.dp)
+                    } else if (event.isMine) {
                         end.linkTo(parent.end, margin = 16.dp)
                     } else {
                         val startMargin = if (timelineRoomInfo.isDm) 16.dp else 16.dp + BUBBLE_INCOMING_OFFSET
@@ -893,6 +902,7 @@ private fun MessageEventBubbleContent(
                     content.mode.isOwnUser
                 if (shouldHide) TimestampPosition.Hidden else TimestampPosition.Overlay
             }
+            is TimelineItemInteractiveUiContent -> if (content.model is InteractiveUiTimelineModel.Valid) TimestampPosition.Below else TimestampPosition.Default
             is TimelineItemPollContent -> TimestampPosition.Below
             else -> TimestampPosition.Default
         }

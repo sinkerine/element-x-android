@@ -345,6 +345,7 @@ licensee {
     allowUrl("https://developer.android.com/studio/terms.html")
     allowUrl("https://www.zetetic.net/sqlcipher/license/")
     allowUrl("https://jsoup.org/license")
+    allowUrl("https://raw.githubusercontent.com/unicode-org/icu/maint/maint-78/LICENSE")
     allowUrl("https://asm.ow2.io/license.html")
     allowUrl("https://www.gnu.org/licenses/agpl-3.0.txt")
     allowUrl("https://github.com/mhssn95/compose-color-picker/blob/main/LICENSE")

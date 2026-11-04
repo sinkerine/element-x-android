@@ -65,7 +65,7 @@ class InteractiveUiViewTest : RobolectricTest() {
     fun `button and form emit only local events`() = runAndroidComposeUiTest {
         val events = mutableListOf<InteractiveUiViewEvent>()
         val root = InteractiveUiRenderNode.Form("form", "Submit", persistentListOf(button), true, false)
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(root, events::add), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(root, events::add), {}, fallback = {}) } }
         onNodeWithText("Respond").performClick()
         onNodeWithText("Submit").performClick()
         assertThat(events).containsExactly(InteractiveUiViewEvent.Activate("button"), InteractiveUiViewEvent.SubmitForm("form")).inOrder()
@@ -75,7 +75,7 @@ class InteractiveUiViewTest : RobolectricTest() {
     fun `inactive and pending forms disable descendants and submit`() = runAndroidComposeUiTest {
         val events = mutableListOf<InteractiveUiViewEvent>()
         val state = mutableStateOf(viewState(InteractiveUiRenderNode.Form("form", "Submit", persistentListOf(button), true, true), events::add))
-        setSafeContent { ElementPreview { InteractiveUiView(state.value, {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(state.value, {}, fallback = {}) } }
         onNodeWithText("Respond").assertIsNotEnabled()
         onNodeWithText("Submit").assertIsNotEnabled()
         runOnIdle { state.value = viewState(button, events::add).copy(phase = InteractiveUiPhase.Expired) }
@@ -87,7 +87,7 @@ class InteractiveUiViewTest : RobolectricTest() {
     fun `unknown content and show as text respect caller state`() = runAndroidComposeUiTest {
         val events = mutableListOf<InteractiveUiViewEvent>()
         val state = mutableStateOf(viewState(InteractiveUiRenderNode.Unknown("unknown", "Unsupported custom node"), events::add))
-        setSafeContent { ElementPreview { InteractiveUiView(state.value, {}, { Text("Original event body") }) } }
+        setSafeContent { ElementPreview { InteractiveUiView(state.value, {}, fallback = { Text("Original event body") }) } }
         onNodeWithText("Unsupported custom node").assertIsDisplayed()
         onNodeWithText("Show as text").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)).performClick()
         assertThat(events).containsExactly(InteractiveUiViewEvent.SetShowAsText(true))
@@ -106,7 +106,7 @@ class InteractiveUiViewTest : RobolectricTest() {
             notice = InteractiveUiNotice.WaitingForSender,
             confirmationOverdue = true,
         )
-        setSafeContent { ElementPreview { InteractiveUiView(state, {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(state, {}, fallback = {}) } }
         onNodeWithText("No confirmation from Alice yet").assertIsDisplayed()
         onNodeWithText("Try again").performClick()
         assertThat(events).containsExactly(InteractiveUiViewEvent.RetryAfterOverdue)
@@ -118,7 +118,7 @@ class InteractiveUiViewTest : RobolectricTest() {
         val opened = mutableListOf<String>()
         val url = "https://example.org/full/path?query=value#fragment"
         val state = mutableStateOf(viewState(button, events::add).copy(urlRequest = InteractiveUiUrlRequest.Confirming(url)))
-        setSafeContent { ElementPreview { InteractiveUiView(state.value, opened::add, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(state.value, opened::add, fallback = {}) } }
         onNodeWithText(url).assertIsDisplayed()
         assertThat(opened).isEmpty()
         onNodeWithText("Cancel").performClick()
@@ -145,7 +145,7 @@ class InteractiveUiViewTest : RobolectricTest() {
                 InteractiveUiView(viewState(button, events::add).copy(
                     phase = InteractiveUiPhase.Submitted,
                     urlRequest = InteractiveUiUrlRequest.Approved("https://example.org")
-                ), opened::add, {})
+                ), opened::add, fallback = {})
             }
         }
         waitForIdle()
@@ -179,7 +179,7 @@ class InteractiveUiViewTest : RobolectricTest() {
         ))
         setSafeContent {
             ElementPreview {
-                Column(Modifier.verticalScroll(rememberScrollState())) { InteractiveUiView(viewState(root, events::add), {}, {}) }
+                Column(Modifier.verticalScroll(rememberScrollState())) { InteractiveUiView(viewState(root, events::add), {}, fallback = {}) }
             }
         }
         onNodeWithContentDescription("Select option, Choose an option").performClick()
@@ -211,7 +211,7 @@ class InteractiveUiViewTest : RobolectricTest() {
             InteractiveUiRenderNode.Collapsible("collapse", "Expand", false, true, persistentListOf(panel)),
             InteractiveUiRenderNode.Link("link", "Reference", "example.org", true, true),
         ))
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(root, events::add), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(root, events::add), {}, fallback = {}) } }
         onNodeWithText("Details").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)).performClick()
         onNodeWithText("Expand +").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed")).performClick()
         onNodeWithText("Reference · example.org (Source)").performClick()
@@ -236,7 +236,7 @@ class InteractiveUiViewTest : RobolectricTest() {
             false,
         )
         val state = mutableStateOf(viewState(tabs, events::add))
-        setSafeContent { ElementPreview { InteractiveUiView(state.value, {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(state.value, {}, fallback = {}) } }
         listOf("Overview", "Nested section −", "Respond", "Notify me").forEach { label ->
             onNodeWithText(label).assertIsNotEnabled().performClick()
         }
@@ -265,7 +265,7 @@ class InteractiveUiViewTest : RobolectricTest() {
         )
         val collapsible = InteractiveUiRenderNode.Collapsible("collapse", "Section", true, false, persistentListOf(child))
         val state = mutableStateOf(viewState(collapsible, events::add))
-        setSafeContent { ElementPreview { InteractiveUiView(state.value, {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(state.value, {}, fallback = {}) } }
         listOf("Section −", "Overview", "Respond").forEach { label ->
             onNodeWithText(label).assertIsNotEnabled().performClick()
         }
@@ -284,7 +284,7 @@ class InteractiveUiViewTest : RobolectricTest() {
             InteractiveUiRenderNode.Card("a", "First card", persistentListOf()),
             InteractiveUiRenderNode.Card("b", "Second card", persistentListOf()),
         ))
-        setSafeContent { ElementPreview { Box(Modifier.width(360.dp)) { InteractiveUiView(viewState(root), {}, {}) } } }
+        setSafeContent { ElementPreview { Box(Modifier.width(360.dp)) { InteractiveUiView(viewState(root), {}, fallback = {}) } } }
         val first = onNodeWithText("First card").fetchSemanticsNode().boundsInRoot
         val second = onNodeWithText("Second card").fetchSemanticsNode().boundsInRoot
         assertThat(second.top).isAtLeast(first.bottom)
@@ -298,7 +298,7 @@ class InteractiveUiViewTest : RobolectricTest() {
         setSafeContent {
             ElementPreview {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    InteractiveUiView(content, {}, {}, onShowMedia = { reveals++ })
+                    InteractiveUiView(content, {}, fallback = {}, onShowMedia = { reveals++ })
                 }
             }
         }

@@ -47,9 +47,9 @@ import io.element.android.libraries.ui.strings.CommonStrings
 fun InteractiveUiView(
     state: InteractiveUiViewState,
     onOpenUrl: (url: String) -> Unit,
-    fallback: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     onShowMedia: () -> Unit = {},
+    fallback: @Composable () -> Unit,
 ) {
     val latestState by rememberUpdatedState(state)
     val latestOpenUrl by rememberUpdatedState(onOpenUrl)

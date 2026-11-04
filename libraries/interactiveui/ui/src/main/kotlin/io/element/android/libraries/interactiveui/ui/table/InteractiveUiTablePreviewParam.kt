@@ -26,7 +26,7 @@ internal data class InteractiveUiTablePreview(
     val enabled: Boolean,
 )
 
-internal class InteractiveUiTableViewPreviewParam : PreviewParameterProvider<InteractiveUiTablePreview> {
+internal class InteractiveUiTablePreviewParam : PreviewParameterProvider<InteractiveUiTablePreview> {
     private val rows = persistentListOf(
         persistentListOf(InteractiveUiCell.Text("DHL"), InteractiveUiCell.Number(24.0)),
         persistentListOf(InteractiveUiCell.Text("Royal Mail"), InteractiveUiCell.Number(18.5)),
@@ -46,18 +46,18 @@ internal class InteractiveUiTableViewPreviewParam : PreviewParameterProvider<Int
 
 @PreviewsDayNight
 @Composable
-internal fun InteractiveUiTableViewPreview(@PreviewParameter(InteractiveUiTableViewPreviewParam::class) state: InteractiveUiTablePreview) {
-    ElementPreview { PreviewTable(state) }
+internal fun InteractiveUiTableViewPreview(@PreviewParameter(InteractiveUiTablePreviewParam::class) state: InteractiveUiTablePreview) {
+    ElementPreview { ContentToPreview(state) }
 }
 
 @Preview(fontScale = 2f, widthDp = 360)
 @Composable
 internal fun InteractiveUiTableLargeFontPreview() {
-    ElementPreview { PreviewTable(InteractiveUiTableViewPreviewParam().values.first()) }
+    ElementPreview { ContentToPreview(InteractiveUiTablePreviewParam().values.first()) }
 }
 
 @Composable
-private fun PreviewTable(state: InteractiveUiTablePreview) {
+private fun ContentToPreview(state: InteractiveUiTablePreview) {
     InteractiveUiTableView("Carrier prices", persistentListOf(
         InteractiveUiTableColumn("carrier", "Carrier", false, false),
         InteractiveUiTableColumn("price", "Price (£)", true, true),

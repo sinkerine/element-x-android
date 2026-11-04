@@ -95,6 +95,7 @@ fun DependencyHandlerScope.allLibrariesImpl() {
     implementation(project(":libraries:core"))
     implementation(project(":libraries:eventformatter:impl"))
     implementation(project(":libraries:htmlrenderer:impl"))
+    implementation(project(":libraries:interactiveui:ui"))
     implementation(project(":libraries:indicator:impl"))
     implementation(project(":libraries:permissions:impl"))
     implementation(project(":libraries:audio:impl"))

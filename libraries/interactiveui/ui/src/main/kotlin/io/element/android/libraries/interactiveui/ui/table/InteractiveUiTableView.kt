@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.CollectionItemInfo
@@ -117,7 +118,7 @@ fun InteractiveUiTableView(
         }
         if (!showAll && rows.size > 50) {
             Text(
-                stringResource(R.string.screen_interactive_ui_show_all_rows, rows.size),
+                pluralStringResource(R.plurals.screen_interactive_ui_show_all_rows, rows.size, rows.size),
                 Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { showAll = true }.padding(8.dp),
                 color = ElementTheme.colors.textActionPrimary,
             )

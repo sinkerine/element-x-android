@@ -42,7 +42,7 @@ class InteractiveUiTextFieldImeTest : RobolectricTest() {
     @Test
     fun `IME next and done never submit`() = runAndroidComposeUiTest {
         val events = mutableListOf<InteractiveUiViewEvent>()
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(input, events::add), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(input, events::add), {}, fallback = {}) } }
         val field = onNodeWithContentDescription("Name")
         field.performTextReplacement("Ada")
         field.performImeAction()
@@ -59,7 +59,7 @@ class InteractiveUiTextFieldImeTest : RobolectricTest() {
                 InteractiveUiView(viewState(model.value) { event ->
                     events.add(event)
                     if (event is InteractiveUiViewEvent.SetValue) model.value = model.value.copy(value = (event.value as InteractiveUiValue.Text).value)
-                }, {}, {})
+                }, {}, fallback = {})
             }
         }
         onNodeWithContentDescription("Name").performClick()
@@ -95,7 +95,7 @@ class InteractiveUiTextFieldImeTest : RobolectricTest() {
                 InteractiveUiView(viewState(model.value) { event ->
                     events.add(event)
                     if (event is InteractiveUiViewEvent.SetValue) model.value = model.value.copy(value = (event.value as InteractiveUiValue.Text).value)
-                }, {}, {})
+                }, {}, fallback = {})
             }
         }
         val field = onNodeWithContentDescription("Name")
@@ -111,7 +111,7 @@ class InteractiveUiTextFieldImeTest : RobolectricTest() {
     @Test
     fun `external replacement invalidates an unacknowledged text emission`() = runAndroidComposeUiTest {
         val model = mutableStateOf(input.copy(value = "A"))
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, fallback = {}) } }
         val field = onNodeWithContentDescription("Name")
         field.performTextReplacement("B")
         runOnIdle { model.value = model.value.copy(value = "C") }
@@ -128,7 +128,7 @@ class InteractiveUiTextFieldImeTest : RobolectricTest() {
     @Test
     fun `delayed and unchanged text echoes retain selection after external replacement`() = runAndroidComposeUiTest {
         val model = mutableStateOf(input.copy(value = "A"))
-        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, {}) } }
+        setSafeContent { ElementPreview { InteractiveUiView(viewState(model.value), {}, fallback = {}) } }
         val field = onNodeWithContentDescription("Name")
         runOnIdle { model.value = model.value.copy(value = "C") }
         field.assertTextContains("C")
@@ -153,7 +153,7 @@ class InteractiveUiTextFieldImeTest : RobolectricTest() {
                 InteractiveUiView(viewState(model.value) { event ->
                     events.add(event)
                     if (event is InteractiveUiViewEvent.SetValue) model.value = model.value.copy(value = (event.value as InteractiveUiValue.Text).value)
-                }, {}, {})
+                }, {}, fallback = {})
             }
         }
         val field = onNodeWithContentDescription("Name")

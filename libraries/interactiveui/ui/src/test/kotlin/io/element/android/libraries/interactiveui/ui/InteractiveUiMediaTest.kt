@@ -47,7 +47,7 @@ class InteractiveUiMediaTest : RobolectricTest() {
         setSafeContent {
             ElementTheme(Theme.Light) {
                 CompositionLocalProvider(LocalInspectionMode provides true, LocalAsyncImagePreviewHandler provides handler) {
-                    InteractiveUiView(viewState(model.value), {}, {})
+                    InteractiveUiView(viewState(model.value), {}, fallback = {})
                 }
             }
         }

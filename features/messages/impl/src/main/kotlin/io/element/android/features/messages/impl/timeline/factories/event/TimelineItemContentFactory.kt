@@ -15,6 +15,7 @@ import io.element.android.features.messages.impl.timeline.model.event.TimelineIt
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemLegacyCallInviteContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemLocationContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemRtcNotificationContent
+import io.element.android.features.messages.impl.timeline.model.event.TimelineItemTextContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemUnknownContent
 import io.element.android.libraries.dateformatter.api.DateFormatter
 import io.element.android.libraries.dateformatter.api.DateFormatterMode
@@ -47,6 +48,7 @@ import io.element.android.services.toolbox.api.strings.StringProvider
 
 @Inject
 class TimelineItemContentFactory(
+    private val interactiveUiFactory: TimelineItemContentInteractiveUiFactory,
     private val messageFactory: TimelineItemContentMessageFactory,
     private val redactedMessageFactory: TimelineItemContentRedactedFactory,
     private val stickerFactory: TimelineItemContentStickerFactory,
@@ -62,7 +64,7 @@ class TimelineItemContentFactory(
     private val stringProvider: StringProvider,
 ) {
     suspend fun create(eventTimelineItem: EventTimelineItem, roomMembers: List<RoomMember>): TimelineItemEventContent {
-        return create(
+        val base = create(
             itemContent = eventTimelineItem.content,
             eventId = eventTimelineItem.eventId,
             isEditable = eventTimelineItem.isEditable,
@@ -70,6 +72,7 @@ class TimelineItemContentFactory(
             senderProfile = eventTimelineItem.senderProfile,
             roomMembers = roomMembers,
         )
+        return (base as? TimelineItemTextContent)?.let { interactiveUiFactory.create(eventTimelineItem, it) } ?: base
     }
 
     suspend fun create(
