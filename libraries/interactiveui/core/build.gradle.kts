@@ -14,10 +14,12 @@ android {
 
 dependencies {
     api(libs.serialization.json)
+    implementation(projects.libraries.core)
     implementation(platform(libs.network.okhttp.bom))
     implementation(libs.network.okhttp)
     implementation(libs.coroutines.core)
     implementation("com.ibm.icu:icu4j:78.3")
+    testImplementation(libs.coroutines.test)
     testImplementation(libs.test.junit)
     testImplementation(libs.test.truth)
     testImplementation(libs.test.robolectric)
