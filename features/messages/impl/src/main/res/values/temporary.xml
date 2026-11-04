@@ -4,4 +4,25 @@
     <string name="screen_threads_load_error">Threads could not be loaded.</string>
     <string name="screen_threads_pagination_error">More threads could not be loaded.</string>
     <string name="screen_interactive_ui_invalid_content">Couldn\'t show interactive content.</string>
+    <string name="screen_thread_my_messages_title">Your messages</string>
+    <string name="screen_thread_my_messages_count_more">%1$d+</string>
+    <string name="screen_thread_my_messages_jump_failed">That message is no longer available.</string>
+    <string name="a11y_thread_my_messages_opened">Your messages in this thread, %1$s</string>
+    <string name="a11y_thread_my_messages_jumped">Your message from %1$s: %2$s</string>
+    <string name="a11y_thread_my_messages_jumped_root">Your message from %1$s, thread root: %2$s</string>
+    <string name="a11y_thread_my_messages_open">Your messages in this thread</string>
+    <string name="screen_thread_my_messages_root_chip">Root</string>
+    <string name="screen_thread_my_messages_loading">Loading older messages…</string>
+    <string name="screen_thread_my_messages_start_of_thread">Start of thread</string>
+    <string name="screen_thread_my_messages_load_error">Couldn’t load older messages</string>
+    <string name="screen_thread_my_messages_empty">You haven’t posted in this thread yet</string>
+    <string name="screen_thread_my_messages_limit_reached">Loading limit reached</string>
+    <string name="a11y_thread_my_messages_root">thread root</string>
+    <string name="a11y_thread_my_messages_previous">Jump to your previous message</string>
+    <string name="screen_thread_my_messages_previous_label">Previous</string>
+    <string name="screen_thread_my_messages_no_earlier">No earlier messages from you in this thread</string>
+    <string name="screen_thread_my_messages_thread_root">Thread root</string>
+    <string name="screen_thread_my_messages_context">After %1$s: %2$s</string>
+    <string name="a11y_thread_my_messages_on_screen">on screen</string>
+    <string name="a11y_thread_my_messages_preview">Preview</string>
 </resources>

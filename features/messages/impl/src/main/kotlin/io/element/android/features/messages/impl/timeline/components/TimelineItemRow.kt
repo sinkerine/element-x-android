@@ -8,11 +8,13 @@
 
 package io.element.android.features.messages.impl.timeline.components
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -75,6 +77,7 @@ internal fun TimelineItemRow(
     onSwipeToReply: (TimelineItem.Event) -> Unit,
     eventSink: (TimelineEvent.TimelineItemEvent) -> Unit,
     modifier: Modifier = Modifier,
+    outlinedEventId: EventId? = null,
     eventContentView: @Composable (TimelineItem.Event, Modifier, (ContentAvoidingLayoutData) -> Unit) -> Unit =
         { event, contentModifier, onContentLayoutChange ->
             TimelineItemEventContentView(
@@ -102,7 +105,12 @@ internal fun TimelineItemRow(
     } else {
         Modifier
     }
-    Box(modifier = modifier.then(backgroundModifier)) {
+    val outline = if (timelineItem.isEvent(outlinedEventId)) {
+        Modifier.border(2.dp, ElementTheme.colors.borderAccentSubtle, RoundedCornerShape(8.dp))
+    } else {
+        Modifier
+    }
+    Box(modifier = modifier.then(backgroundModifier).then(outline)) {
         when (timelineItem) {
             is TimelineItem.Virtual -> {
                 TimelineItemVirtualRow(

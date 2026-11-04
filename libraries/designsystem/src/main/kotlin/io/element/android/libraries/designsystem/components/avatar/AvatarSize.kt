@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 @Immutable
 enum class AvatarSize(val dp: Dp) {
     CurrentUserTopBar(32.dp),
+    ThreadMyMessagesButton(28.dp),
     CurrentRoomTopBar(32.dp),
 
     IncomingCall(140.dp),
