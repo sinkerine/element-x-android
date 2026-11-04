@@ -1,0 +1,52 @@
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+# Standalone: Alice signed in, encrypted fixture room open, Labs flag enabled.
+# Preserves app data. Deliberately excluded from allTests.yaml.
+appId: ${MAESTRO_APP_ID}
+---
+- runScript:
+    file: ../../../tools/interactive-ui/fixture-bot/lib/maestro-control.mjs
+    env:
+      PHASE: send
+- extendedWaitUntil:
+    visible: Cooking knowledge map
+    timeout: 30000
+- assertVisible: Knowledge branch.*
+- assertVisible: Ingredients
+- assertVisible: Sugar.*
+# The graph is deliberately wider than the card. Verify all layers by scrolling its region.
+- swipe:
+    start: 85%, 67%
+    end: 25%, 67%
+    duration: 600
+- assertVisible: Mechanisms
+- assertVisible: Results
+- assertVisible: Maillard reaction.*
+- assertVisible: Flavour.*
+- assertNotVisible: 'Complete text fallback: knowledge-map.en'
+- takeScreenshot: 01-knowledge-light
+- tapOn: Knowledge branch.*
+- tapOn: Nutrition
+- tapOn: Knowledge branch.*
+- tapOn: Cooking
+- tapOn: Maillard reaction.*
+- assertVisible: Heat creates flavour
+- tapOn: Relationships as list
+- assertVisible: Sugar → Maillard reaction.*
+- tapOn: Relationships as list
+- runScript:
+    file: ../../../tools/interactive-ui/fixture-bot/lib/maestro-control.mjs
+    env:
+      PHASE: local
+- scrollUntilVisible:
+    element: Explain this mechanism
+    direction: DOWN
+    timeout: 15000
+- tapOn: Explain this mechanism
+- extendedWaitUntil:
+    visible: '.*focus: Maillard reaction.*'
+    timeout: 30000
+- runScript:
+    file: ../../../tools/interactive-ui/fixture-bot/lib/maestro-control.mjs
+    env:
+      PHASE: action
