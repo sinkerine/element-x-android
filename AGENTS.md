@@ -8,6 +8,11 @@
 
 PRs must meet these rules.
 
+### Feature Defaults
+
+- Enable all new features by default, including features exposed through Labs or feature flags.
+- Use a disabled default only when the user explicitly requests it.
+
 ### Code Style
 
 - Style enforced by **Editor config** (`.editorconfig`).

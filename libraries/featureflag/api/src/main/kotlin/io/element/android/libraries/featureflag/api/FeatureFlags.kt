@@ -171,7 +171,7 @@ enum class FeatureFlags(
         key = "feature.interactive_ui",
         title = "Interactive messages",
         description = "Render interactive cards, forms, charts and knowledge maps sent with net.15cm.matrix.interactive_ui.",
-        defaultValue = { false },
+        defaultValue = { true },
         isFinished = false,
         isInLabs = true,
     ),
