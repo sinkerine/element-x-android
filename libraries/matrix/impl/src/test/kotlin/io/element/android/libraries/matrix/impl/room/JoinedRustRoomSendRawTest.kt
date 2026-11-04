@@ -61,7 +61,12 @@ class JoinedRustRoomSendRawTest {
         val cancellation = CancellationException("Send cancelled")
         val room = createJoinedRustRoom { _, _, _ -> throw cancellation }
 
-        val thrown = runCatching { room.sendRaw("custom.event", "{}") }.exceptionOrNull()
+        val thrown = try {
+            room.sendRaw("custom.event", "{}")
+            null
+        } catch (exception: CancellationException) {
+            exception
+        }
 
         assertThat(thrown).isInstanceOf(CancellationException::class.java)
         assertThat(thrown).hasMessageThat().isEqualTo(cancellation.message)
@@ -98,7 +103,12 @@ class JoinedRustRoomSendRawTest {
         val failure = AssertionError("Fatal error")
         val room = createJoinedRustRoom { _, _, _ -> throw failure }
 
-        val thrown = runCatching { room.sendRaw("custom.event", "{}") }.exceptionOrNull()
+        val thrown = try {
+            room.sendRaw("custom.event", "{}")
+            null
+        } catch (error: AssertionError) {
+            error
+        }
 
         assertThat(thrown).isInstanceOf(AssertionError::class.java)
         assertThat(thrown).hasMessageThat().isEqualTo(failure.message)
