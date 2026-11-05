@@ -338,22 +338,37 @@ class ThreadsDrawerLayoutTest : RobolectricTest() {
     }
 
     @Test
-    fun `inbox row drag consumes swipe and scrim tap closes drawer`() = runAndroidComposeUiTest {
+    fun `swiping left on unread or read inbox row closes drawer without marking read`() = runAndroidComposeUiTest {
         val fixture = Fixture(initiallyOpen = true)
-        var dragged = 0f
+        val events = mutableListOf<ThreadsInboxEvent>()
+        val initialState = ThreadsInboxStatePreviewParam().values.first()
+        val state = mutableStateOf(initialState)
         setDrawer(fixture, inboxContent = {
-            Box(
-                Modifier.fillMaxSize().testTag("row").draggable(
-                    state = rememberDraggableState { dragged += it },
-                    orientation = Orientation.Horizontal,
-                )
-            )
+            ThreadsInboxView(state.value.copy(eventSink = events::add), onOpen = {}, onOpenInRoom = {})
         })
-        onNodeWithTag("row").performTouchInput { swipeLeft() }
-        runOnIdle {
-            assertThat(dragged).isLessThan(0f)
-            assertThat(fixture.open.value).isTrue()
+        repeat(2) { index ->
+            onNodeWithContentDescription("Android team, thread:", substring = true).performTouchInput { swipeLeft() }
+            runOnIdle {
+                assertThat(fixture.open.value).isFalse()
+                assertThat(events.filterIsInstance<ThreadsInboxEvent.MarkAsRead>()).isEmpty()
+            }
+            if (index == 0) {
+                runOnIdle {
+                    state.value = initialState.copy(
+                        rows = io.element.android.libraries.architecture.AsyncData.Success(
+                            kotlinx.collections.immutable.persistentListOf(previewThread().copy(numUnread = 0))
+                        )
+                    )
+                    fixture.open.value = true
+                }
+            }
         }
+    }
+
+    @Test
+    fun `scrim tap closes drawer`() = runAndroidComposeUiTest {
+        val fixture = Fixture(initiallyOpen = true)
+        setDrawer(fixture)
         onRoot().performTouchInput { click(Offset(width - 8f, centerY)) }
         mainClock.advanceTimeBy(1_000)
         waitForIdle()
