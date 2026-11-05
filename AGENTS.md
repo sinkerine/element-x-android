@@ -82,6 +82,11 @@ Common Gradle tasks:
 - Preserve existing sessions and use synthetic content in dedicated test fixtures. Never use personal rooms or clear an existing installation to prepare a test.
 - Do not record screenshot-test baselines locally.
 
+### Building and Installing Release APKs
+
+- Follow the [Element X Android APK release skill](.agents/skills/element-x-android-apk-release/SKILL.md) when asked to install or update a release APK, including repeating a previous installation.
+- Build a fresh release from the current HEAD before signing and installing; do not reuse an existing APK. Re-read HEAD on each request.
+
 ### Local APK Signing Key
 
 - The locally generated APK signing key is stored outside the repository at `/home/sinkerine/.local/share/element-x-local-signing-0550e5GE/`.
