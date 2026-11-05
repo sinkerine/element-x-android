@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
@@ -53,6 +54,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -85,6 +87,7 @@ import io.element.android.libraries.designsystem.theme.components.DropdownMenuIt
 import io.element.android.libraries.designsystem.theme.components.Icon
 import io.element.android.libraries.designsystem.theme.components.IconButton
 import io.element.android.libraries.designsystem.theme.components.Text
+import io.element.android.libraries.designsystem.theme.components.TextButton
 import io.element.android.libraries.designsystem.theme.components.TopAppBar
 import io.element.android.libraries.matrix.api.core.SessionId
 import io.element.android.libraries.matrix.api.user.DisplayedStatus
@@ -121,6 +124,9 @@ fun HomeTopBar(
     isThreadsDrawerOpen: Boolean,
     onThreadsClick: () -> Unit,
     modifier: Modifier = Modifier,
+    unreadChatCount: Int = 0,
+    isMarkingAllAsRead: Boolean = false,
+    onMarkAllAsRead: () -> Unit = {},
 ) {
     val contentPadding = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal).asPaddingValues()
     Column(modifier) {
@@ -190,14 +196,59 @@ fun HomeTopBar(
         )
         if (displayFilters) {
             TopAppBarScrollBehaviorLayout(scrollBehavior = scrollBehavior) {
-                RoomListFiltersView(
-                    state = filtersState,
-                    modifier = Modifier
-                        .padding(bottom = 16.dp)
-                        .padding(contentPadding)
-                )
+                Column {
+                    RoomListFiltersView(
+                        state = filtersState,
+                        modifier = Modifier.padding(contentPadding),
+                    )
+                    MarkAllAsReadRow(
+                        unreadChatCount = unreadChatCount,
+                        isMarkingAllAsRead = isMarkingAllAsRead,
+                        onClick = onMarkAllAsRead,
+                        modifier = Modifier.padding(contentPadding),
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun MarkAllAsReadRow(
+    unreadChatCount: Int,
+    isMarkingAllAsRead: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = pluralStringResource(R.plurals.screen_roomlist_unread_chats, unreadChatCount, unreadChatCount),
+            style = ElementTheme.typography.fontBodySmRegular,
+            color = ElementTheme.colors.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            modifier = Modifier.testTag(TestTags.homeMarkAllAsRead),
+            text = stringResource(
+                if (isMarkingAllAsRead) R.string.screen_roomlist_marking_all_as_read else R.string.action_mark_all_as_read
+            ),
+            onClick = onClick,
+            enabled = unreadChatCount > 0 && !isMarkingAllAsRead,
+            showProgress = isMarkingAllAsRead,
+        )
+    }
+}
+
+@PreviewsDayNight
+@Composable
+internal fun MarkAllAsReadRowPreview() = ElementPreview {
+    Column {
+        MarkAllAsReadRow(unreadChatCount = 12, isMarkingAllAsRead = false, onClick = {})
+        MarkAllAsReadRow(unreadChatCount = 12, isMarkingAllAsRead = true, onClick = {})
+        MarkAllAsReadRow(unreadChatCount = 0, isMarkingAllAsRead = false, onClick = {})
     }
 }
 

@@ -1,0 +1,40 @@
+appId: ${MAESTRO_APP_ID}
+---
+# Dedicated fixture account only. Preconditions: on Chats, no filters selected,
+# one unread direct chat and two unread group rooms. No personal conversations.
+# This standalone flow consumes unread state; reseed fixtures before rerunning.
+- assertVisible: "3 unread chats"
+- tapOn: "People"
+- extendedWaitUntil:
+    visible: "1 unread chat"
+    timeout: 15000
+- tapOn:
+    id: "home-mark_all_as_read"
+- extendedWaitUntil:
+    visible: "0 unread chats"
+    timeout: 15000
+- assertVisible:
+    id: "home-mark_all_as_read"
+    enabled: false
+- tapOn:
+    id: "home_screen-clear_filters"
+- tapOn: "Rooms"
+- extendedWaitUntil:
+    visible: "2 unread chats"
+    timeout: 15000
+- tapOn:
+    id: "home-mark_all_as_read"
+- extendedWaitUntil:
+    visible: "0 unread chats"
+    timeout: 15000
+- assertVisible:
+    id: "home-mark_all_as_read"
+    enabled: false
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "0 unread chats"
+    timeout: 30000
+- assertVisible:
+    id: "home-mark_all_as_read"
+    enabled: false
