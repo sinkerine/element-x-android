@@ -1,3 +1,5 @@
+import extension.testCommonDependencies
+
 /*
  * Copyright (c) 2026 Element Creations Ltd.
  *
@@ -11,13 +13,23 @@ plugins {
 
 android {
     namespace = "io.element.android.libraries.htmlrenderer.api"
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
     api(projects.libraries.matrix.api)
+    api(projects.libraries.maths.api)
     implementation(projects.libraries.designsystem)
     implementation(projects.libraries.uiCommon)
     implementation(projects.libraries.uiStrings)
 
     api(libs.jsoup)
+
+    testCommonDependencies(libs, includeTestComposeView = true)
+    testImplementation(projects.libraries.maths.test)
 }

@@ -23,10 +23,18 @@ import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion.LINK_ANNOTATION_TAG
 import io.element.android.libraries.htmlrenderer.api.ListItemNode
 import io.element.android.libraries.htmlrenderer.api.ListNode
+import io.element.android.libraries.htmlrenderer.api.MathsBlockNode
+import io.element.android.libraries.htmlrenderer.api.MathsInlineContent
 import io.element.android.libraries.htmlrenderer.api.MentionNodeContent
 import io.element.android.libraries.htmlrenderer.api.ParagraphNode
 import io.element.android.libraries.htmlrenderer.api.QuoteNode
 import io.element.android.libraries.htmlrenderer.api.spans.InlineCodeSpanStyle
+import io.element.android.libraries.maths.api.MAX_MATHS_ELEMENTS_PER_MESSAGE
+import io.element.android.libraries.maths.api.MathsLayout
+import io.element.android.libraries.maths.api.MathsLayoutEngine
+import io.element.android.libraries.maths.api.isDisplayMaths
+import io.element.android.libraries.maths.api.isMathsElement
+import io.element.android.libraries.maths.api.mathsTex
 import io.element.android.libraries.matrix.api.permalink.PermalinkData
 import io.element.android.libraries.matrix.api.permalink.PermalinkParser
 import kotlinx.collections.immutable.ImmutableList
@@ -46,172 +54,199 @@ import org.jsoup.nodes.TextNode
 @ContributesBinding(AppScope::class)
 class DefaultHtmlMessageParser(
     private val permalinkParser: PermalinkParser,
+    private val mathsLayoutEngine: MathsLayoutEngine,
 ) : HtmlMessageParser {
     override fun parse(document: Document): DocumentNode {
-        return DocumentNode(children = parseBlocks(document.body()))
+        return DocumentNode(children = ParseSession().parseBlocks(document.body()))
     }
 
-    /**
-     * Walks the children of [parent], emitting a block node for each block-level element and
-     * buffering runs of inline content into [ParagraphNode]s in between.
-     */
-    private fun parseBlocks(parent: Element): ImmutableList<BlockNode> {
-        val blocks = mutableListOf<BlockNode>()
-        val inlineBuffer = mutableListOf<Node>()
+    /** Mutable parsing state belongs to one invocation, including concurrent invocations. */
+    private inner class ParseSession {
+        private var mathsCount = 0
 
-        fun flushInline() {
-            if (inlineBuffer.isNotEmpty()) {
-                buildParagraph(inlineBuffer)?.let(blocks::add)
-                inlineBuffer.clear()
-            }
-        }
-
-        for (node in parent.childNodes()) {
-            when (node) {
-                // The fallback reply content is never rendered.
-                is Element if node.tagName() == TAG_MX_REPLY -> Unit
-                is Element if node.isBlockLevel() -> {
-                    flushInline()
-                    parseBlock(node)?.let(blocks::add)
-                }
-                else -> inlineBuffer.add(node)
-            }
-        }
-        flushInline()
-        return blocks.toImmutableList()
-    }
-
-    private fun parseBlock(element: Element): BlockNode? = when (element.tagName()) {
-        TAG_P -> buildParagraph(element.childNodes())
-        TAG_PRE -> CodeBlockNode(code = element.wholeText().trimEnd('\n'))
-        TAG_BLOCKQUOTE -> QuoteNode(children = parseBlocks(element))
-        TAG_UL -> buildList(element, ordered = false)
-        TAG_OL -> buildList(element, ordered = true)
-        else -> null
-    }
-
-    private fun buildList(element: Element, ordered: Boolean): ListNode {
-        val startIndex = if (ordered) element.attr("start").toIntOrNull() ?: 1 else 1
-        val items = element.childNodes()
-            .filterIsInstance<Element>()
-            .filter { it.tagName() == TAG_LI }
-            .map { ListItemNode(children = parseBlocks(it)) }
-            .toImmutableList()
-        return ListNode(ordered = ordered, startIndex = startIndex, items = items)
-    }
-
-    /** Builds a [ParagraphNode] from a run of inline [nodes], or `null` if it holds no content. */
-    private fun buildParagraph(nodes: List<Node>): ParagraphNode? {
-        val builder = InlineContentBuilder()
-        nodes.forEach { builder.append(it) }
-        return builder.build()
-    }
-
-    /**
-     * Accumulates inline nodes into an [AnnotatedString] plus a map of mention placeholders.
-     * A fresh instance is used for each paragraph so placeholder ids stay local to it.
-     */
-    private inner class InlineContentBuilder {
-        private val builder = AnnotatedString.Builder()
-        private val mentions = mutableMapOf<String, MentionNodeContent>()
-        private var mentionCount = 0
-
-        fun append(node: Node) {
-            when (node) {
-                is TextNode -> builder.append(node.text())
-                is Element -> appendElement(node)
-                else -> Unit
-            }
-        }
-
-        private fun appendElement(element: Element) {
-            when (element.tagName()) {
-                TAG_BR -> builder.append("\n")
-                TAG_B, TAG_STRONG -> withStyle(SpanStyle(fontWeight = FontWeight.Bold), element)
-                TAG_I, TAG_EM -> withStyle(SpanStyle(fontStyle = FontStyle.Italic), element)
-                TAG_U -> withStyle(SpanStyle(textDecoration = TextDecoration.Underline), element)
-                TAG_DEL, TAG_STRIKE_SHORT, TAG_STRIKE -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough), element)
-                TAG_CODE -> appendInlineCode(element)
-                TAG_A -> appendLink(element)
-                TAG_MX_REPLY -> Unit
-                // Unknown inline wrapper: keep its text so nothing is dropped.
-                else -> appendChildren(element)
-            }
-        }
-
-        private fun appendChildren(element: Element) {
-            element.childNodes().forEach { append(it) }
-        }
-
-        private fun withStyle(style: SpanStyle, element: Element) {
-            val start = builder.length
-            appendChildren(element)
-            builder.addStyle(style, start, builder.length)
+        private fun layoutMaths(element: Element, displayMode: Boolean): MathsLayout? {
+            if (mathsCount++ >= MAX_MATHS_ELEMENTS_PER_MESSAGE) return null
+            return mathsLayoutEngine.layout(element.mathsTex(), displayMode)
         }
 
         /**
-         * Renders an inline `<code>` as monospaced text and annotates the range so the renderer can
-         * apply a code background. A `<code>` inside a `<pre>` never reaches here: the `<pre>` is
-         * turned into a [CodeBlockNode] from its raw text.
+         * Walks the children of [parent], emitting a block node for each block-level element and
+         * buffering runs of inline content into [ParagraphNode]s in between.
          */
-        private fun appendInlineCode(element: Element) {
-            val start = builder.length
-            appendChildren(element)
-            if (builder.length > start) {
-                builder.addStyle(InlineCodeSpanStyle, start, builder.length)
-                builder.addStringAnnotation(INLINE_CODE_ANNOTATION_TAG, "", start, builder.length)
-            }
-        }
+        fun parseBlocks(parent: Element): ImmutableList<BlockNode> {
+            val blocks = mutableListOf<BlockNode>()
+            val inlineBuffer = mutableListOf<Node>()
 
-        private fun appendLink(element: Element) {
-            val href = element.attr("href")
-            val mention = href.takeIf { it.isNotEmpty() }?.let { resolveMention(element, it) }
-            if (mention != null) {
-                val id = "$MENTION_ID_PREFIX${mentionCount++}"
-                mentions[id] = mention
-                builder.appendInlineContent(id, mention.displayText)
-                return
-            }
-            // Only the link range is annotated; the visual style (color, ...) is applied by the renderer.
-            val start = builder.length
-            appendChildren(element)
-            if (href.isNotEmpty() && builder.length > start) {
-                builder.addStringAnnotation(LINK_ANNOTATION_TAG, href, start, builder.length)
-            }
-        }
-
-        private fun resolveMention(element: Element, href: String): MentionNodeContent? {
-            return when (val permalink = permalinkParser.parse(href)) {
-                is PermalinkData.UserLink -> MentionNodeContent.User(
-                    displayText = element.text(),
-                    userId = permalink.userId,
-                )
-                is PermalinkData.RoomLink -> if (permalink.eventId == null) {
-                    MentionNodeContent.Room(
-                        displayText = element.text(),
-                        roomIdOrAlias = permalink.roomIdOrAlias,
-                    )
-                } else {
-                    // A link to a specific event is a regular link, not a mention pill.
-                    null
+            fun flushInline() {
+                if (inlineBuffer.isNotEmpty()) {
+                    buildParagraph(inlineBuffer)?.let(blocks::add)
+                    inlineBuffer.clear()
                 }
+            }
+
+            for (node in parent.childNodes()) {
+                when (node) {
+                    // The fallback reply content is never rendered.
+                    is Element if node.tagName() == TAG_MX_REPLY -> Unit
+                    is Element if node.isBlockLevel() -> {
+                        flushInline()
+                        parseBlock(node)?.let(blocks::add)
+                    }
+                    else -> inlineBuffer.add(node)
+                }
+            }
+            flushInline()
+            return blocks.toImmutableList()
+        }
+
+        private fun parseBlock(element: Element): BlockNode? = when {
+            element.isDisplayMaths() -> layoutMaths(element, displayMode = true)?.let { MathsBlockNode(element.mathsTex(), it) }
+                ?: buildParagraph(element.childNodes())
+            else -> when (element.tagName()) {
+                TAG_P -> buildParagraph(element.childNodes())
+                TAG_PRE -> CodeBlockNode(code = element.wholeText().trimEnd('\n'))
+                TAG_BLOCKQUOTE -> QuoteNode(children = parseBlocks(element))
+                TAG_UL -> buildList(element, ordered = false)
+                TAG_OL -> buildList(element, ordered = true)
                 else -> null
             }
         }
 
-        fun build(): ParagraphNode? {
-            val text = builder.toAnnotatedString()
-            if (text.isBlank() && mentions.isEmpty()) return null
-            return ParagraphNode(
-                text = text,
-                inlineContent = mentions.toImmutableMap(),
-            )
+        private fun buildList(element: Element, ordered: Boolean): ListNode {
+            val startIndex = if (ordered) element.attr("start").toIntOrNull() ?: 1 else 1
+            val items = element.childNodes()
+                .filterIsInstance<Element>()
+                .filter { it.tagName() == TAG_LI }
+                .map { ListItemNode(children = parseBlocks(it)) }
+                .toImmutableList()
+            return ListNode(ordered = ordered, startIndex = startIndex, items = items)
+        }
+
+        /** Builds a [ParagraphNode] from a run of inline [nodes], or `null` if it holds no content. */
+        private fun buildParagraph(nodes: List<Node>): ParagraphNode? {
+            val builder = InlineContentBuilder()
+            nodes.forEach { builder.append(it) }
+            return builder.build()
+        }
+
+        /**
+         * Accumulates inline nodes into an [AnnotatedString] plus a map of mention placeholders.
+         * A fresh instance is used for each paragraph so placeholder ids stay local to it.
+         */
+        private inner class InlineContentBuilder {
+            private val builder = AnnotatedString.Builder()
+            private val mentions = mutableMapOf<String, MentionNodeContent>()
+            private val maths = mutableMapOf<String, MathsInlineContent>()
+            private var mentionCount = 0
+
+            fun append(node: Node) {
+                when (node) {
+                    is TextNode -> builder.append(node.text())
+                    is Element -> appendElement(node)
+                    else -> Unit
+                }
+            }
+
+            private fun appendElement(element: Element) {
+                if (element.isMathsElement() && element.parents().none { it.tagName() in setOf(TAG_PRE, TAG_CODE) || it.isMathsElement() }) {
+                    val layout = layoutMaths(element, displayMode = false)
+                    if (layout != null) {
+                        val id = "maths_${maths.size}"
+                        maths[id] = MathsInlineContent(element.mathsTex(), layout)
+                        builder.appendInlineContent(id, element.mathsTex())
+                        return
+                    }
+                }
+                when (element.tagName()) {
+                    TAG_BR -> builder.append("\n")
+                    TAG_B, TAG_STRONG -> withStyle(SpanStyle(fontWeight = FontWeight.Bold), element)
+                    TAG_I, TAG_EM -> withStyle(SpanStyle(fontStyle = FontStyle.Italic), element)
+                    TAG_U -> withStyle(SpanStyle(textDecoration = TextDecoration.Underline), element)
+                    TAG_DEL, TAG_STRIKE_SHORT, TAG_STRIKE -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough), element)
+                    TAG_CODE -> appendInlineCode(element)
+                    TAG_A -> appendLink(element)
+                    TAG_MX_REPLY -> Unit
+                    // Unknown inline wrapper: keep its text so nothing is dropped.
+                    else -> appendChildren(element)
+                }
+            }
+
+            private fun appendChildren(element: Element) {
+                element.childNodes().forEach { append(it) }
+            }
+
+            private fun withStyle(style: SpanStyle, element: Element) {
+                val start = builder.length
+                appendChildren(element)
+                builder.addStyle(style, start, builder.length)
+            }
+
+            /**
+             * Renders an inline `<code>` as monospaced text and annotates the range so the renderer can
+             * apply a code background. A `<code>` inside a `<pre>` never reaches here: the `<pre>` is
+             * turned into a [CodeBlockNode] from its raw text.
+             */
+            private fun appendInlineCode(element: Element) {
+                val start = builder.length
+                appendChildren(element)
+                if (builder.length > start) {
+                    builder.addStyle(InlineCodeSpanStyle, start, builder.length)
+                    builder.addStringAnnotation(INLINE_CODE_ANNOTATION_TAG, "", start, builder.length)
+                }
+            }
+
+            private fun appendLink(element: Element) {
+                val href = element.attr("href")
+                val mention = href.takeIf { it.isNotEmpty() }?.let { resolveMention(element, it) }
+                if (mention != null) {
+                    val id = "$MENTION_ID_PREFIX${mentionCount++}"
+                    mentions[id] = mention
+                    builder.appendInlineContent(id, mention.displayText)
+                    return
+                }
+                // Only the link range is annotated; the visual style (color, ...) is applied by the renderer.
+                val start = builder.length
+                appendChildren(element)
+                if (href.isNotEmpty() && builder.length > start) {
+                    builder.addStringAnnotation(LINK_ANNOTATION_TAG, href, start, builder.length)
+                }
+            }
+
+            private fun resolveMention(element: Element, href: String): MentionNodeContent? {
+                return when (val permalink = permalinkParser.parse(href)) {
+                    is PermalinkData.UserLink -> MentionNodeContent.User(
+                        displayText = element.text(),
+                        userId = permalink.userId,
+                    )
+                    is PermalinkData.RoomLink -> if (permalink.eventId == null) {
+                        MentionNodeContent.Room(
+                            displayText = element.text(),
+                            roomIdOrAlias = permalink.roomIdOrAlias,
+                        )
+                    } else {
+                        // A link to a specific event is a regular link, not a mention pill.
+                        null
+                    }
+                    else -> null
+                }
+            }
+
+            fun build(): ParagraphNode? {
+                val text = builder.toAnnotatedString()
+                if (text.isBlank() && mentions.isEmpty() && maths.isEmpty()) return null
+                return ParagraphNode(
+                    text = text,
+                    inlineContent = mentions.toImmutableMap(),
+                    inlineMaths = maths.toImmutableMap(),
+                )
+            }
         }
     }
 }
 
 /** Tags that start a new block-level node. Anything else is treated as inline content. */
-private fun Element.isBlockLevel(): Boolean = tagName() in BLOCK_TAGS
+private fun Element.isBlockLevel(): Boolean =
+    tagName() in BLOCK_TAGS || isDisplayMaths() && parent()?.tagName() in setOf("body", TAG_BLOCKQUOTE, TAG_LI)
 
 private val BLOCK_TAGS = setOf(TAG_P, TAG_PRE, TAG_BLOCKQUOTE, TAG_UL, TAG_OL)
 

@@ -7,6 +7,8 @@
 
 package io.element.android.libraries.htmlrenderer.api.ui
 
+import android.graphics.Canvas
+import android.graphics.Paint
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.runtime.Composable
@@ -30,10 +32,13 @@ import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion.LINK_ANNOTATION_TAG
 import io.element.android.libraries.htmlrenderer.api.ListItemNode
 import io.element.android.libraries.htmlrenderer.api.ListNode
+import io.element.android.libraries.htmlrenderer.api.MathsBlockNode
+import io.element.android.libraries.htmlrenderer.api.MathsInlineContent
 import io.element.android.libraries.htmlrenderer.api.MentionNodeContent
 import io.element.android.libraries.htmlrenderer.api.ParagraphNode
 import io.element.android.libraries.htmlrenderer.api.QuoteNode
 import io.element.android.libraries.htmlrenderer.api.spans.InlineCodeSpanStyle
+import io.element.android.libraries.maths.api.MathsLayout
 import io.element.android.libraries.matrix.api.core.UserId
 import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.persistentListOf
@@ -67,6 +72,12 @@ internal class HtmlMessageContentPreviewParam : PreviewParameterProvider<Documen
             nestedList(),
             nestedListWithComplexContents(),
             linkifiedParagraph(),
+            inlineMaths(),
+            quotedInlineMaths(),
+            inlineMaths(widthEm = 50f),
+            displayMaths(widthEm = 5f),
+            displayMaths(widthEm = 50f),
+            mathsFallback(),
         )
 
     private fun richParagraph() = document(
@@ -237,6 +248,46 @@ internal class HtmlMessageContentPreviewParam : PreviewParameterProvider<Documen
         ),
     )
 
+    private fun inlineMaths(widthEm: Float = 5f) = document(
+        ParagraphNode(
+            text = buildAnnotatedString {
+                append("Euler ")
+                appendInlineContent("maths_0", "e^{i\\pi}+1=0")
+                append(" holds for ")
+                appendInlineContent(MENTION_ID, "Alice")
+            },
+            inlineContent = persistentMapOf(
+                MENTION_ID to MentionNodeContent.User(displayText = "Alice", userId = UserId("@alice:example.org")),
+            ),
+            inlineMaths = persistentMapOf("maths_0" to MathsInlineContent("e^{i\\pi}+1=0", PreviewMathsLayout(widthEm))),
+        ),
+    )
+
+    private fun quotedInlineMaths() = document(
+        QuoteNode(persistentListOf(
+            inlineMaths(),
+            ListNode(
+                ordered = false,
+                startIndex = 1,
+                items = persistentListOf(ListItemNode(persistentListOf(QuoteNode(inlineMaths().children)))),
+            ),
+        )),
+    )
+
+    private fun displayMaths(widthEm: Float) = document(
+        paragraph(AnnotatedString("A display formula:")),
+        MathsBlockNode("x", PreviewMathsLayout(widthEm, heightEm = 1.5f, depthEm = 0.5f)),
+    )
+
+    private fun mathsFallback() = document(
+        paragraph(buildAnnotatedString {
+            append("Invalid maths: ")
+            withAnnotation(INLINE_CODE_ANNOTATION_TAG, "") {
+                withStyle(InlineCodeSpanStyle) { append("\\frac{") }
+            }
+        }),
+    )
+
     private fun document(vararg blocks: BlockNode) = DocumentNode(blocks.toList().toImmutableList())
 
     private fun paragraph(
@@ -246,5 +297,25 @@ internal class HtmlMessageContentPreviewParam : PreviewParameterProvider<Documen
 
     private companion object {
         const val MENTION_ID = "mention_0"
+    }
+}
+
+/** Native-free stand-in for previewing formula bounds, baseline and horizontal scrolling. */
+private class PreviewMathsLayout(
+    override val widthEm: Float,
+    override val heightEm: Float = 0.9f,
+    override val depthEm: Float = 0.3f,
+) : MathsLayout {
+    override fun draw(canvas: Canvas, fontSizePx: Float, color: Int) {
+        val paint = Paint().apply {
+            this.color = color
+            style = Paint.Style.STROKE
+            strokeWidth = 1f
+        }
+        val width = widthEm * fontSizePx
+        val height = (heightEm + depthEm) * fontSizePx
+        canvas.drawRect(0f, 0f, width, height, paint)
+        canvas.drawLine(0f, heightEm * fontSizePx, width, heightEm * fontSizePx, paint)
+        canvas.drawLine(0f, height, width, 0f, paint)
     }
 }

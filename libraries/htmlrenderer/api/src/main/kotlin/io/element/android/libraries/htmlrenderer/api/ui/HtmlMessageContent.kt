@@ -9,6 +9,7 @@ package io.element.android.libraries.htmlrenderer.api.ui
 
 import android.content.ClipData
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,15 +18,14 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -50,7 +51,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
@@ -62,13 +66,18 @@ import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.core.graphics.withTranslation
 import io.element.android.compound.theme.ElementTheme
 import io.element.android.libraries.designsystem.components.linkify
 import io.element.android.libraries.designsystem.text.toPx
@@ -79,6 +88,8 @@ import io.element.android.libraries.htmlrenderer.api.DocumentNode
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion.INLINE_CODE_ANNOTATION_TAG
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion.LINK_ANNOTATION_TAG
 import io.element.android.libraries.htmlrenderer.api.ListNode
+import io.element.android.libraries.htmlrenderer.api.MathsBlockNode
+import io.element.android.libraries.htmlrenderer.api.MathsInlineContent
 import io.element.android.libraries.htmlrenderer.api.MentionNodeContent
 import io.element.android.libraries.htmlrenderer.api.ParagraphNode
 import io.element.android.libraries.htmlrenderer.api.QuoteNode
@@ -158,6 +169,7 @@ internal fun BlockNode.lastBlockNode(): BlockNode? = when (this) {
     is ListNode -> this
     is QuoteNode -> this
     is CodeBlockNode -> this
+    is MathsBlockNode -> this
 }
 
 @Composable
@@ -189,6 +201,7 @@ private fun BlockNodeView(
         is ParagraphNode -> {
             ParagraphView(node = node, context = context, modifier = modifier)
         }
+        is MathsBlockNode -> MathsBlockView(node = node, modifier = modifier)
         is CodeBlockNode -> CodeBlockView(node = node, modifier = modifier)
         is QuoteNode -> QuoteView(node = node, context = context, modifier = modifier)
         is ListNode -> ListView(node = node, context = context, modifier = modifier)
@@ -201,6 +214,22 @@ private fun ParagraphView(
     context: RenderContext,
     modifier: Modifier = Modifier,
 ) {
+    if (node.inlineMaths.isEmpty()) {
+        ParagraphText(node, context, modifier)
+    } else {
+        BoxWithConstraints(modifier) {
+            ParagraphText(node, context, maxWidthPx = constraints.maxWidth.toFloat())
+        }
+    }
+}
+
+@Composable
+private fun ParagraphText(
+    node: ParagraphNode,
+    context: RenderContext,
+    modifier: Modifier = Modifier,
+    maxWidthPx: Float = Float.POSITIVE_INFINITY,
+) {
     val linkColor = ElementTheme.colors.textLinkExternal
     val codeBackgroundColor = ElementTheme.colors.bgSubtleSecondary
     val codeBorderColor = ElementTheme.colors.borderInteractiveSecondary
@@ -209,7 +238,9 @@ private fun ParagraphView(
             .linkify(SpanStyle(color = linkColor))
             .applyLinkStyles(linkColor = linkColor)
     }
-    val inlineContent = rememberMentionInlineContent(node.inlineContent, context)
+    val style = ElementTheme.typography.fontBodyMdRegular
+    val inlineContent = (rememberMentionInlineContent(node.inlineContent, context) +
+        rememberMathsInlineContent(node.inlineMaths, style, maxWidthPx)).toImmutableMap()
     val layoutResult = remember { mutableStateOf<TextLayoutResult?>(null) }
     // Only the last rendered paragraph (and only when not inside a code block / quote) reports its
     // measured last line to the timeline.
@@ -231,6 +262,58 @@ private fun ParagraphView(
             measureLastLine?.invoke(result)
         },
     )
+}
+
+@Composable
+private fun MathsBlockView(node: MathsBlockNode, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current
+    val fontSizePx = with(density) { ElementTheme.typography.fontBodyMdRegular.fontSize.toPx() }
+    val color = ElementTheme.colors.textPrimary.toArgb()
+    Box(modifier.horizontalScroll(rememberScrollState())) {
+        Canvas(
+            Modifier.size(
+                with(density) { (node.layout.widthEm * fontSizePx).toDp() },
+                with(density) { ((node.layout.heightEm + node.layout.depthEm) * fontSizePx).toDp() }
+            )
+        ) {
+            drawIntoCanvas { node.layout.draw(it.nativeCanvas, fontSizePx, color) }
+        }
+    }
+}
+
+@Composable
+private fun rememberMathsInlineContent(
+    maths: ImmutableMap<String, MathsInlineContent>,
+    style: TextStyle,
+    maxWidthPx: Float,
+): ImmutableMap<String, InlineTextContent> {
+    if (maths.isEmpty()) return persistentMapOf()
+    val density = LocalDensity.current
+    val fontSizePx = with(density) { style.fontSize.toPx() }
+    val color = ElementTheme.colors.textPrimary.toArgb()
+    val textMeasurer = rememberTextMeasurer()
+    val measured = textMeasurer.measure("x", style.copy(lineHeight = TextUnit.Unspecified))
+    val centerEm = (measured.firstBaseline - measured.size.height / 2f) / fontSizePx
+    return remember(maths, maxWidthPx, fontSizePx, centerEm, color) {
+        maths.mapValues { (_, content) ->
+            val layout = content.layout
+            val scale = (maxWidthPx / (layout.widthEm * fontSizePx)).coerceIn(0.4f, 1f)
+            // TextCenter centres the placeholder on the surrounding font, rather than on its baseline.
+            val halfHeightEm = maxOf(layout.heightEm * scale - centerEm, layout.depthEm * scale + centerEm)
+            val topPx = (centerEm + halfHeightEm - layout.heightEm * scale) * fontSizePx
+            InlineTextContent(
+                Placeholder((layout.widthEm * scale).em, (2 * halfHeightEm).em, PlaceholderVerticalAlign.TextCenter)
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.withTranslation(0f, topPx) {
+                            layout.draw(this, fontSizePx * scale, color)
+                        }
+                    }
+                }
+            }
+        }.toImmutableMap()
+    }
 }
 
 @Composable
@@ -310,17 +393,22 @@ private fun QuoteView(
     context: RenderContext,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier = modifier.height(IntrinsicSize.Min)) {
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(1.dp))
-                .background(ElementTheme.colors.borderInteractiveSecondary),
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        BlockNodes(nodes = node.children, context = context)
-    }
+    val railColor = ElementTheme.colors.borderInteractiveSecondary
+    BlockNodes(
+        nodes = node.children,
+        context = context,
+        modifier = modifier
+            .drawBehind {
+                val railWidth = 2.dp.toPx()
+                drawRoundRect(
+                    color = railColor,
+                    topLeft = Offset(if (layoutDirection == LayoutDirection.Ltr) 0f else size.width - railWidth, 0f),
+                    size = Size(railWidth, size.height),
+                    cornerRadius = CornerRadius(1.dp.toPx()),
+                )
+            }
+            .padding(start = 10.dp),
+    )
 }
 
 @Composable

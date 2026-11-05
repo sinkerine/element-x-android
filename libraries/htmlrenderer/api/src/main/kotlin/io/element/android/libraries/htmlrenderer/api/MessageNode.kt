@@ -9,6 +9,7 @@ package io.element.android.libraries.htmlrenderer.api
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.text.AnnotatedString
+import io.element.android.libraries.maths.api.MathsLayout
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.persistentMapOf
@@ -47,12 +48,22 @@ data class DocumentNode(
  * Mentions (pills) are encoded as inline-content placeholders inside [text] (see
  * [androidx.compose.foundation.text.appendInlineContent]); [inlineContent] maps each
  * placeholder id to the [MentionNodeContent] the renderer needs to draw the pill.
+ * Formula placeholders map to [MathsInlineContent] in [inlineMaths].
  */
 @Immutable
 data class ParagraphNode(
     val text: AnnotatedString,
     val inlineContent: ImmutableMap<String, MentionNodeContent> = persistentMapOf(),
+    val inlineMaths: ImmutableMap<String, MathsInlineContent> = persistentMapOf(),
 ) : BlockNode
+
+/** A display-style formula that laid out successfully. */
+@Immutable
+data class MathsBlockNode(val tex: String, val layout: MathsLayout) : BlockNode
+
+/** Inline formula drawn at a paragraph's inline-content placeholder. */
+@Immutable
+data class MathsInlineContent(val tex: String, val layout: MathsLayout)
 
 /**
  * A preformatted code block (`<pre>`). Rendered in a monospaced, horizontally

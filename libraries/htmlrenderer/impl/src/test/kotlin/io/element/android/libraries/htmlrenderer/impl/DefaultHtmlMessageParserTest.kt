@@ -7,6 +7,8 @@
 
 package io.element.android.libraries.htmlrenderer.impl
 
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -14,9 +16,15 @@ import com.google.common.truth.Truth.assertThat
 import io.element.android.libraries.htmlrenderer.api.CodeBlockNode
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser
 import io.element.android.libraries.htmlrenderer.api.ListNode
+import io.element.android.libraries.htmlrenderer.api.MathsBlockNode
+import io.element.android.libraries.htmlrenderer.api.MathsInlineContent
 import io.element.android.libraries.htmlrenderer.api.MentionNodeContent
 import io.element.android.libraries.htmlrenderer.api.ParagraphNode
 import io.element.android.libraries.htmlrenderer.api.QuoteNode
+import io.element.android.libraries.maths.api.MAX_MATHS_ELEMENTS_PER_MESSAGE
+import io.element.android.libraries.maths.api.MathsLayoutEngine
+import io.element.android.libraries.maths.test.FakeMathsLayout
+import io.element.android.libraries.maths.test.FakeMathsLayoutEngine
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.RoomAlias
 import io.element.android.libraries.matrix.api.core.RoomId
@@ -27,6 +35,9 @@ import io.element.android.libraries.matrix.test.permalink.FakePermalinkParser
 import io.element.android.tests.testutils.robolectric.RobolectricTest
 import org.jsoup.Jsoup
 import org.junit.Test
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class DefaultHtmlMessageParserTest : RobolectricTest() {
     @Test
@@ -197,8 +208,149 @@ class DefaultHtmlMessageParserTest : RobolectricTest() {
         assertThat(document.children).isEmpty()
     }
 
+    @Test
+    fun `inline maths uses a placeholder with TeX alternate text and immutable content`() {
+        val layout = FakeMathsLayout()
+        val engine = FakeMathsLayoutEngine { _, _ -> layout }
+        val document = parse("Euler <span data-mx-maths='x'><code>x</code></span> holds", mathsLayoutEngine = engine)
+        val paragraph = document.children.single() as ParagraphNode
+        val expectedText = buildAnnotatedString {
+            append("Euler ")
+            appendInlineContent("maths_0", "x")
+            append(" holds")
+        }
+        assertThat(paragraph.text).isEqualTo(expectedText)
+        assertThat(paragraph.inlineMaths).containsExactly("maths_0", MathsInlineContent("x", layout))
+        assertThat(engine.calls).containsExactly("x" to false)
+    }
+
+    @Test
+    fun `display maths becomes a block at the top level in a list and in a quote`() {
+        val engine = FakeMathsLayoutEngine()
+        val display = "<div data-mx-maths='x'><code>x</code></div>"
+        val document = parse("$display<ul><li>$display</li></ul><blockquote>$display</blockquote>", mathsLayoutEngine = engine)
+        assertThat(document.children[0]).isInstanceOf(MathsBlockNode::class.java)
+        assertThat((document.children[1] as ListNode).items.single().children.single()).isInstanceOf(MathsBlockNode::class.java)
+        assertThat((document.children[2] as QuoteNode).children.single()).isInstanceOf(MathsBlockNode::class.java)
+        assertThat(engine.calls).containsExactly("x" to true, "x" to true, "x" to true)
+    }
+
+    @Test
+    fun `display maths in an inline wrapper renders inline with formatting`() {
+        val engine = FakeMathsLayoutEngine()
+        val paragraph = parse("<b><div data-mx-maths='x'>x</div></b>", mathsLayoutEngine = engine).children.single() as ParagraphNode
+        assertThat(paragraph.inlineMaths).hasSize(1)
+        assertThat(paragraph.text.spanStyles.single().item.fontWeight).isEqualTo(FontWeight.Bold)
+        assertThat(engine.calls).containsExactly("x" to false)
+    }
+
+    @Test
+    fun `null layouts preserve inline code and display paragraph fallbacks`() {
+        val engine = FakeMathsLayoutEngine { _, _ -> null }
+        val document = parse(
+            "Before <span data-mx-maths='bad'><code>sender fallback</code></span> after" +
+                "<div data-mx-maths='bad'><code>display fallback</code></div>",
+            mathsLayoutEngine = engine,
+        )
+        val inline = document.children[0] as ParagraphNode
+        assertThat(inline.text.text).isEqualTo("Before sender fallback after")
+        assertThat(inline.inlineMaths).isEmpty()
+        assertThat(inline.text.getStringAnnotations(HtmlMessageParser.INLINE_CODE_ANNOTATION_TAG, 0, inline.text.length)).hasSize(1)
+        val display = document.children[1] as ParagraphNode
+        assertThat(display.text.text).isEqualTo("display fallback")
+        assertThat(display.inlineMaths).isEmpty()
+    }
+
+    @Test
+    fun `null layouts preserve detected original literal text including delimiters`() {
+        val engine = FakeMathsLayoutEngine { _, _ -> null }
+        val document = parse(
+            "<span data-mx-maths='x'>${'$'}x${'$'}</span><div data-mx-maths='y'>\\[y\\]</div>",
+            mathsLayoutEngine = engine,
+        )
+        assertThat((document.children[0] as ParagraphNode).text.text).isEqualTo("${'$'}x${'$'}")
+        assertThat((document.children[1] as ParagraphNode).text.text).isEqualTo("\\[y\\]")
+        assertThat((document.children[0] as ParagraphNode).text.spanStyles).isEmpty()
+    }
+
+    @Test
+    fun `maths inside code pre or another maths element is never laid out`() {
+        val engine = FakeMathsLayoutEngine { _, _ -> null }
+        val span = "<span data-mx-maths='x'>x</span>"
+        val document = parse("<code>$span</code><pre>$span</pre><span data-mx-maths='outer'>$span</span>", mathsLayoutEngine = engine)
+        assertThat(engine.calls).containsExactly("outer" to false)
+        assertThat((document.children[0] as ParagraphNode).inlineMaths).isEmpty()
+        assertThat((document.children[1] as CodeBlockNode).code).isEqualTo("x")
+    }
+
+    @Test
+    fun `the maths cap spans paragraphs display blocks and failed layouts and resets per parse`() {
+        val engine = FakeMathsLayoutEngine { tex, _ -> if (tex == "bad") null else FakeMathsLayout() }
+        val parser = DefaultHtmlMessageParser(FakePermalinkParser(), engine)
+        val html = "<span data-mx-maths='bad'><code>bad</code></span>" +
+            "<div data-mx-maths='x'>x</div>".repeat(MAX_MATHS_ELEMENTS_PER_MESSAGE - 1) +
+            "<p><span data-mx-maths='later'><code>later</code></span></p>"
+        repeat(2) {
+            val document = parser.parse(Jsoup.parse(html))
+            assertThat(document.children.filterIsInstance<MathsBlockNode>()).hasSize(MAX_MATHS_ELEMENTS_PER_MESSAGE - 1)
+            val last = document.children.last() as ParagraphNode
+            assertThat(last.text.text).isEqualTo("later")
+            assertThat(last.inlineMaths).isEmpty()
+        }
+        assertThat(engine.calls).hasSize(2 * MAX_MATHS_ELEMENTS_PER_MESSAGE)
+        assertThat(engine.calls.none { it.first == "later" }).isTrue()
+    }
+
+    @Test
+    fun `concurrent parses each get their own maths cap`() {
+        val barrier = CyclicBarrier(2)
+        val layout = FakeMathsLayout()
+        val engine = object : MathsLayoutEngine {
+            override fun layout(tex: String, displayMode: Boolean) = layout.also {
+                barrier.await(10, TimeUnit.SECONDS)
+            }
+        }
+        val parser = DefaultHtmlMessageParser(FakePermalinkParser(), engine)
+        val html = "<span data-mx-maths='x'>x</span>".repeat(MAX_MATHS_ELEMENTS_PER_MESSAGE + 1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val results = (1..2).map { executor.submit<ParagraphNode> { parser.parse(Jsoup.parse(html)).children.single() as ParagraphNode } }
+            results.forEach { assertThat(it.get(20, TimeUnit.SECONDS).inlineMaths).hasSize(MAX_MATHS_ELEMENTS_PER_MESSAGE) }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `maths only paragraphs are retained and mentions coexist with maths`() {
+        val maths = "<span data-mx-maths='x'>x</span>"
+        val onlyMaths = parse(maths).children.single() as ParagraphNode
+        assertThat(onlyMaths.inlineMaths).hasSize(1)
+        val userId = UserId("@alice:example.org")
+        val paragraph = parse(
+            "$maths<a href='https://matrix.to/#/@alice:example.org'>Alice</a>",
+            FakePermalinkParser { PermalinkData.UserLink(userId) },
+        ).children.single() as ParagraphNode
+        assertThat(paragraph.inlineContent.keys).containsExactly("mention_0")
+        assertThat(paragraph.inlineMaths.keys).containsExactly("maths_0")
+        assertThat(paragraph.text.text).isEqualTo("xAlice")
+    }
+
+    @Test
+    fun `ordinary messages never invoke the maths engine and input is never mutated`() {
+        val engine = FakeMathsLayoutEngine()
+        val parser = DefaultHtmlMessageParser(FakePermalinkParser(), engine)
+        parser.parse(Jsoup.parse("<p>Ordinary <b>text</b></p>"))
+        assertThat(engine.calls).isEmpty()
+        val document = Jsoup.parse("<span data-mx-maths='x'><code>x</code></span>")
+        val original = document.outerHtml()
+        parser.parse(document)
+        assertThat(document.outerHtml()).isEqualTo(original)
+    }
+
     private fun parse(
         html: String,
         permalinkParser: FakePermalinkParser = FakePermalinkParser(),
-    ) = DefaultHtmlMessageParser(permalinkParser).parse(Jsoup.parse(html))
+        mathsLayoutEngine: MathsLayoutEngine = FakeMathsLayoutEngine(),
+    ) = DefaultHtmlMessageParser(permalinkParser, mathsLayoutEngine).parse(Jsoup.parse(html))
 }
