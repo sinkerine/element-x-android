@@ -10,8 +10,8 @@ PRs must meet these rules.
 
 ### Feature Defaults
 
-- Enable all new features by default, including features exposed through Labs or feature flags.
-- Use a disabled default only when the user explicitly requests it.
+- Ship every new feature enabled by default. Do not put it behind a feature flag or a Labs toggle unless the user explicitly asks for one.
+- When the user asks for a flag or Labs toggle, default it to enabled. Use a disabled default only when the user explicitly requests it.
 
 ### Code Style
 
