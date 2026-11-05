@@ -48,6 +48,7 @@ object TestTags {
     val homeThreadsButton = TestTag("home-threads_button")
     val homeScreenSettings = TestTag("home_screen-settings")
     val homeScreenClearFilters = TestTag("home_screen-clear_filters")
+    val homeMarkAllAsRead = TestTag("home-mark_all_as_read")
 
     /**
      * Room detail screen.
