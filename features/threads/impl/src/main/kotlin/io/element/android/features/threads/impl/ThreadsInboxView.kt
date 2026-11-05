@@ -7,13 +7,9 @@
 
 package io.element.android.features.threads.impl
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.DragInteraction
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,10 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,14 +26,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import io.element.android.compound.theme.ElementTheme
 import io.element.android.compound.tokens.generated.CompoundIcons
 import io.element.android.libraries.designsystem.theme.components.Icon
 import io.element.android.libraries.designsystem.theme.components.Text
@@ -59,7 +50,6 @@ fun ThreadsInboxView(
 ) {
     var menu by remember { mutableStateOf<InboxThread?>(null) }
     val clipboard = LocalClipboardManager.current
-    val markReadLabel = stringResource(CommonStrings.screen_threads_inbox_mark_read)
     val listState = rememberLazyListState()
     // Unread rows sort first and can arrive after read rows; keep the list at the top until the user drags it.
     var userScrolled by remember { mutableStateOf(false) }
@@ -131,45 +121,16 @@ fun ThreadsInboxView(
             }
             else -> LazyColumn(state = listState) {
                 items(state.rows.dataOrNull().orEmpty(), key = { it.key.roomId.value + it.key.threadId.value }) { thread ->
-                    val dismissState = rememberSwipeToDismissBoxState(
-                        confirmValueChange = { value ->
-                            if (value == SwipeToDismissBoxValue.EndToStart) state.eventSink(ThreadsInboxEvent.MarkAsRead(thread.key))
-                            false
-                        },
+                    ThreadsInboxRow(
+                        thread = thread,
+                        rootPreview = state.summaries[thread.key]?.first.orEmpty(),
+                        replyPreview = state.summaries[thread.key]?.second.orEmpty(),
+                        visited = thread.key in state.visited,
+                        onOpen = { onOpen(thread.key) },
+                        onLongClick = { menu = thread },
+                        onMarkRead = { state.eventSink(ThreadsInboxEvent.MarkAsRead(thread.key)) },
+                        onTouch = { state.eventSink(ThreadsInboxEvent.Touch(thread.key, it)) },
                     )
-                    SwipeToDismissBox(
-                        state = dismissState,
-                        enableDismissFromStartToEnd = false,
-                        backgroundContent = {
-                            // Only revealed while swiping; nothing is drawn behind a settled row.
-                            if (dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-                                Row(
-                                    Modifier.fillMaxSize().background(ElementTheme.colors.bgAccentRest).padding(horizontal = 24.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        stringResource(CommonStrings.screen_threads_inbox_mark_read),
-                                        color = ElementTheme.colors.textOnSolidPrimary,
-                                        style = ElementTheme.typography.fontBodyMdMedium,
-                                    )
-                                    // The swipe reveals from the end, so the icon shows first.
-                                    Icon(CompoundIcons.Check(), null, tint = ElementTheme.colors.iconOnSolidPrimary)
-                                }
-                            }
-                        },
-                    ) {
-                        ThreadsInboxRow(
-                            thread = thread,
-                            rootPreview = state.summaries[thread.key]?.first.orEmpty(),
-                            replyPreview = state.summaries[thread.key]?.second.orEmpty(),
-                            visited = thread.key in state.visited,
-                            onOpen = { onOpen(thread.key) },
-                            onLongClick = { menu = thread },
-                            onMarkRead = { state.eventSink(ThreadsInboxEvent.MarkAsRead(thread.key)) },
-                            onTouch = { state.eventSink(ThreadsInboxEvent.Touch(thread.key, it)) },
-                        )
-                    }
                 }
                 if (state.hasMore && !state.rows.isLoading()) {
                     item {

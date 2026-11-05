@@ -113,7 +113,7 @@ internal fun ThreadsInboxRow(
                 }
             }
         },
-        // Opaque canvas below the dimmed content, so the swipe action never shows through read rows.
+        // Keep an opaque canvas below the dimmed content of read rows.
         modifier = modifier.background(ElementTheme.colors.bgCanvasDefault).alpha(if (unread) 1f else 0.55f)
             .semantics(mergeDescendants = true) {
                 contentDescription = description

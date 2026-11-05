@@ -15,12 +15,24 @@ appId: ${MAESTRO_APP_ID}
 - extendedWaitUntil:
     visible: ".*, thread: .*, [1-9][0-9]* unread, .*"
     timeout: 30000
-# Mark one row read without dismissing the drawer, then undo.
+# Swiping a row dismisses the drawer without marking it read.
 - swipe:
     from:
       text: ".*, thread: .*, [1-9][0-9]* unread, .*"
       index: 0
     direction: LEFT
+- assertNotVisible: "Mark loaded threads as read"
+- assertNotVisible: "Undo"
+- tapOn:
+    id: "home-threads_button"
+- extendedWaitUntil:
+    visible: ".*, thread: .*, [1-9][0-9]* unread, .*"
+    timeout: 30000
+# Mark one row read from its menu, then undo.
+- longPressOn:
+    text: ".*, thread: .*, [1-9][0-9]* unread, .*"
+    index: 0
+- tapOn: "Mark as read"
 - extendedWaitUntil:
     visible: "1 thread marked as read"
     timeout: 3000
