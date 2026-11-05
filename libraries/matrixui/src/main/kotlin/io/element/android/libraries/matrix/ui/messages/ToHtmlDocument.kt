@@ -8,6 +8,9 @@
 
 package io.element.android.libraries.matrix.ui.messages
 
+import io.element.android.libraries.maths.api.MATHS_ATTRIBUTE
+import io.element.android.libraries.maths.api.isMathsElement
+import io.element.android.libraries.maths.api.mathsTex
 import io.element.android.libraries.matrix.api.permalink.PermalinkData
 import io.element.android.libraries.matrix.api.permalink.PermalinkParser
 import io.element.android.libraries.matrix.api.timeline.item.event.FormattedBody
@@ -30,6 +33,7 @@ import org.jsoup.safety.Safelist
 fun FormattedBody.toHtmlDocument(
     permalinkParser: PermalinkParser,
     prefix: String? = null,
+    keepMaths: Boolean = false,
 ): Document? {
     return takeIf { it.format == MessageFormat.HTML }?.body
         // Trim whitespace at the end to avoid having wrong rendering of the message.
@@ -37,16 +41,37 @@ fun FormattedBody.toHtmlDocument(
         ?.trimEnd()
         ?.let { formattedBody ->
             val dom = if (prefix != null) {
-                CustomHtmlToDomParser.document("$prefix $formattedBody")
+                CustomHtmlToDomParser.document("$prefix $formattedBody", keepMaths)
             } else {
-                CustomHtmlToDomParser.document(formattedBody)
+                CustomHtmlToDomParser.document(formattedBody, keepMaths)
             }
+
+            if (keepMaths) normaliseMaths(dom)
 
             // Prepend `@` to mentions
             fixMentions(dom, permalinkParser)
 
             dom.takeIf { it.text().isNotBlank() }
         }
+}
+
+private fun normaliseMaths(dom: Document) {
+    // Inspect ancestors before unwrapping, so nested maths stays fallback even inside pre/code.
+    val elements = dom.select("span, div")
+    val fallback = elements.filter { element ->
+        element.attr(MATHS_ATTRIBUTE).isBlank() ||
+            element.parents().any { it.normalName() in setOf("pre", "code") || (it.isMathsElement() && it.mathsTex().isNotBlank()) }
+    }.toSet()
+    elements.forEach { element ->
+        if (element in fallback) {
+            element.unwrap()
+        } else {
+            if (element.normalName() == "div" && element.parent()?.normalName() !in setOf("body", "blockquote", "li")) {
+                element.tagName("span")
+            }
+            if (element.text().isBlank()) element.appendElement("code").text(element.mathsTex())
+        }
+    }
 }
 
 private fun fixMentions(
@@ -66,9 +91,15 @@ private fun fixMentions(
 
 /** Custom Html to DOM parser, based on the one included in the rich text editor library. */
 private object CustomHtmlToDomParser {
-    fun document(html: String): Document {
+    fun document(html: String, keepMaths: Boolean): Document {
         val outputSettings = OutputSettings().prettyPrint(false).indentAmount(0)
-        val cleanHtml = Jsoup.clean(html, "", safeList, outputSettings)
+        val safelist = if (keepMaths) {
+            Safelist(safeList).addTags("span", "div")
+                .addAttributes("span", MATHS_ATTRIBUTE).addAttributes("div", MATHS_ATTRIBUTE)
+        } else {
+            safeList
+        }
+        val cleanHtml = Jsoup.clean(html, "", safelist, outputSettings)
         return Jsoup.parse(cleanHtml)
     }
 
