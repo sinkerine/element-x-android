@@ -11,6 +11,7 @@ package io.element.android.features.messages.impl.fixtures
 import io.element.android.features.messages.impl.messagesummary.FakeMessageSummaryFormatter
 import io.element.android.features.messages.impl.timeline.factories.TimelineItemsFactory
 import io.element.android.features.messages.impl.timeline.factories.TimelineItemsFactoryConfig
+import io.element.android.features.messages.impl.timeline.factories.event.MathsSpansConverter
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentFactory
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentFailedToParseMessageFactory
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentFailedToParseStateFactory
@@ -36,6 +37,8 @@ import io.element.android.libraries.dateformatter.test.FakeDateFormatter
 import io.element.android.libraries.eventformatter.api.TimelineEventFormatter
 import io.element.android.libraries.featureflag.test.FakeFeatureFlagService
 import io.element.android.libraries.htmlrenderer.test.FakeHtmlMessageParser
+import io.element.android.libraries.maths.test.FakeMathsDetector
+import io.element.android.libraries.maths.test.FakeMathsLayoutEngine
 import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.matrix.api.timeline.item.event.EventContent
 import io.element.android.libraries.matrix.test.FakeMatrixClient
@@ -65,6 +68,8 @@ internal fun aTimelineItemContentFactory(
 ): TimelineItemContentFactory = TimelineItemContentFactory(
     interactiveUiFactory = interactiveUiFactory,
     messageFactory = TimelineItemContentMessageFactory(
+        mathsSpansConverter = MathsSpansConverter(FakeMathsLayoutEngine()),
+        mathsDetector = FakeMathsDetector(),
         fileSizeFormatter = FakeFileSizeFormatter(),
         fileExtensionExtractor = FileExtensionExtractorWithoutValidation(),
         htmlConverterProvider = FakeHtmlConverterProvider(),

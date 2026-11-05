@@ -15,6 +15,7 @@ import android.text.Spanned
 import android.text.SpannedString
 import android.text.style.URLSpan
 import androidx.core.text.buildSpannedString
+import androidx.core.text.getSpans
 import androidx.core.text.inSpans
 import androidx.core.text.toSpannable
 import com.google.common.truth.Truth.assertThat
@@ -34,6 +35,8 @@ import io.element.android.features.messages.impl.timeline.model.event.TimelineIt
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemTextContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemVideoContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemVoiceContent
+import io.element.android.features.messages.impl.timeline.model.event.captionOrNull
+import io.element.android.features.messages.impl.timeline.model.event.formattedCaptionOrNull
 import io.element.android.features.messages.impl.utils.FakeTextPillificationHelper
 import io.element.android.features.messages.test.timeline.FakeHtmlConverterProvider
 import io.element.android.libraries.androidutils.filesize.FakeFileSizeFormatter
@@ -42,6 +45,10 @@ import io.element.android.libraries.featureflag.api.FeatureFlags
 import io.element.android.libraries.featureflag.test.FakeFeatureFlagService
 import io.element.android.libraries.htmlrenderer.api.DocumentNode
 import io.element.android.libraries.htmlrenderer.test.FakeHtmlMessageParser
+import io.element.android.libraries.maths.api.MathsSpan
+import io.element.android.libraries.maths.api.createMathsElement
+import io.element.android.libraries.maths.test.FakeMathsDetector
+import io.element.android.libraries.maths.test.FakeMathsLayoutEngine
 import io.element.android.libraries.matrix.api.media.AudioDetails
 import io.element.android.libraries.matrix.api.media.AudioInfo
 import io.element.android.libraries.matrix.api.media.FileInfo
@@ -67,9 +74,11 @@ import io.element.android.libraries.matrix.api.timeline.item.event.MessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.NoticeMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.OtherMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.StickerContent
+import io.element.android.libraries.matrix.api.timeline.item.event.StickerMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.TextMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.VideoMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageType
+import io.element.android.libraries.matrix.api.timeline.item.event.getDisambiguatedDisplayName
 import io.element.android.libraries.matrix.test.AN_EVENT_ID
 import io.element.android.libraries.matrix.test.A_USER_ID
 import io.element.android.libraries.matrix.test.media.aMediaSource
@@ -77,12 +86,15 @@ import io.element.android.libraries.matrix.test.permalink.FakePermalinkParser
 import io.element.android.libraries.matrix.test.timeline.aProfileDetails
 import io.element.android.libraries.matrix.test.timeline.aStickerContent
 import io.element.android.libraries.matrix.ui.components.A_BLUR_HASH
+import io.element.android.libraries.matrix.ui.messages.toHtmlDocument
 import io.element.android.libraries.mediaviewer.test.util.FileExtensionExtractorWithoutValidation
 import io.element.android.tests.testutils.robolectric.RobolectricTest
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.test.runTest
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.TextNode
 import org.junit.Assert.fail
 import org.junit.Test
 import kotlin.jvm.java
@@ -1272,18 +1284,200 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
         )
     }
 
+    @Test
+    fun `spec maths renders for every body and caption source without changing stored content`() = runTest {
+        val body = "before \$x$ after"
+        val formatted = FormattedBody(MessageFormat.HTML, "before <span data-mx-maths='x'><code>x</code></span> after")
+        for (type in mathsMessageTypes(body, formatted)) {
+            val engine = FakeMathsLayoutEngine()
+            val detector = FakeMathsDetector()
+            val parsedDocuments = mutableListOf<Document>()
+            val factory = createTimelineItemContentMessageFactory(
+                domConverterTransform = { it.text() },
+                mathsLayoutEngine = engine,
+                mathsDetector = detector,
+                featureFlagService = FakeFeatureFlagService(mapOf(FeatureFlags.NewTimelineEventRenderer.key to true)),
+                htmlMessageParser = FakeHtmlMessageParser {
+                    parsedDocuments.add(it)
+                    DocumentNode(persistentListOf())
+                },
+            )
+            val result = factory.create(createMessageContent(type = type), A_USER_ID, aProfileDetails(), AN_EVENT_ID)
+            val rendered = if (result is TimelineItemTextBasedContent) result.formattedBody else result.formattedCaptionOrNull()
+            assertThat((rendered as Spanned).getSpans<MathsSpan>().single().tex).isEqualTo("x")
+            assertThat(detector.calls).isEmpty()
+            assertThat(engine.calls).containsExactly("x" to false)
+            if (result is TimelineItemTextBasedContent) {
+                val stored = formatted.toHtmlDocument(
+                    FakePermalinkParser(),
+                    prefix = if (type is EmoteMessageType) "* ${aProfileDetails().getDisambiguatedDisplayName(A_USER_ID)}" else null,
+                )!!
+                assertThat(result.htmlDocument?.outerHtml()).isEqualTo(stored.outerHtml())
+                assertThat(result.htmlBody).isEqualTo(stored.body().html())
+                assertThat(result.plainText).isEqualTo(stored.text())
+                assertThat(result.body).endsWith(body)
+                assertThat(parsedDocuments.single().select("[data-mx-maths]")).hasSize(1)
+            } else {
+                assertThat(result.captionOrNull()).isEqualTo(body)
+            }
+        }
+    }
+
+    @Test
+    fun `detection receives raw body or caption and its render document reaches both renderers`() = runTest {
+        val body = "before \$x$ after"
+        for (formatted in listOf(null, FormattedBody(MessageFormat.HTML, "before \$x$ after"))) {
+            for (type in mathsMessageTypes(body, formatted)) {
+                val engine = FakeMathsLayoutEngine()
+                var storedInput: Document? = null
+                val detected = Jsoup.parse("before <span data-mx-maths='x'>\$x$</span> after")
+                val detector = FakeMathsDetector { _, document ->
+                    storedInput = document
+                    detected
+                }
+                val parsedDocuments = mutableListOf<Document>()
+                val factory = createTimelineItemContentMessageFactory(
+                    domConverterTransform = { it.text() },
+                    mathsLayoutEngine = engine,
+                    mathsDetector = detector,
+                    featureFlagService = FakeFeatureFlagService(mapOf(FeatureFlags.NewTimelineEventRenderer.key to true)),
+                    htmlMessageParser = FakeHtmlMessageParser {
+                        parsedDocuments.add(it)
+                        DocumentNode(persistentListOf())
+                    },
+                )
+                val result = factory.create(createMessageContent(type = type), A_USER_ID, aProfileDetails(), AN_EVENT_ID)
+                val rendered = if (result is TimelineItemTextBasedContent) result.formattedBody else result.formattedCaptionOrNull()
+                assertThat((rendered as Spanned).getSpans<MathsSpan>()).hasLength(1)
+                assertThat(detector.calls.single()).isEqualTo(if (result is TimelineItemEmoteContent) result.body else body)
+                assertThat(engine.calls).containsExactly("x" to false)
+                assertThat(detected.select("[data-mx-maths]")).hasSize(1)
+                if (result is TimelineItemTextBasedContent) {
+                    assertThat(result.htmlDocument).isSameInstanceAs(storedInput)
+                    assertThat(parsedDocuments.single()).isSameInstanceAs(detected)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `ordinary bodies and captions bypass detector and layout and retain previous rendering`() = runTest {
+        for (formatted in listOf(null, FormattedBody(MessageFormat.HTML, "<b>ordinary</b>"))) {
+            for (type in mathsMessageTypes("ordinary", formatted)) {
+                val engine = FakeMathsLayoutEngine()
+                val detector = FakeMathsDetector()
+                val factory = createTimelineItemContentMessageFactory(
+                    domConverterTransform = { it.text() },
+                    mathsLayoutEngine = engine,
+                    mathsDetector = detector,
+                )
+                val result = factory.create(createMessageContent(type = type), A_USER_ID, aProfileDetails(), AN_EVENT_ID)
+                assertThat(detector.calls).isEmpty()
+                assertThat(engine.calls).isEmpty()
+                if (result is TimelineItemTextBasedContent) {
+                    assertThat(result.formattedBody.toString()).isEqualTo(result.body)
+                    assertThat(result.htmlDocument?.select("[data-mx-maths]").orEmpty()).isEmpty()
+                } else {
+                    assertThat(result.captionOrNull()).isEqualTo("ordinary")
+                    assertThat(result.formattedCaptionOrNull()?.toString()).isEqualTo(if (formatted == null) null else "ordinary")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `failed detection layouts preserve the original literal fallback`() = runTest {
+        val detected = Document.createShell("")
+        detected.body().appendChild(createMathsElement(detected, "x", false).apply {
+            empty().appendChild(TextNode("\$x$"))
+        })
+        val factory = createTimelineItemContentMessageFactory(
+            domConverterTransform = { it.text() },
+            mathsLayoutEngine = FakeMathsLayoutEngine { _, _ -> null },
+            mathsDetector = FakeMathsDetector { _, _ -> detected },
+        )
+        val result = factory.create(createMessageContent(type = TextMessageType("\$x$", null)), A_USER_ID, aProfileDetails(), AN_EVENT_ID)
+            as TimelineItemTextContent
+        assertThat(result.formattedBody.toString()).isEqualTo("\$x$")
+        assertThat(result.body).isEqualTo("\$x$")
+        assertThat(result.htmlDocument).isNull()
+    }
+
+    @Test
+    fun `empty spec fallbacks render or synthesize code even without stored DOM and never detect`() = runTest {
+        for (tag in listOf("span", "div")) {
+            val formatted = FormattedBody(MessageFormat.HTML, "<$tag data-mx-maths='x'></$tag>")
+            assertThat(formatted.toHtmlDocument(FakePermalinkParser())).isNull()
+            for (canLayout in listOf(true, false)) {
+                for (type in mathsMessageTypes("\$x$", formatted)) {
+                    val engine = FakeMathsLayoutEngine { _, _ ->
+                        if (canLayout) io.element.android.libraries.maths.test.FakeMathsLayout() else null
+                    }
+                    val detector = FakeMathsDetector()
+                    val convertedDocuments = mutableListOf<String>()
+                    val factory = createTimelineItemContentMessageFactory(
+                        domConverterTransform = {
+                            convertedDocuments.add(it.body().html())
+                            it.text()
+                        },
+                        mathsLayoutEngine = engine,
+                        mathsDetector = detector,
+                    )
+                    val result = factory.create(createMessageContent(type = type), A_USER_ID, aProfileDetails(), AN_EVENT_ID)
+                    val rendered = if (result is TimelineItemTextBasedContent) result.formattedBody else result.formattedCaptionOrNull()
+                    assertThat(detector.calls).isEmpty()
+                    assertThat(engine.calls).containsExactly("x" to (tag == "div"))
+                    if (canLayout) {
+                        assertThat((rendered as Spanned).getSpans<MathsSpan>()).hasLength(1)
+                    } else {
+                        assertThat(rendered.toString()).endsWith("x")
+                        assertThat(convertedDocuments.single()).contains("<code>x</code>")
+                    }
+                    if (result is TimelineItemTextBasedContent && type !is EmoteMessageType) {
+                        assertThat(result.htmlDocument).isNull()
+                        assertThat(result.htmlBody).isNull()
+                        assertThat(result.body).isEqualTo("\$x$")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mathsMessageTypes(body: String, formatted: FormattedBody?): List<MessageType> {
+        val source = aMediaSource()
+        val image = ImageMessageType("image", body, formatted, source, ImageInfo(null, null, null, null, null, source, null))
+        return listOf(
+            TextMessageType(body, formatted),
+            NoticeMessageType(body, formatted),
+            EmoteMessageType(body, formatted),
+            image,
+            StickerMessageType("sticker", body, formatted, source, null),
+            VideoMessageType("video", body, formatted, source, null),
+            AudioMessageType("audio", body, formatted, source, null),
+            VoiceMessageType("voice", body, formatted, source, null, null),
+            FileMessageType("file", body, formatted, source, null),
+            GalleryMessageType(body, formatted, listOf(GalleryItemType.Image(image))),
+            GalleryMessageType(body, formatted, listOf(GalleryItemType.File(FileMessageType("file", null, null, source, null)))),
+        )
+    }
+
     private fun createTimelineItemContentMessageFactory(
         htmlConverterTransform: (String) -> CharSequence = { it },
         domConverterTransform: (Document) -> CharSequence = { it.body().html() },
         permalinkParser: FakePermalinkParser = FakePermalinkParser(),
         featureFlagService: FakeFeatureFlagService = FakeFeatureFlagService(),
+        mathsLayoutEngine: FakeMathsLayoutEngine = FakeMathsLayoutEngine(),
+        mathsDetector: FakeMathsDetector = FakeMathsDetector(),
+        htmlMessageParser: FakeHtmlMessageParser = FakeHtmlMessageParser(parseResult = { DocumentNode(persistentListOf()) }),
     ) = TimelineItemContentMessageFactory(
+        mathsSpansConverter = MathsSpansConverter(mathsLayoutEngine),
+        mathsDetector = mathsDetector,
         fileSizeFormatter = FakeFileSizeFormatter(),
         fileExtensionExtractor = FileExtensionExtractorWithoutValidation(),
         htmlConverterProvider = FakeHtmlConverterProvider(htmlConverterTransform, domConverterTransform),
         permalinkParser = permalinkParser,
         textPillificationHelper = FakeTextPillificationHelper(),
-        htmlMessageParser = FakeHtmlMessageParser(parseResult = { DocumentNode(persistentListOf()) }),
+        htmlMessageParser = htmlMessageParser,
         featureFlagService = featureFlagService,
     )
 

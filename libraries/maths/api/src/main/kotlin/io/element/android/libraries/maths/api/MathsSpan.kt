@@ -11,6 +11,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.style.LeadingMarginSpan
 import android.text.style.ReplacementSpan
 import androidx.core.graphics.withTranslation
 import kotlin.math.ceil
@@ -52,7 +53,7 @@ class MathsSpan(
     }
 }
 
-/** Returns a copy with every maths span limited to [maxWidthPx], or this instance when there are none. */
+/** Limits maths to the container width minus its paragraph margins; returns this instance when there is no maths. */
 fun CharSequence.withMathsMaxWidth(maxWidthPx: Int): CharSequence {
     if (!containsMathsSpans()) return this
     return SpannableStringBuilder(this).apply {
@@ -60,8 +61,16 @@ fun CharSequence.withMathsMaxWidth(maxWidthPx: Int): CharSequence {
             val start = getSpanStart(span)
             val end = getSpanEnd(span)
             val flags = getSpanFlags(span)
+            val paragraphStart = lastIndexOf('\n', start - 1) + 1
+            val paragraphEnd = indexOf('\n', start).let { if (it == -1) length else it + 1 }
+            // Android applies leading margins to the whole paragraph. Use the larger first/rest margin because
+            // wrapping (including LeadingMarginSpan2) is only known after measurement, and nested margins add up.
+            val margin = getSpans(paragraphStart, paragraphEnd, LeadingMarginSpan::class.java)
+                .filter { getSpanStart(it) < paragraphEnd && getSpanEnd(it) > paragraphStart }
+                .sumOf { maxOf(0, it.getLeadingMargin(true), it.getLeadingMargin(false)).toLong() }
+            val available = (maxWidthPx.toLong() - margin).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
             removeSpan(span)
-            setSpan(MathsSpan(span.tex, span.layout, span.displayMode, maxWidthPx), start, end, flags)
+            setSpan(MathsSpan(span.tex, span.layout, span.displayMode, available), start, end, flags)
         }
     }
 }

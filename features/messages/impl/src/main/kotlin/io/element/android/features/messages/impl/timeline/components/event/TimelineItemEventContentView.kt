@@ -9,6 +9,7 @@
 package io.element.android.features.messages.impl.timeline.components.event
 
 import android.text.SpannedString
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.LocalContentColor
@@ -52,6 +53,8 @@ import io.element.android.features.messages.impl.timeline.protection.TimelinePro
 import io.element.android.features.messages.impl.timeline.protection.TimelineProtectionState
 import io.element.android.libraries.architecture.Presenter
 import io.element.android.libraries.designsystem.components.EqualWidthColumn
+import io.element.android.libraries.maths.api.containsMathsSpans
+import io.element.android.libraries.maths.api.withMathsMaxWidth
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.ui.media.contentvalidation.ContentValidationState
 import io.element.android.libraries.matrix.ui.media.contentvalidation.InvalidContentView
@@ -282,15 +285,29 @@ private fun CaptionView(
         LocalContentColor provides ElementTheme.colors.textPrimary,
         LocalTextStyle provides ElementTheme.typography.fontBodyLgRegular
     ) {
-        EditorStyledText(
-            modifier = modifier,
-            text = caption,
-            style = ElementRichTextEditorStyle.textStyle(),
-            onLinkClickedListener = onLinkClick,
-            onLinkLongClickedListener = onLinkLongClick,
-            releaseOnDetach = false,
-            onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
-        )
+        val hasMaths = remember(caption) { caption.containsMathsSpans() }
+        if (hasMaths) {
+            BoxWithConstraints(modifier) {
+                EditorStyledText(
+                    text = remember(caption, constraints.maxWidth) { caption.withMathsMaxWidth(constraints.maxWidth) },
+                    style = ElementRichTextEditorStyle.textStyle(),
+                    onLinkClickedListener = onLinkClick,
+                    onLinkLongClickedListener = onLinkLongClick,
+                    releaseOnDetach = false,
+                    onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
+                )
+            }
+        } else {
+            EditorStyledText(
+                modifier = modifier,
+                text = caption,
+                style = ElementRichTextEditorStyle.textStyle(),
+                onLinkClickedListener = onLinkClick,
+                onLinkLongClickedListener = onLinkLongClick,
+                releaseOnDetach = false,
+                onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
+            )
+        }
     }
 }
 

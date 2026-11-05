@@ -11,6 +11,7 @@ package io.element.android.features.messages.impl.timeline.components.event
 import android.text.SpannedString
 import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
@@ -34,6 +35,8 @@ import io.element.android.libraries.designsystem.preview.ElementPreview
 import io.element.android.libraries.designsystem.preview.PreviewsDayNight
 import io.element.android.libraries.designsystem.utils.LocalUiTestMode
 import io.element.android.libraries.htmlrenderer.api.ui.HtmlMessageContent
+import io.element.android.libraries.maths.api.containsMathsSpans
+import io.element.android.libraries.maths.api.withMathsMaxWidth
 import io.element.android.libraries.textcomposer.ElementRichTextEditorStyle
 import io.element.android.libraries.textcomposer.mentions.LocalMentionSpanUpdater
 import io.element.android.libraries.ui.common.layout.ContentAvoidingLayout
@@ -93,15 +96,29 @@ fun TimelineItemTextView(
         LocalTextStyle provides textStyle
     ) {
         val text = getTextWithResolvedMentions(content)
-        Box(modifier.semantics { contentDescription = content.plainText }) {
-            EditorStyledText(
-                text = text,
-                onLinkClickedListener = onLinkClick,
-                onLinkLongClickedListener = onLinkLongClick,
-                style = ElementRichTextEditorStyle.textStyle(),
-                onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
-                releaseOnDetach = false,
-            )
+        val hasMaths = remember(text) { text.containsMathsSpans() }
+        if (hasMaths) {
+            BoxWithConstraints(modifier.semantics { contentDescription = content.plainText }) {
+                EditorStyledText(
+                    text = remember(text, constraints.maxWidth) { text.withMathsMaxWidth(constraints.maxWidth) },
+                    onLinkClickedListener = onLinkClick,
+                    onLinkLongClickedListener = onLinkLongClick,
+                    style = ElementRichTextEditorStyle.textStyle(),
+                    onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
+                    releaseOnDetach = false,
+                )
+            }
+        } else {
+            Box(modifier.semantics { contentDescription = content.plainText }) {
+                EditorStyledText(
+                    text = text,
+                    onLinkClickedListener = onLinkClick,
+                    onLinkLongClickedListener = onLinkLongClick,
+                    style = ElementRichTextEditorStyle.textStyle(),
+                    onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
+                    releaseOnDetach = false,
+                )
+            }
         }
     }
 }
