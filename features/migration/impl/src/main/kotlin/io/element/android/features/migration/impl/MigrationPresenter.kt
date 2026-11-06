@@ -72,8 +72,9 @@ class MigrationPresenter(
                 try {
                     nextMigration.migrate(isFreshInstall)
                     migrationStore.setApplicationMigrationVersion(nextMigration.order)
+                } catch (exception: CancellationException) {
+                    throw exception
                 } catch (exception: Exception) {
-                    if (exception is CancellationException) throw exception
                     Timber.e(exception, "Failed to apply migration ${nextMigration.order}")
                     migrationAction = AsyncData.Failure(exception)
                 }

@@ -32,4 +32,5 @@ internal fun selectInboxRooms(summaries: List<RoomSummary>, known: Set<RoomId>, 
             }.thenByDescending { it.info.numUnreadMessages > 0 }
                 .thenBy { recent.indexOf(it.roomId).takeIf { index -> index >= 0 } ?: Int.MAX_VALUE }
                 .thenByDescending { it.latestEventTimestamp }
-        ).take(20)
+        )
+        .take(20)

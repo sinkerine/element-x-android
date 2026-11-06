@@ -78,6 +78,8 @@ internal fun aRoomListState(
     acceptDeclineInviteState = acceptDeclineInviteState,
     hideInvitesAvatars = hideInvitesAvatars,
     canReportRoom = canReportRoom,
+    unreadChatCount = 0,
+    isMarkingAllAsRead = false,
     eventSink = eventSink,
 )
 

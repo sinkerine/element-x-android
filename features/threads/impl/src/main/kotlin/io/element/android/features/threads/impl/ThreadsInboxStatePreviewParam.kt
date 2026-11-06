@@ -61,6 +61,7 @@ internal class ThreadsInboxStatePreviewParam : PreviewParameterProvider<ThreadsI
                 pending = emptySet(),
                 unreadCount = 1,
                 failed = false,
+                hasMore = false,
                 summaries = mapOf(thread.key to ("Where should we meet?" to "Lena: Could you mock this up?")),
                 eventSink = {},
             )
@@ -74,16 +75,16 @@ internal class ThreadsInboxStatePreviewParam : PreviewParameterProvider<ThreadsI
                 state.copy(rows = AsyncData.Success(persistentListOf())),
                 state.copy(pending = setOf(thread.key)),
                 state.copy(failed = true),
-                state.copy(rows = AsyncData.Failure(IllegalStateException())),
+                state.copy(rows = AsyncData.Failure(IllegalStateException("Inbox load failed"))),
                 state.copy(rows = AsyncData.Success(persistentListOf(thread.copy(numUnreadMentions = 2)))),
                 state.copy(rows = AsyncData.Success(persistentListOf(thread.copy(numUnread = 0))), visited = setOf(thread.key)),
-                state.copy(rows = AsyncData.Failure(IllegalStateException(), persistentListOf(thread))),
+                state.copy(rows = AsyncData.Failure(IllegalStateException("Inbox load failed"), persistentListOf(thread))),
             )
         }
 }
 
 @PreviewsDayNight
 @Composable
-internal fun ThreadsInboxPreview(@PreviewParameter(ThreadsInboxStatePreviewParam::class) state: ThreadsInboxState) = ElementPreview {
+internal fun ThreadsInboxViewPreview(@PreviewParameter(ThreadsInboxStatePreviewParam::class) state: ThreadsInboxState) = ElementPreview {
     ThreadsInboxView(state, {}, {})
 }

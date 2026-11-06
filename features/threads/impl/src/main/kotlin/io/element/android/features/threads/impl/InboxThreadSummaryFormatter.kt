@@ -17,7 +17,7 @@ import io.element.android.libraries.matrix.api.roomlist.LatestEventValue
 @Inject
 class InboxThreadSummaryFormatter(private val formatter: RoomLatestEventFormatter) {
     fun format(thread: InboxThread): Pair<String, String> =
-        format(thread.rootEvent, includeSender = false) to (thread.latestEvent?.let { format(it, includeSender = true) }.orEmpty())
+        format(thread.rootEvent, includeSender = false) to thread.latestEvent?.let { format(it, includeSender = true) }.orEmpty()
 
     private fun format(event: ThreadListItemEvent, includeSender: Boolean): String {
         val content = event.content ?: return ""

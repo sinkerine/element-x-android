@@ -18,8 +18,8 @@ data class ThreadsInboxState(
     val pending: Set<InboxThreadKey>,
     val unreadCount: Int,
     val failed: Boolean,
-    val summaries: Map<InboxThreadKey, Pair<String, String>> = emptyMap(),
-    val hasMore: Boolean = false,
+    val summaries: Map<InboxThreadKey, Pair<String, String>>,
+    val hasMore: Boolean,
     val eventSink: (ThreadsInboxEvent) -> Unit,
 )
 

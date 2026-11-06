@@ -1,5 +1,14 @@
 # LaTeX Android verification
 
+## Final verification after baseline repairs
+
+**The required full verification is now green.** After the completion audit identified the outstanding repository checks, the user explicitly requested repairing them rather than accepting exceptions. The independently reviewed repair preserves state initialization and cancellation behavior, fixes preview/DI/license conventions and all 19 detekt diagnostics, and makes the Interactive UI disabled-flag test explicitly disable its flag without changing the enabled product default. The implementation rename to `DefaultCrossRoomThreadsService` preserves its binding and session scope. No checks were disabled and no blanket suppressions were added.
+
+The parent's final command ran all unit tests, Konsist, detekt, ktlint, Android lint, Licensee, Gplay/Fdroid Kotlin compilation and Gplay APK assembly with `--continue`: **BUILD SUCCESSFUL**, exit **0**, 13,672 actionable tasks. Evidence: `build/latex-baseline/parent-full-verification.log` and `.exit`. The final XML inventory records **4,789 tests, zero failures/errors, 16 skips** (`parent-final-unit-results.json`); the worker's affected-module run covered 1,318 tests with zero failures and three skips. Independent review found no Critical, Important or Minor findings.
+
+Media fixtures were temporarily hydrated from the existing local Git LFS cache, with SHA-256 verification, for the complete passing regression run. Every original pointer file was restored and verified afterward; fixture assets are excluded from the repair commit. These results supersede the historical baseline failures below. The two complete 15-step emulator journeys remain valid evidence for the LaTeX behavior; the subsequent baseline repair does not alter maths rendering code.
+
+
 **All 15 maths journey steps passed, and T5 is accepted after tooling and final evidence review.** The journey follows [latex-plan.md §5](latex-plan.md#5-e2e-journey), using the dedicated sandbox and preserving Alice's existing session. Tooling review reported no findings. This document update inspects the retained evidence; it does not rerun the device journey or start services.
 
 The tested app source was `587b1f317df8e0f60e726136f57ce89c1958fe95` with uncommitted T5 fixture/tooling changes. Accepted tasks are T1 `4d7bca4c80`, T2 `587b1f317d`, T3 `9dfb5f93fc` and T4 `81ad648938`; cleanup commits `77c279b313` and `e39b8049dd` are in the ancestry. Local inventories are under `build/e2e/latex/preflight/`; the executed journey and final observations are under `build/e2e/latex/journey/`. Raw artifacts remain ignored and local. No screenshot-test baselines were recorded.

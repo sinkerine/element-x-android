@@ -8,7 +8,6 @@
 package io.element.android.features.threads.impl
 
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.element.android.features.threads.api.ThreadsBadge
 import io.element.android.features.threads.api.ThreadsInboxBadgeProvider
@@ -21,7 +20,6 @@ import kotlinx.coroutines.flow.stateIn
 
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
-@Inject
 class DefaultThreadsInboxBadgeProvider(
     session: ThreadsInboxSession,
     client: MatrixClient,

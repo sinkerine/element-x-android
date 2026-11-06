@@ -39,7 +39,10 @@ internal suspend fun loadThreadFocus(timeline: Timeline, eventId: EventId): Bool
             }
         }
     }
-} catch (error: Exception) {
-    if (error is CancellationException && error !is TimeoutCancellationException) throw error
+} catch (_: TimeoutCancellationException) {
+    false
+} catch (error: CancellationException) {
+    throw error
+} catch (_: Exception) {
     false
 }

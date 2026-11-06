@@ -35,8 +35,8 @@ data class RoomListState(
     val hideInvitesAvatars: Boolean,
     val canReportRoom: Boolean,
     val eventSink: (RoomListEvent) -> Unit,
-    val unreadChatCount: Int = 0,
-    val isMarkingAllAsRead: Boolean = false,
+    val unreadChatCount: Int,
+    val isMarkingAllAsRead: Boolean,
 ) {
     val displayFilters = contentState is RoomListContentState.Rooms
 

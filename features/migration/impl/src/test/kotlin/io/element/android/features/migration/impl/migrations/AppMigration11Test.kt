@@ -8,6 +8,7 @@
 package io.element.android.features.migration.impl.migrations
 
 import com.google.common.truth.Truth.assertThat
+import io.element.android.libraries.core.extensions.runCatchingExceptions
 import io.element.android.libraries.sessionstorage.test.InMemorySessionStore
 import io.element.android.libraries.sessionstorage.test.aSessionData
 import kotlinx.coroutines.test.runTest
@@ -97,7 +98,7 @@ class AppMigration11Test {
                 cacheDirectory = root,
             )
 
-            val result = runCatching { migration.migrate(isFreshInstall = false) }
+            val result = runCatchingExceptions { migration.migrate(isFreshInstall = false) }
             assertThat(result.isFailure).isTrue()
             assertThat(blockedDatabase.exists()).isTrue()
         } finally {

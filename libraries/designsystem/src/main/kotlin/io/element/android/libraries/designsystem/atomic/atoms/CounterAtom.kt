@@ -35,7 +35,7 @@ private const val MAX_COUNT_STRING = "+$MAX_COUNT"
  * A counter atom that displays a number in a circle.
  * Figma link : https://www.figma.com/design/G1xy0HDZKJf5TCRFmKb5d5/Compound-Android-Components?node-id=2805-2649&m=dev
  *
- * @param count The number to display. If the number is greater than [MAX_COUNT], the counter will display [MAX_COUNT_STRING].
+ * @param count The number to display. If the number is greater than [MAX_COUNT], the counter will display [overflowText].
  * If the number is less than 1, the counter will not be displayed.
  * @param modifier The modifier to apply to this layout.
  * @param containerColor The background color of the counter. When null, uses [isCritical] to pick a default.
@@ -43,6 +43,7 @@ private const val MAX_COUNT_STRING = "+$MAX_COUNT"
  * @param textStyle The style to apply to the text inside the counter.
  * @param isCritical If true, the counter will use a critical color scheme, otherwise it will use an accent color scheme.
  * Only used when [containerColor] is null.
+ * @param overflowText The text to display when [count] exceeds [MAX_COUNT]. Defaults to [MAX_COUNT_STRING].
  */
 @Composable
 fun CounterAtom(

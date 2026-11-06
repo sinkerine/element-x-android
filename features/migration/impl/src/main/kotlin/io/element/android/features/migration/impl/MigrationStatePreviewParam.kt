@@ -17,7 +17,7 @@ internal class MigrationStatePreviewParam : PreviewParameterProvider<MigrationSt
         get() = sequenceOf(
             aMigrationState(),
             aMigrationState(migrationAction = AsyncData.Loading(Unit)),
-            aMigrationState(migrationAction = AsyncData.Failure(IllegalStateException())),
+            aMigrationState(migrationAction = AsyncData.Failure(IllegalStateException("Migration failed"))),
         )
 }
 

@@ -31,15 +31,24 @@ import kotlinx.coroutines.sync.withPermit
 @Inject
 class ThreadsInboxSession(private val service: CrossRoomThreadsService, private val client: MatrixClient) {
     data class ReadState(
-        val pending: List<InboxThread> = emptyList(),
-        val optimistic: Map<InboxThreadKey, InboxThread> = emptyMap(),
-        val failed: List<InboxThread> = emptyList(),
-        val retained: Set<InboxThreadKey> = emptySet(),
-        val failedUnread: Set<InboxThreadKey> = emptySet(),
-        val retainedMine: Set<InboxThreadKey> = emptySet(),
+        val pending: List<InboxThread>,
+        val optimistic: Map<InboxThreadKey, InboxThread>,
+        val failed: List<InboxThread>,
+        val retained: Set<InboxThreadKey>,
+        val failedUnread: Set<InboxThreadKey>,
+        val retainedMine: Set<InboxThreadKey>,
     )
 
-    val readState = MutableStateFlow(ReadState())
+    val readState = MutableStateFlow(
+        ReadState(
+            pending = emptyList(),
+            optimistic = emptyMap(),
+            failed = emptyList(),
+            retained = emptySet(),
+            failedUnread = emptySet(),
+            retainedMine = emptySet(),
+        )
+    )
     val visited = MutableStateFlow<Set<InboxThreadKey>>(emptySet())
     val openThread = MutableStateFlow<InboxThreadKey?>(null)
     private var timer: Job? = null
@@ -113,7 +122,7 @@ class ThreadsInboxSession(private val service: CrossRoomThreadsService, private 
                 val state = readState.value
                 val acknowledged = state.optimistic.filter { (key, target) ->
                     val current = items.find { it.key == key }
-                    current == null || (!current.isUnread && current.readReceiptEventId == (target.latestEvent ?: target.rootEvent).eventId)
+                    current == null || !current.isUnread && current.readReceiptEventId == (target.latestEvent ?: target.rootEvent).eventId
                 }.keys
                 if (acknowledged.isNotEmpty()) readState.value = state.copy(optimistic = state.optimistic - acknowledged)
             }

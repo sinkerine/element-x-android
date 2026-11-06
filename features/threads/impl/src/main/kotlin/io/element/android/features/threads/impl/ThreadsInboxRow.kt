@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ListItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.pluralStringResource
@@ -46,7 +48,6 @@ internal fun ThreadsInboxRow(
     thread: InboxThread,
     rootPreview: String,
     replyPreview: String,
-    visited: Boolean,
     onOpen: () -> Unit,
     onLongClick: () -> Unit,
     onMarkRead: () -> Unit,
@@ -54,16 +55,17 @@ internal fun ThreadsInboxRow(
     modifier: Modifier = Modifier,
 ) {
     val interactions = remember { MutableInteractionSource() }
+    val currentOnTouch by rememberUpdatedState(onTouch)
     LaunchedEffect(interactions, thread.key) {
         try {
             interactions.interactions.collect { action ->
                 when (action) {
-                    is PressInteraction.Press -> onTouch(true)
-                    is PressInteraction.Release, is PressInteraction.Cancel -> onTouch(false)
+                    is PressInteraction.Press -> currentOnTouch(true)
+                    is PressInteraction.Release, is PressInteraction.Cancel -> currentOnTouch(false)
                 }
             }
         } finally {
-            onTouch(false)
+            currentOnTouch(false)
         }
     }
     val unread = thread.isUnread

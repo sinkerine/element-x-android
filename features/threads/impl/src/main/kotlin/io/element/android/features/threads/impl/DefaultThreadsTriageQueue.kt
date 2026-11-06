@@ -8,7 +8,6 @@
 package io.element.android.features.threads.impl
 
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.element.android.features.threads.api.ThreadsTriageQueue
 import io.element.android.libraries.di.SessionScope
@@ -23,7 +22,6 @@ import kotlinx.coroutines.launch
 
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
-@Inject
 class DefaultThreadsTriageQueue(
     private val service: CrossRoomThreadsService,
     client: MatrixClient,

@@ -8,7 +8,6 @@
 package io.element.android.libraries.matrix.impl.room.threads
 
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
 import io.element.android.libraries.di.SessionScope
 import io.element.android.libraries.matrix.api.MatrixClient
 import io.element.android.libraries.matrix.api.core.EventId
@@ -41,7 +40,6 @@ interface ThreadInboxSource {
 internal const val MAX_UNREAD_SCAN = 300
 
 @ContributesBinding(SessionScope::class)
-@Inject
 class RustThreadInboxSource(private val client: MatrixClient) : ThreadInboxSource {
     private val inner get() = (client as RustMatrixClient).innerClient
     private var pager: org.matrix.rustcomponents.sdk.ThreadInboxPager? = null

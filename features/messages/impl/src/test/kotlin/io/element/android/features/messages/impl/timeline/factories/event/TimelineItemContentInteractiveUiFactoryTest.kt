@@ -40,7 +40,7 @@ class TimelineItemContentInteractiveUiFactoryTest {
     @Test
     fun `flag off local and non-text never read debug info`() = runTest {
         var calls = 0
-        val flags = FakeFeatureFlagService()
+        val flags = FakeFeatureFlagService(mapOf(FeatureFlags.InteractiveUi.key to false))
         val factory =
             TimelineItemContentInteractiveUiFactory(
                 flags,

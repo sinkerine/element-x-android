@@ -30,7 +30,6 @@ class ThreadsInboxAccessibilityTest : RobolectricTest() {
                     thread = previewThread().copy(numUnreadMentions = 1),
                     rootPreview = "Where should we meet?",
                     replyPreview = "Lena: Here",
-                    visited = false,
                     onOpen = {},
                     onLongClick = {},
                     onMarkRead = { marked = true },
@@ -45,14 +44,13 @@ class ThreadsInboxAccessibilityTest : RobolectricTest() {
     }
 
     @Test
-    fun `visited row with new unread mention displays mention badge`() = runAndroidComposeUiTest<androidx.activity.ComponentActivity> {
+    fun `row with new unread mention displays mention badge`() = runAndroidComposeUiTest<androidx.activity.ComponentActivity> {
         setContent {
             ElementPreview {
             ThreadsInboxRow(
                 thread = previewThread().copy(numUnreadMentions = 1),
                 rootPreview = "Root",
                 replyPreview = "New reply",
-                visited = true,
                 onOpen = {},
                 onLongClick = {},
                 onMarkRead = {},

@@ -8,7 +8,6 @@
 package io.element.android.libraries.matrix.impl.room.threads
 
 import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import io.element.android.libraries.architecture.AsyncData
 import io.element.android.libraries.core.extensions.runCatchingExceptions
@@ -46,8 +45,7 @@ import org.matrix.rustcomponents.sdk.ThreadInboxPageRoom
 /** User-driven pages; no account-wide background badge or history scan. */
 @SingleIn(SessionScope::class)
 @ContributesBinding(SessionScope::class)
-@Inject
-class KotlinCrossRoomThreadsService(
+class DefaultCrossRoomThreadsService(
     private val client: MatrixClient,
     private val preferences: SessionPreferencesStore,
     private val unreadStore: InboxThreadUnreadStore,
@@ -86,7 +84,9 @@ class KotlinCrossRoomThreadsService(
     override fun startVisit() {
         visiting = true
         if (loadJob?.isActive == true) return
-        if (dirty || threads.value.isUninitialized() || threads.value.isFailure() || threads.value.isLoading()) {
+        val data = threads.value
+        val needsLoad = data.isUninitialized() || data.isFailure() || data.isLoading()
+        if (dirty || needsLoad) {
             loadJob = client.sessionCoroutineScope.launch { loadPage(reset = dirty) }
         }
     }

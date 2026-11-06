@@ -34,7 +34,7 @@ import org.matrix.rustcomponents.sdk.ThreadListItem
 import org.matrix.rustcomponents.sdk.ThreadListItemEvent
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class KotlinCrossRoomThreadsServiceTest {
+class DefaultCrossRoomThreadsServiceTest {
     private class Source : ThreadInboxSource {
         val invalidations = Channel<List<String>?>(Channel.UNLIMITED)
         override val updates = invalidations.receiveAsFlow()
@@ -82,14 +82,14 @@ class KotlinCrossRoomThreadsServiceTest {
     /** Store IO on the test scheduler keeps runCurrent deterministic. */
     private fun kotlinx.coroutines.test.TestScope.testDataStores() = object : io.element.android.libraries.preferences.api.store.PreferenceDataStoreFactory {
         override fun create(name: String) = androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope = backgroundScope) {
-            java.io.File.createTempFile("test", ".preferences_pb").also { it.delete() }
+            java.io.File.createTempFile("test", ".preferences_pb").apply { delete() }
         }
     }
 
     private suspend fun kotlinx.coroutines.test.TestScope.service(
         source: Source,
         sentReceipts: (FakeMatrixClient) -> InboxSentReceiptStore = { InboxSentReceiptStore(it, testDataStores()) },
-    ): KotlinCrossRoomThreadsService {
+    ): DefaultCrossRoomThreadsService {
         val rooms = FakeRoomListService()
         val client = FakeMatrixClient(sessionCoroutineScope = backgroundScope, roomListService = rooms, getAccountDataLambda = { Result.success(null) })
         client.givenGetRoomResult(roomId, FakeJoinedRoom())
@@ -101,7 +101,14 @@ class KotlinCrossRoomThreadsServiceTest {
         client: FakeMatrixClient,
         source: Source,
         sentReceipts: InboxSentReceiptStore = InboxSentReceiptStore(client, testDataStores()),
-    ) = KotlinCrossRoomThreadsService(client, InMemorySessionPreferencesStore(), InboxThreadUnreadStore(client), FakeFeatureFlagService(), source, sentReceipts)
+    ) = DefaultCrossRoomThreadsService(
+        client,
+        InMemorySessionPreferencesStore(),
+        InboxThreadUnreadStore(client),
+        FakeFeatureFlagService(),
+        source,
+        sentReceipts,
+    )
 
     @Test
     fun `receipt sent from the inbox keeps the thread read before sync stores it`() = runTest {

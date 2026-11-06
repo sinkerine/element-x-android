@@ -47,14 +47,15 @@ internal suspend fun loadInboxThreadHistory(
                 } ?: items.value
             }
             var events = initialPage.filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
-            while (events.none { it.eventId?.value == rootId } ||
-                receiptIds.any { id -> events.none { it.eventId == id } }
+            var reachedEnd = false
+            while (!reachedEnd && (events.none { it.eventId?.value == rootId } ||
+                receiptIds.any { id -> events.none { it.eventId == id } })
             ) {
                 status = timeline.backwardPaginationStatus.first { !it.isPaginating }
                 if (!status.hasMoreToLoad) break
                 val previous = events.map { it.eventId }
-                val end = timeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
-                val page = if (end) {
+                reachedEnd = timeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
+                val page = if (reachedEnd) {
                     kotlinx.coroutines.withTimeoutOrNull(250) { items.first { completeBoundary(it) } } ?: items.value
                 } else {
                     // Cached gap/dedup pages can advance the SDK cursor without changing visible events.
@@ -64,7 +65,6 @@ internal suspend fun loadInboxThreadHistory(
                     } ?: items.value
                 }
                 events = page.filterIsInstance<MatrixTimelineItem.Event>().map { it.event }
-                if (end) break
             }
             if (receiptId != null && events.none { it.eventId == receiptId }) {
                 timber.log.Timber.w(

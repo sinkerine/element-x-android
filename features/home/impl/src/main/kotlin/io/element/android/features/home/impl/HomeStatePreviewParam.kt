@@ -77,6 +77,8 @@ internal fun aHomeState(
     canReportBug = canReportBug,
     showThreads = showThreads,
     isThreadsDrawerOpen = isThreadsDrawerOpen,
+    threadsUnreadCount = 0,
+    threadsHaveMention = false,
     directLogoutState = directLogoutState,
     currentHomeNavigationBarItem = currentHomeNavigationBarItem,
     roomListState = roomListState,

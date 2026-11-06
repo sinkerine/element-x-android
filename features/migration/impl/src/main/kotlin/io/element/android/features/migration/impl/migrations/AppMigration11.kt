@@ -31,8 +31,8 @@ class AppMigration11(
             for (directory in directories) {
                 for (name in EVENT_CACHE_FILES) {
                     val file = File(directory, name)
-                    if (file.exists() && !file.delete() && file.exists()) {
-                        throw IllegalStateException("Unable to delete event cache file: ${file.absolutePath}")
+                    if (file.exists()) {
+                        check(file.delete() || !file.exists()) { "Unable to delete event cache file: ${file.absolutePath}" }
                     }
                 }
             }

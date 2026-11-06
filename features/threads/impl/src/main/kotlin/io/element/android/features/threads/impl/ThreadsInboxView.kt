@@ -63,8 +63,9 @@ fun ThreadsInboxView(
     LaunchedEffect(listState, state.rows, state.hasMore) {
         snapshotFlow {
             val layout = listState.layoutInfo
+            val lastVisibleIndex = layout.visibleItemsInfo.lastOrNull()?.index ?: 0
             state.hasMore && state.rows.isSuccess() && listState.isScrollInProgress &&
-                layout.totalItemsCount > 2 && (layout.visibleItemsInfo.lastOrNull()?.index ?: 0) >= layout.totalItemsCount - 3
+                layout.totalItemsCount > 2 && lastVisibleIndex >= layout.totalItemsCount - 3
         }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) state.eventSink(ThreadsInboxEvent.LoadMore) }
     }
     Column(modifier.padding(16.dp)) {
@@ -125,7 +126,6 @@ fun ThreadsInboxView(
                         thread = thread,
                         rootPreview = state.summaries[thread.key]?.first.orEmpty(),
                         replyPreview = state.summaries[thread.key]?.second.orEmpty(),
-                        visited = thread.key in state.visited,
                         onOpen = { onOpen(thread.key) },
                         onLongClick = { menu = thread },
                         onMarkRead = { state.eventSink(ThreadsInboxEvent.MarkAsRead(thread.key)) },
