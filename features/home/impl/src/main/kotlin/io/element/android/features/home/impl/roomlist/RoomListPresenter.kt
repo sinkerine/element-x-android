@@ -27,6 +27,7 @@ import dev.zacsweers.metro.Inject
 import im.vector.app.features.analytics.plan.Interaction
 import io.element.android.features.announcement.api.Announcement
 import io.element.android.features.announcement.api.AnnouncementService
+import io.element.android.features.home.impl.R
 import io.element.android.features.home.impl.datasource.RoomListDataSource
 import io.element.android.features.home.impl.filters.RoomListFiltersState
 import io.element.android.features.home.impl.filters.into
@@ -45,6 +46,8 @@ import io.element.android.features.leaveroom.api.LeaveRoomState
 import io.element.android.features.preferences.impl.tasks.MarkRoomAsRead
 import io.element.android.libraries.architecture.AsyncData
 import io.element.android.libraries.architecture.Presenter
+import io.element.android.libraries.designsystem.utils.snackbar.LocalSnackbarDispatcher
+import io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage
 import io.element.android.libraries.featureflag.api.FeatureFlagService
 import io.element.android.libraries.featureflag.api.FeatureFlags
 import io.element.android.libraries.fullscreenintent.api.FullScreenIntentPermissionsState
@@ -100,6 +103,12 @@ class RoomListPresenter(
         val spaceFiltersState = spaceFiltersPresenter.present()
         val acceptDeclineInviteState = acceptDeclineInvitePresenter.present()
         val globalSearchState = globalSearchPresenter.present()
+        val snackbarDispatcher = LocalSnackbarDispatcher.current
+        val allRooms by client.roomListService.allRooms.summaries.collectAsState(initial = emptyList())
+        val unreadRoomIds = remember(allRooms, filtersState.filterSelectionStates, spaceFiltersState.selectedFilter()) {
+            unreadRoomIds(allRooms, filtersState.selectedFilters(), spaceFiltersState.selectedFilter()?.descendants)
+        }
+        var isMarkingAllAsRead by remember { mutableStateOf(false) }
 
         LaunchedEffect(Unit) {
             roomListDataSource.launchIn(this)
@@ -139,6 +148,28 @@ class RoomListPresenter(
                     leaveRoomState.eventSink(LeaveRoomEvent.LeaveRoom(event.roomId, needsConfirmation = event.needsConfirmation))
                 }
                 is RoomListEvent.SetRoomIsFavorite -> coroutineScope.setRoomIsFavorite(event.roomId, event.isFavorite)
+                RoomListEvent.MarkAllAsRead -> {
+                    if (!isMarkingAllAsRead && unreadRoomIds.isNotEmpty()) {
+                        isMarkingAllAsRead = true
+                        // Capture the scope before sync updates or filter changes alter the list.
+                        val roomIds = unreadRoomIds.toList()
+                        coroutineScope.launch {
+                            try {
+                                var failed = false
+                                roomIds.forEach { roomId ->
+                                    if (markRoomAsRead(roomId).isFailure) failed = true
+                                }
+                                snackbarDispatcher.post(
+                                    SnackbarMessage(
+                                        if (failed) R.string.error_roomlist_mark_all_as_read else R.string.screen_roomlist_mark_all_as_read_success
+                                    )
+                                )
+                            } finally {
+                                isMarkingAllAsRead = false
+                            }
+                        }
+                    }
+                }
                 is RoomListEvent.MarkAsRead -> coroutineScope.markAsRead(event.roomId)
                 is RoomListEvent.MarkAsUnread -> coroutineScope.markAsUnread(event.roomId)
                 is RoomListEvent.AcceptInvite -> {
@@ -186,6 +217,8 @@ class RoomListPresenter(
             acceptDeclineInviteState = acceptDeclineInviteState,
             hideInvitesAvatars = hideInvitesAvatar,
             canReportRoom = canReportRoom,
+            unreadChatCount = unreadRoomIds.size,
+            isMarkingAllAsRead = isMarkingAllAsRead,
             eventSink = ::handleEvent,
         )
     }

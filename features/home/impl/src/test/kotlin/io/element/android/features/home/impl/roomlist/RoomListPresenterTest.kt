@@ -616,8 +616,7 @@ class RoomListPresenterTest {
         )
         presenter.test {
             assertThat(announcementService.announcementsToShowFlow().first()).isEmpty()
-            skipItems(1)
-            val state = awaitItem()
+            val state = consumeItemsUntilPredicate { it.contentState is RoomListContentState.Rooms }.last()
             assertThat(state.contentAsRooms().showNewNotificationSoundBanner).isFalse()
             announcementService.emitAnnouncementsToShow(listOf(Announcement.NewNotificationSound))
             assertThat(awaitItem().contentAsRooms().showNewNotificationSoundBanner).isTrue()
@@ -627,6 +626,42 @@ class RoomListPresenterTest {
             // Simulate service updating the value
             announcementService.emitAnnouncementsToShow(emptyList())
             assertThat(awaitItem().contentAsRooms().showNewNotificationSoundBanner).isFalse()
+        }
+    }
+
+    @Test
+    fun `mark all reads rooms beyond the visible page and continues after failure`() = runTest {
+        val allRooms = FakeDynamicRoomList(
+            summaries = MutableStateFlow(
+                listOf(
+                    aRoomSummary(roomId = A_ROOM_ID, numUnreadMessages = 1),
+                    aRoomSummary(roomId = A_ROOM_ID_2, isMarkedUnread = true),
+                    aRoomSummary(roomId = A_ROOM_ID_3),
+                )
+            ),
+        )
+        val calls = mutableListOf<RoomId>()
+        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val presenter = createRoomListPresenter(
+            client = FakeMatrixClient(roomListService = FakeRoomListService(allRooms = allRooms)),
+            markRoomAsRead = FakeMarkRoomAsRead { roomId ->
+                calls.add(roomId)
+                started.complete(Unit)
+                release.await()
+                if (roomId == A_ROOM_ID) Result.failure(IllegalStateException("Test failure")) else Result.success(Unit)
+            },
+        )
+        presenter.test {
+            val state = consumeItemsUntilPredicate { it.unreadChatCount == 2 }.last()
+            state.eventSink(RoomListEvent.MarkAllAsRead)
+            started.await()
+            val busy = consumeItemsUntilPredicate { it.isMarkingAllAsRead }.last()
+            busy.eventSink(RoomListEvent.MarkAllAsRead)
+            release.complete(Unit)
+            consumeItemsUntilPredicate { !it.isMarkingAllAsRead }
+            assertThat(calls).containsExactly(A_ROOM_ID, A_ROOM_ID_2).inOrder()
+            cancelAndIgnoreRemainingEvents()
         }
     }
 

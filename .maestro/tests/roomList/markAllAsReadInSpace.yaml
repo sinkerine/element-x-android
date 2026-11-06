@@ -1,0 +1,35 @@
+appId: ${MAESTRO_APP_ID}
+---
+# Dedicated fixture account only. Preconditions: selected space contains one
+# unread direct chat and one unread group room; one unread group is outside it.
+# No category filters selected. Consumes unread state; excluded from allTests.
+- assertVisible: "2 unread chats"
+- tapOn:
+    id: "home-mark_all_as_read"
+- extendedWaitUntil:
+    visible: "0 unread chats"
+    timeout: 15000
+- assertVisible:
+    id: "home-mark_all_as_read"
+    enabled: false
+# The selected space button clears its selection.
+- tapOn: "Your spaces"
+- extendedWaitUntil:
+    visible: "1 unread chat"
+    timeout: 15000
+- assertVisible:
+    id: "home-mark_all_as_read"
+    enabled: true
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "1 unread chat"
+    timeout: 30000
+- tapOn:
+    id: "home-mark_all_as_read"
+- extendedWaitUntil:
+    visible: "0 unread chats"
+    timeout: 15000
+- assertVisible:
+    id: "home-mark_all_as_read"
+    enabled: false

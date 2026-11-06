@@ -15,4 +15,12 @@
     <string name="search_no_results_title">No results</string>
     <string name="search_no_results_subtitle">There are no results for “%1$s”. Try a new search term.</string>
     <string name="screen_search_recent_searches_section_title">Recent searches</string>
+    <string name="action_mark_all_as_read">Mark all as read</string>
+    <string name="screen_roomlist_marking_all_as_read">Marking as read…</string>
+    <string name="screen_roomlist_mark_all_as_read_success">All selected chats marked as read</string>
+    <string name="error_roomlist_mark_all_as_read">Some chats could not be marked as read. Please try again.</string>
+    <plurals name="screen_roomlist_unread_chats">
+        <item quantity="one">%1$d unread chat</item>
+        <item quantity="other">%1$d unread chats</item>
+    </plurals>
 </resources>
