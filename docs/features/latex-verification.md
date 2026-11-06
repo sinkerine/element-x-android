@@ -74,3 +74,50 @@ The parent recorded the renderer restored to false, night mode restored to `no`,
 Post-cleanup artifacts are `journey/postcleanup-ports.json`, `postcleanup-container.txt` and `postcleanup-devices.txt`. The device listing has no connected devices and the container artifact is empty. The parent confirmed the ports artifact's predicate: each true value means a bounded `connect_ex` attempt failed, so ports 18028, 18029, 5584 and 5585 are closed. The cleanup action record must not be treated as stronger proof than those final checks.
 
 Final evidence review found no Critical or Important issues; its Minor stale-log note was corrected before T5 acceptance. No app or tooling code was changed for this record update. Known limitations L2–L6 in the plan remain accepted. Delivery has an additional repository-policy constraint: T2 currently adds 561 production lines across the detection sources, above the 500-addition PR limit. If delivering through PRs, split it into coherent reviewable changes before publication; the executed feature verification does not waive that limit. No commit, PR or publication was performed here.
+
+## Postmerge rerun at e5dcfb3932
+
+**2026-11-05: all 15 journey steps passed again on merge commit `e5dcfb393252348a21e5b3b70748eb2862b1b09b`. Result: DONE_WITH_CONCERNS**, because the full-plan Gradle command retains the baseline failures described below. This is a fresh executed journey after the upstream merge, with a newly built and installed APK and a new encrypted fixture room. Historical `journey/` artifacts were used only for comparison. All paths in this section are relative to ignored `build/e2e/latex/postmerge/`, unless stated otherwise. No app, fixture, tooling source, or screenshot-test baseline was changed.
+
+The full-plan command was allowed to finish before installation: `build/latex-postmerge-checks.exit` contains 1, and `build/latex-postmerge-checks.log` records eight failed tasks. Inspection confirmed that `:app:assembleGplayDebug`, both Gplay and Fdroid Kotlin compilation tasks, `:app:testGplayDebugUnitTest`, and `:app:lintGplayDebug` completed without a FAILED suffix; Licensee was UP-TO-DATE. `build-task-evidence.txt` retains those task lines. The aggregate failure was not treated as an app assembly failure.
+
+The installed x86_64 Gplay debug APK, `app/build/outputs/apk/gplay/debug/app-gplay-x86_64-debug.apk`, is **391,366,715 bytes**, SHA-256 **`988e20cc21078a987063d357df521f961d59221828ef18b45b2b2f508af7a5f5`** (`apk.sha256`). `apk-native-assets.txt` confirms the RaTeX native library and KaTeX main font. The dedicated AVD was `interactive_ui_a1`, serial `emulator-5584`, API 33, x86_64 (`device-identity.json`, `avd-start.log`). Stable device availability, boot completion, AVD name, API and ABI were checked before the single `adb install -r --no-incremental`. `install.log` records Success; `package-after-install.txt` records `firstInstallTime=2026-11-03 18:36:05` and `lastUpdateTime=2026-11-05 22:14:42`. Alice's authenticated session and app data were preserved.
+
+Synapse ownership was checked against this worktree before reuse (`synapse-owner.txt`). The fresh bot was kept alive throughout the journey, and `setup-room.json` records creation of a fresh encrypted room. `bot/sent.jsonl` contains ten sends, each independently fetched from the server with `wire_type: m.room.encrypted` and `encrypted: true`. The new room invitation was accepted in Alice's existing session. The identity-reset notice from the new bot device was dismissed; no accounts were re-provisioned.
+
+| Step | Result | Fresh observed outcome and evidence |
+| --- | --- | --- |
+| 1 | PASS | Labs and developer pages have no maths toggle; the pre-existing New timeline event renderer starts false. `labs.xml`, `developer.xml`, `developer-lower.xml`, `developer-bottom.xml`. |
+| 2 | PASS | Euler identity has raised superscript and π, on the surrounding text baseline without a code box; accessibility retains the TeX. `spec-inline.png`, `spec-inline.xml`. |
+| 3 | PASS | Integral and fraction render as their own display block with a separate, non-overlapping timestamp. `spec-blocks.png`, `spec-blocks.xml`. |
+| 4 | PASS | The legacy wide polynomial is scaled inside the bubble, with its final term at index 40 visible. Its text bounds are retained in the live hierarchy. `spec-blocks.png`, `spec-blocks.xml`. |
+| 5 | PASS | Bullet, quote and bold maths render; explicit red remains red and other maths uses primary colour. `spec-blocks.png`. |
+| 6 | PASS | Plain-body π r² and square root render inline, with the sum in a display block and surrounding text intact. `detection-fallback.png`. |
+| 7 | PASS | CommonMark energy and thin-spaced product render inline, and the fraction renders as a block; the lossy literal HTML delimiter text does not remain. `detection-fallback.png`. |
+| 8 | PASS | Currency and escaped dollars stay literal and inline code stays code, with no unintended typesetting. `detection-fallback.png`, `detection-fallback.xml`. |
+| 9 | PASS | Invalid fraction and forbidden macro use code fallback, preserving surrounding text. PID is 4392 before and after. `detection-fallback.png`, `pid-before-invalid.txt`, `pid-after-invalid.txt`. |
+| 10 | PASS | Default maths becomes light on dark; explicit red stays red. Light mode is restored. `dark.png`, `restoration-check.json`. |
+| 11 | PASS | Copy text is pasted into the focused composer without sending; the actual EditText value exactly equals the raw Euler fixture body. The composer is then cleared. `copy-text-verified.xml`, `copy-check.json`, `composer-cleared.xml`. |
+| 12 | PASS | Reply to the CommonMark message opens a plain-text preview without crashing, then is cancelled without sending. `md-reply-preview.png`, `md-reply-preview.xml`, `final-room.xml`. |
+| 13 | PASS | Renderer option is true; Compose renders spec inline/display, structured, plain-body detection, CommonMark and both fallbacks. The wide block scrolls horizontally to the final term at index 40. `renderer-enabled.xml`, `compose-room.png`, `compose-wide-end.png`, `compose-wide-end.xml`. |
+| 14 | PASS | Renderer option is restored false and legacy rendering returns unchanged. `renderer-restored.xml`, `legacy-restored.png`. |
+| 15 | PASS | The fresh canary is received on-device; PID-filtered logcat requested with `-t 400` captures 401 lines and zero marker matches. `canary-received.xml`, `canary-check.json`. Raw logs remain local and were not printed. |
+
+The screenshots above were inspected during execution; the results are not inferred from successful taps. `journey-outcomes.json` inventories each pass and its evidence. Initial copy attempts failed to establish paste equality, including a system Nearby Share overlay that was dismissed without proceeding. The final copy result relies only on the exact equality assertion in `copy-check.json` and the corresponding composer XML. An initial horizontal gesture selected a non-scrollable display and opened a message sheet; it was dismissed. Subsequent gestures targeted the live **scrollable** HorizontalScrollView and reached term 40. Those earlier attempts remain local automation history, not pass evidence. Live sheets were dumped twice before selecting actions, and the Copy text sheet was expanded to put that action clear of the system navigation area.
+
+The full-plan postmerge checks remain **failed overall**, with no newly observed failure relative to the retained premerge baseline:
+
+| Check | Postmerge result and comparison |
+| --- | --- |
+| Maths API / implementation | 11 / 61 tests, zero failures, errors or skips. |
+| Matrix UI; HTML renderer API / implementation | 85; 4 / 25 tests, zero failures, errors or skips. |
+| Messages | 714 tests, one failure, one skip. Same `TimelineItemContentInteractiveUiFactoryTest` enabled-default expectation mismatch as before. |
+| Media upload | 37 tests, eight failures, nine skips. Same `AndroidMediaPreProcessorTest` cases associated with the retained LFS pointer test media. No fixture bytes were replaced or hydrated for this rerun; the earlier diagnostic LFS retest is not counted as a current pass. |
+| Konsist | 50 tests, seven failures. The same preview, state, naming, DI and license convention test identities remain. |
+| Detekt | Five failed module tasks, with 19 diagnostics. `static-comparison.json` compares diagnostic paths, line positions and messages with `build/latex-static-post-cleanup.log`: all 19 match, zero new or removed. |
+| Assembly, compilation, Licensee, Android lint, app unit tests | Completed as described above in the aggregate command; no additional failed task is reported for these checks. |
+| Fixture bot self-tests | Fresh `node --test` run: nine passed, zero failed (`fixture-tests.log`), using the existing installed dependencies. |
+
+`unit-results.json` records counts and failed test identities; `failure-comparison.json` records the comparison and confirms that the messages, media-upload and Konsist test sources were unchanged by the upstream merge. These comparisons preserve the baseline failure classification and do not claim that the repository is green. The original full-plan log and exit marker remain under `build/`.
+
+Cleanup was executed and independently checked. `restoration-check.json` confirms renderer false, night mode `no`, empty composer, cancelled reply, encrypted server delivery and stable PID for the fallback check. `bot-shutdown.json` records `stopped: true`; the adb reverse was removed, the ownership-checked Synapse shutdown completed, and only the AVD started by this journey was stopped (`reverse-remove.txt`, `synapse-down.txt`, `owned-avd-before-shutdown.txt`, `avd-shutdown.txt`). `postcleanup-devices.txt` lists no devices, `postcleanup-container.txt` is empty, and `postcleanup-ports.json` explicitly records `closed: true` for 18028, 18029, 5584 and 5585. Accounts, Synapse data, AVD storage and Alice's app session remain retained. No commit, branch merge into the main checkout, PR or publication was performed by this rerun.
