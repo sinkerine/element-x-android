@@ -3,7 +3,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
-[[ $(git branch --show-current) == interactive-ui-android ]] || { echo 'Wrong branch' >&2; exit 1; }
+# Resolve the script's checkout, including linked worktrees; a branch name is not an ownership boundary.
+workspace=$(pwd -P)
+[[ $(git rev-parse --show-toplevel) == "$workspace" &&
+    -f AGENTS.md && -f settings.gradle.kts &&
+    $(git ls-files -- tools/interactive-ui/sandbox/avd-up.sh) == tools/interactive-ui/sandbox/avd-up.sh ]] || {
+    echo 'Run the tracked sandbox script from an Element X Android worktree' >&2; exit 1;
+}
 sdk="$HOME/.local/share/element-x-e2e/android-sdk"
 export ANDROID_AVD_HOME="$HOME/.local/share/element-x-e2e/avds"
 export ANDROID_HOME="$sdk"

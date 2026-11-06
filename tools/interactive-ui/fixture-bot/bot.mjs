@@ -7,6 +7,7 @@ import { mkdir, appendFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { createClient, ClientEvent, RoomEvent, MatrixEventEvent } from 'matrix-js-sdk';
 import { fixture, patch, uniquePayload, message, revisionContent, applyImages, ACTION_KEY } from './lib/fixtures.mjs';
+import { mathsFixture } from './lib/maths-fixtures.mjs';
 import { encryptAttachment, solidPng } from './lib/attachment.mjs';
 import { baseUrl, controlUrl, credentialsPath, tokenPath, secureWrite, secureRead, request, provision } from './lib/local.mjs';
 
@@ -18,8 +19,8 @@ const quietLogger = { trace: noop, debug: noop, info: noop, warn: noop, error: n
 
 async function serve() {
     const evidence = resolve(option(args, '--evidence') ?? `build/e2e/interactive-ui/${new Date().toISOString().replace(/[:.]/g, '-')}`);
-    const allowed = resolve('build/e2e/interactive-ui') + '/';
-    if (!evidence.startsWith(allowed)) throw new Error('Evidence must be in build/e2e/interactive-ui');
+    const allowed = ['interactive-ui', 'latex'].map(name => resolve('build/e2e', name) + '/');
+    if (!allowed.some(root => evidence.startsWith(root))) throw new Error('Evidence must be below build/e2e/interactive-ui or build/e2e/latex');
     await mkdir(join(evidence, 'bot'), { recursive: true, mode: 0o700 });
     const accounts = JSON.parse(await secureRead(credentialsPath));
     if (!accounts.alice || !accounts.uibot) throw new Error('Incomplete provisioning');
@@ -122,6 +123,7 @@ async function serve() {
             const entries = [...observed.values()].filter(e => e.sequence > since(values) && (!senderId || e.sender === senderId));
             return command === 'count-events' ? { count: entries.length } : { actions: entries.filter(e => e.action) };
         }
+        if (command === 'send-maths') return sendContent(mathsFixture(name));
         if (command === 'send-root') return sendContent({ msgtype: 'm.text', body: name ?? 'Thread question' });
         if (command === 'upload-encrypted-png') {
             const { ciphertext, file } = encryptAttachment(solidPng(uploads.length));
@@ -196,6 +198,6 @@ async function main() {
         const result = await response.json();
         if (!response.ok) throw new Error(`Control request HTTP ${response.status} ${result.error}`);
         console.log(JSON.stringify(result));
-    } else throw new Error('Usage: bot.mjs provision | serve [--evidence build/e2e/interactive-ui/<UTC>] | ctl <command>');
+    } else throw new Error('Usage: bot.mjs provision | serve [--evidence build/e2e/{interactive-ui,latex}/<UTC>] | ctl <command>');
 }
 main().catch(error => { console.error(`Fixture bot failed: ${error.name}`); process.exitCode = 1; });

@@ -45,3 +45,33 @@ The dedicated sandbox scripts refuse occupied ports and foreign container owners
 The standalone `.maestro/tests/interactiveUi/interactiveUiJourney.yaml` requires Alice signed in, the encrypted fixture room open, Labs enabled, portrait Pixel 7 Pro layout, and `MAESTRO_INTERACTIVE_UI_BOT_TOKEN` securely forwarded from the local file. Maestro 2.12.1 executed this flow successfully on the dedicated default Pixel layout at HEADs `4bc4f9ab6f` and `82ff2044d3`; see the verification document. It is excluded from `allTests.yaml`, preserves app data and targets steps 1, 2 and 4 only. Revalidate actual device selectors after layout changes. Its graph swipe uses percentages of the inspected default display; it is not a responsive-layout assertion. Forward the token only through the `MAESTRO_` environment; never put it on the command line. Maestro serializes environment values into local metadata, so scan/redact all token occurrences before sharing artifacts.
 
 Normal cleanup is `ctl shutdown` (bot leaves/forgets its room), remove the adb reverse, restore changed device settings and Labs flag, stop Synapse via `synapse-down.sh`, then shut down only the AVD started here. Keep its data for reruns. The final verification pass completed this cleanup. Synapse data, local credentials and the dedicated AVD are retained; a later run must start a new bot process and create a new fixture room.
+
+## Maths fixtures
+
+Maths is always enabled in the Android app. The pre-existing **New timeline event renderer** developer option selects the renderer for comparison; it is not a maths toggle. Follow [the LaTeX plan](../../../docs/features/latex-plan.md#5-e2e-journey) and record observations in [the verification record](../../../docs/features/latex-verification.md). Preserve Alice's existing session, the retained Synapse data and the dedicated AVD. Do not re-provision an existing sandbox or clear application data.
+
+```sh
+node tools/interactive-ui/fixture-bot/bot.mjs serve --evidence build/e2e/latex/<UTC>
+# Keep serve alive; in another terminal:
+node tools/interactive-ui/fixture-bot/bot.mjs ctl setup-room
+node tools/interactive-ui/fixture-bot/bot.mjs ctl send-maths spec-inline
+```
+
+`send-maths <name>` sends a fresh `m.text` through the same encrypted `sendContent` path as the UI fixtures. HTML fixtures include `format: "org.matrix.custom.html"`; plain fixtures omit both HTML fields. The control response and `sent.jsonl` contain only the event ID, wire type and encrypted boolean, never TeX or message bodies. Unknown names fail before sending.
+
+| Name | Scenario |
+| --- | --- |
+| `spec-inline` | Euler identity, inline with surrounding text |
+| `spec-display` | Integral and fraction in a display block |
+| `spec-wide` | Expanded polynomial through term 12, then ellipsis and term 40; measure its actual width on-device |
+| `spec-mixed` | List, quote, bold and explicit red TeX |
+| `spec-invalid` | Invalid fraction, code fallback |
+| `spec-macro` | Forbidden macro definition, code fallback |
+| `plain-detect` | Raw inline dollar/backslash delimiters and display sum; no HTML |
+| `md-detect` | CommonMark HTML with lossy backslash escaping; raw body retains the TeX |
+| `no-maths` | Currency, escaped dollars and inline code, with no typesetting |
+| `canary` | Synthetic no-content-logging marker; inspect bounded app-PID logcat locally |
+
+The HTML strings are fixed fixtures, not generated at runtime. Tests use pinned dev dependency `commonmark@0.31.2` to verify the Markdown fixtures (only the renderer's final newline is omitted), and Python 3's standard HTML parser to check balanced HTML and parsed `data-mx-maths` values. Run `npm ci && node --test` in this directory. Production bot execution does not require CommonMark or Python.
+
+Evidence accepts only descendants of `build/e2e/interactive-ui/` and `build/e2e/latex/`; traversal and similarly prefixed directories are rejected. Keep raw screenshots, UI dumps and logcat local under ignored `build/e2e/latex/<UTC>/`, inspect before sharing, and never record screenshot-test baselines locally. Sandbox startup resolves the tracked repository/worktree rather than requiring a branch name, retaining occupied-port, dedicated-AVD and container-ownership safeguards. Stop Synapse only with this worktree's `synapse-down.sh`; restore theme and renderer settings, remove the adb reverse, shut down the bot, and stop only an AVD started by the journey.
