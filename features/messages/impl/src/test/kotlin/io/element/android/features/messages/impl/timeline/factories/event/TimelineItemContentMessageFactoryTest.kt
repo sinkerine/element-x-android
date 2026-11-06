@@ -1379,7 +1379,7 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
                     assertThat(result.htmlDocument?.select("[data-mx-maths]").orEmpty()).isEmpty()
                 } else {
                     assertThat(result.captionOrNull()).isEqualTo("ordinary")
-                    assertThat(result.formattedCaptionOrNull()?.toString()).isEqualTo(if (formatted == null) null else "ordinary")
+                    assertThat(result.formattedCaptionOrNull()?.toString()).isEqualTo(formatted?.let { "ordinary" })
                 }
             }
         }

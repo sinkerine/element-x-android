@@ -19,7 +19,7 @@ import io.ratex.RaTeXFontLoader
 import org.junit.Test
 import timber.log.Timber
 
-class RatexMathsLayoutEngineCacheTest : RobolectricTest() {
+class DefaultMathsLayoutEngineCacheTest : RobolectricTest() {
     @Test
     fun `caches failures by source and display style and evicts least recently used entries`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -34,7 +34,7 @@ class RatexMathsLayoutEngineCacheTest : RobolectricTest() {
         every { RaTeXFontLoader.ensureLoaded(any(), any()) } throws IllegalStateException("private source")
         Timber.plant(tree)
         try {
-            val engine = RatexMathsLayoutEngine(context)
+            val engine = DefaultMathsLayoutEngine(context)
             assertThat(engine.layout(" ", false)).isNull()
             assertThat(engine.layout("x".repeat(2_001), false)).isNull()
             verify(exactly = 0) { RaTeXFontLoader.ensureLoaded(any(), any()) }

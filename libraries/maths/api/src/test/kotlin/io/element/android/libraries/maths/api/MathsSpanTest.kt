@@ -79,7 +79,8 @@ class MathsSpanTest : RobolectricTest() {
         text.setSpan(LeadingMarginSpan.Standard(40), 9, 10, Spanned.SPAN_PARAGRAPH)
         val result = text.withMathsMaxWidth(100) as Spanned
         assertThat(result.getSpans(0, result.length, MathsSpan::class.java).map { it.maxWidthPx })
-            .containsExactly(90, 70, 60).inOrder()
+            .containsExactly(90, 70, 60)
+            .inOrder()
         assertThat(text.getSpans(0, text.length, MathsSpan::class.java).map { it.maxWidthPx })
             .containsExactly(Int.MAX_VALUE, Int.MAX_VALUE, Int.MAX_VALUE)
     }
@@ -102,7 +103,8 @@ class MathsSpanTest : RobolectricTest() {
         assertThat(span.getSize(paint, null, 0, 1, metrics)).isEqualTo(41)
         val original = paint.fontMetricsInt
         assertThat(listOf(metrics.ascent, metrics.top, metrics.descent, metrics.bottom))
-            .containsExactly(original.ascent, original.top, original.descent, original.bottom).inOrder()
+            .containsExactly(original.ascent, original.top, original.descent, original.bottom)
+            .inOrder()
     }
 
     @Test

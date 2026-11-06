@@ -40,6 +40,7 @@ class DisplayListRecolorTest {
         val alpha = sentinel.copy(a = 1f - 0.51f / 255)
         val original = DisplayList(3.0, 2.0, 1.0, items(near) + items(far) + items(alpha))
         assertThat(original.withDefaultColor(0x8000FF00.toInt()).items)
-            .containsExactlyElementsIn(items(replacement) + items(far) + items(alpha)).inOrder()
+            .containsExactlyElementsIn(items(replacement) + items(far) + items(alpha))
+            .inOrder()
     }
 }

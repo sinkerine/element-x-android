@@ -31,7 +31,7 @@ internal fun DisplayList.isWithinLimits(): Boolean = width.isFinite() && height.
 
 @ContributesBinding(AppScope::class)
 @SingleIn(AppScope::class)
-class RatexMathsLayoutEngine(
+class DefaultMathsLayoutEngine(
     @ApplicationContext private val context: Context,
 ) : MathsLayoutEngine {
     private val cache = LruCache<Pair<String, Boolean>, Any>(MAX_CACHED_LAYOUTS)
@@ -44,7 +44,8 @@ class RatexMathsLayoutEngine(
         val result = try {
             RaTeXFontLoader.ensureLoaded(context)
             RaTeXEngine.parseBlocking(tex, displayMode, DEFAULT_COLOR_SENTINEL)
-                .takeIf { it.isWithinLimits() }?.let(::RatexMathsLayout)
+                .takeIf { it.isWithinLimits() }
+                ?.let(::RatexMathsLayout)
         } catch (_: RaTeXException) {
             Timber.d("Maths layout rejected (length=%d)", tex.length)
             null

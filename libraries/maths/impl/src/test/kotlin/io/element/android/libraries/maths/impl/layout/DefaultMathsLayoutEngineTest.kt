@@ -22,7 +22,7 @@ import io.ratex.RaTeXFontLoader
 import org.junit.Test
 import timber.log.Timber
 
-class RatexMathsLayoutEngineTest : RobolectricTest() {
+class DefaultMathsLayoutEngineTest : RobolectricTest() {
     @Test
     fun `unavailable native engine returns null without retry or content in logs`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -37,10 +37,10 @@ class RatexMathsLayoutEngineTest : RobolectricTest() {
         every { RaTeXFontLoader.ensureLoaded(any(), any()) } returns 0
         Timber.plant(tree)
         try {
-            val engine = RatexMathsLayoutEngine(context)
+            val engine = DefaultMathsLayoutEngine(context)
             assertThat(engine.layout("private source", false)).isNull()
             assertThat(engine.layout("another source", true)).isNull()
-            assertThat(RatexMathsLayoutEngine(context).layout("third source", false)).isNull()
+            assertThat(DefaultMathsLayoutEngine(context).layout("third source", false)).isNull()
             verify(exactly = 1) { RaTeXFontLoader.ensureLoaded(any(), any()) }
             assertThat(messages).hasSize(1)
             assertThat(messages.single()).contains("Maths engine unavailable")
