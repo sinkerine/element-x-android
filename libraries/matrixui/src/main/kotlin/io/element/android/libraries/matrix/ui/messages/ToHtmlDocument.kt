@@ -29,6 +29,7 @@ import org.jsoup.safety.Safelist
  *
  * @param permalinkParser the parser to use to parse the mentions.
  * @param prefix if not null, the prefix will be inserted at the beginning of the message.
+ * @param keepMaths whether to preserve and normalise maths elements.
  */
 fun FormattedBody.toHtmlDocument(
     permalinkParser: PermalinkParser,
@@ -60,7 +61,7 @@ private fun normaliseMaths(dom: Document) {
     val elements = dom.select("span, div")
     val fallback = elements.filter { element ->
         element.attr(MATHS_ATTRIBUTE).isBlank() ||
-            element.parents().any { it.normalName() in setOf("pre", "code") || (it.isMathsElement() && it.mathsTex().isNotBlank()) }
+            element.parents().any { it.normalName() in setOf("pre", "code") || it.isMathsElement() && it.mathsTex().isNotBlank() }
     }.toSet()
     elements.forEach { element ->
         if (element in fallback) {
@@ -95,7 +96,8 @@ private object CustomHtmlToDomParser {
         val outputSettings = OutputSettings().prettyPrint(false).indentAmount(0)
         val safelist = if (keepMaths) {
             Safelist(safeList).addTags("span", "div")
-                .addAttributes("span", MATHS_ATTRIBUTE).addAttributes("div", MATHS_ATTRIBUTE)
+                .addAttributes("span", MATHS_ATTRIBUTE)
+                .addAttributes("div", MATHS_ATTRIBUTE)
         } else {
             safeList
         }
