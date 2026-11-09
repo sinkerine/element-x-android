@@ -41,8 +41,12 @@ class BotCommandProtocolTest {
         assertThat(parsed.ts).isEqualTo(123)
         assertThat(parse(content())!!.ts).isEqualTo(0)
         assertThat(parse(content())!!.description).isEmpty()
-        assertThat(parse(content(parameters = "[${parameter(primitive("string"), extra = ",\"description\":{\"m.text\":[{\"body\":\"help\"}]}")}]"))!!
-            .parameters.single().description).isEqualTo("help")
+        assertThat(
+            parse(content(parameters = "[${parameter(primitive("string"), extra = ",\"description\":{\"m.text\":[{\"body\":\"help\"}]}")}]"))!!
+                .parameters
+                .single()
+                .description
+        ).isEqualTo("help")
     }
 
     @Test
@@ -115,8 +119,12 @@ class BotCommandProtocolTest {
             assertThat(parse(content(parameters = "[${parameter(string, extra = ",\"optional\":$it")}]"))).isNull()
         }
         assertThat(parse(content(parameters = (1..32).joinToString(prefix = "[", postfix = "]") { parameter(string, "_key$it") }))).isNotNull()
-        assertThat(parse(content(parameters = "[${parameter(string, "a".repeat(64), ",\"optional\":false")}]"))!!
-            .parameters.single().optional).isFalse()
+        assertThat(
+            parse(content(parameters = "[${parameter(string, "a".repeat(64), ",\"optional\":false")}]"))!!
+                .parameters
+                .single()
+                .optional
+        ).isFalse()
     }
 
     @Test

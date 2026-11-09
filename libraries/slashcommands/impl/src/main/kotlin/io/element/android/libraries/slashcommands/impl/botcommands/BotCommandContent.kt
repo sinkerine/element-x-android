@@ -7,13 +7,10 @@
 
 package io.element.android.libraries.slashcommands.impl.botcommands
 
-import io.element.android.libraries.matrix.api.core.UserId
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-
-internal data class BotCommandPayload(val botUserId: UserId, val body: String, val extraContentJson: String?)
 
 private const val SERVER_NAME_PATTERN = "(?:[A-Za-z0-9.-]+|\\[[0-9A-Fa-f:]+\\])(?::[0-9]+)?"
 private val serverNamePattern = Regex(SERVER_NAME_PATTERN)
@@ -22,7 +19,8 @@ private val integerPattern = Regex("-?[0-9]+")
 private fun mapPrimitive(type: BotCommandPrimitiveType, text: String): JsonPrimitive? = when (type) {
     BotCommandPrimitiveType.STRING -> JsonPrimitive(text)
     BotCommandPrimitiveType.INTEGER -> text.takeIf(integerPattern::matches)?.toLongOrNull()
-        ?.takeIf { it in -MAX_SAFE_INTEGER..MAX_SAFE_INTEGER }?.let(::JsonPrimitive)
+        ?.takeIf { it in -MAX_SAFE_INTEGER..MAX_SAFE_INTEGER }
+        ?.let(::JsonPrimitive)
     BotCommandPrimitiveType.BOOLEAN -> when (text.lowercase()) {
         "true", "yes", "on" -> JsonPrimitive(true)
         "false", "no", "off" -> JsonPrimitive(false)

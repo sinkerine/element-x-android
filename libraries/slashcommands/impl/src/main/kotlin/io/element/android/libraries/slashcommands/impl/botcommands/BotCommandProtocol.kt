@@ -19,7 +19,7 @@ import kotlin.math.abs
 
 internal const val BOT_COMMAND_DESCRIPTION_EVENT_TYPE = "org.matrix.msc4391.command_description"
 internal const val BOT_COMMAND_CONTENT_KEY = "org.matrix.msc4391.command"
-internal const val MAX_SAFE_INTEGER = 9007199254740991L
+internal const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
 internal enum class BotCommandPrimitiveType(val wireName: String) {
     STRING("string"),
@@ -63,7 +63,10 @@ private val keyPattern = Regex("[A-Za-z_][A-Za-z0-9_]{0,63}")
 private fun JsonElement?.text(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content
 private fun JsonObject.description(): String =
     (((this["description"] as? JsonObject)?.get("m.text") as? JsonArray)?.firstOrNull() as? JsonObject)
-        ?.get("body").text()?.take(200).orEmpty()
+        ?.get("body")
+        .text()
+        ?.take(200)
+        .orEmpty()
 
 private enum class SchemaLevel { TOP, ITEM, VARIANT }
 

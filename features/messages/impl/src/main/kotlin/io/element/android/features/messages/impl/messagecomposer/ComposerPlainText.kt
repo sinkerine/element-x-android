@@ -26,7 +26,7 @@ internal fun htmlToComposerPlainText(html: String): String {
                         if (isBlock && isNotEmpty() && last() != '\n') append('\n')
                         val contentStart = length
                         node.childNodes().forEach(::appendNode)
-                        if (isBlock && node.nextSibling() != null && (length == contentStart || last() != '\n')) append('\n')
+                        if (isBlock && node.nextSibling() != null && needsLineBreakAfter(contentStart)) append('\n')
                     }
                 }
             }
@@ -34,3 +34,5 @@ internal fun htmlToComposerPlainText(html: String): String {
         appendNode(body)
     }
 }
+
+private fun StringBuilder.needsLineBreakAfter(contentStart: Int): Boolean = length == contentStart || last() != '\n'

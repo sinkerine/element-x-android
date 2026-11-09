@@ -67,8 +67,8 @@ internal fun resolveBotCommand(commands: List<RoomBotCommand>, text: String, isB
             if (qualified) {
                 val qualifier = input.drop(end + 1).takeWhile { !it.isWhitespace() }
                 if (qualifier.isEmpty() ||
-                    (!qualifier.equals(command.qualifier, ignoreCase = true) &&
-                        !qualifier.equals(command.description.botUserId.value.removePrefix("@"), ignoreCase = true))
+                    !qualifier.equals(command.qualifier, ignoreCase = true) &&
+                    !qualifier.equals(command.description.botUserId.value.removePrefix("@"), ignoreCase = true)
                 ) {
                     return@mapNotNull null
                 }
@@ -79,9 +79,9 @@ internal fun resolveBotCommand(commands: List<RoomBotCommand>, text: String, isB
         }
     }.sortedByDescending { it.name.length }
     val match = matches.firstOrNull() ?: return null
-    if (!match.qualified && (isBuiltIn(input.takeWhile { !it.isWhitespace() }) ||
-            matches.any { it.name == match.name && it.command !== match.command })
-    ) {
+    fun hasConflictingBareName() = isBuiltIn(input.takeWhile { !it.isWhitespace() }) ||
+        matches.any { it.name == match.name && it.command !== match.command }
+    if (!match.qualified && hasConflictingBareName()) {
         return null
     }
     return ResolvedBotCommand(match.command, input.drop(match.end).trimStart())

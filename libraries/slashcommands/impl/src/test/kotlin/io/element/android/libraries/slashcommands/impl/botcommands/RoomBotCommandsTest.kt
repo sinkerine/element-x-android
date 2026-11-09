@@ -100,7 +100,8 @@ class RoomBotCommandsTest {
         )
         val commands = descriptions.map { RoomBotCommand(it, "model bot", "hermes", false) }
         assertThat(matchBotCommands(commands, "MOD").map { it.description.command })
-            .containsExactly("model", "model-two", "other", "amodel", "last").inOrder()
+            .containsExactly("model", "model-two", "other", "amodel", "last")
+            .inOrder()
         assertThat(matchBotCommands(commands, "")).containsExactlyElementsIn(commands).inOrder()
         assertThat(matchBotCommands(commands, "---")).isEmpty()
         assertThat(matchBotCommands(commands, "model-t").single().description.command).isEqualTo("model-two")
