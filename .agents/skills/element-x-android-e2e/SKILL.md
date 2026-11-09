@@ -37,6 +37,12 @@ On Nix, enter `nix develop` (or use the existing direnv shell) for build depende
 
 If no AVD exists, create a dedicated test AVD using Android Studio Device Manager or the host SDK's tools. Prefer the CI profile on x86_64 hosts and a host-compatible image on ARM hosts. Verify available SDK tools and their help before constructing commands; do not try to write system images into a read-only Nix SDK. Report a missing emulator/image as a setup blocker with the exact missing dependency.
 
+## Keep build and emulator memory peaks separate
+
+Build the APK with `./tools/gradle-local.sh :app:assembleGplayDebug` before starting a dedicated emulator. The wrapper serializes local builds across worktrees, limits Gradle to two workers with parallel task execution disabled, uses a 4 GiB debug heap and a 2 GiB Kotlin daemon heap, and lets the single-use Gradle daemon exit after the build. Run it inside `nix develop --command` when needed. Direct `gradlew` invocations bypass the shared build lock. Avoid overlapping unit tests, release builds, and debug builds with emulator testing. Preserve any emulator already in use by another session.
+
+The dedicated `tools/interactive-ui/sandbox/avd-up.sh` launcher caps guest RAM at 2048 MiB and CPUs at two. New AVDs use the smaller Pixel 2 profile; existing AVD profiles and sessions are preserved. Emulator host memory also includes graphics and virtualization overhead.
+
 ## Select and inspect the emulator through Orca
 
 When operating inside Orca, read the installed `orca-emulator-android` skill and fetch its full version-matched guide before device commands. Resolve the executable once:
@@ -68,7 +74,7 @@ Outside Orca, use the host Android SDK and explicitly target every adb operation
 Use the standard FOSS Google Play debug variant unless the requested behavior needs another variant:
 
 ```sh
-./gradlew :app:assembleGplayDebug
+./tools/gradle-local.sh :app:assembleGplayDebug
 ```
 
 Expected artifacts:
