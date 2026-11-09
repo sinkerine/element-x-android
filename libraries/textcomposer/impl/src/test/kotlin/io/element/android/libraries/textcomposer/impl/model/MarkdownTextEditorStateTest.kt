@@ -167,6 +167,15 @@ class MarkdownTextEditorStateTest : RobolectricTest() {
         assertThat(mentions.lastOrNull()).isInstanceOf(IntentionalMention.Room::class.java)
     }
 
+    @Test
+    fun `plain text expands all pills without adding markdown escapes`() {
+        val state = aMarkdownTextEditorState(initialText = "/model a_b *c*\n", initialFocus = true)
+        assertThat(state.getMessagePlainText()).isEqualTo("/model a_b *c*\n")
+        state.text.update(aMarkdownTextWithMentions(), needsDisplaying = false)
+        assertThat(state.getMessagePlainText())
+            .isEqualTo("Hello @alice:matrix.org and everyone in @room and a room #room:domain.org")
+    }
+
     private fun aMarkdownTextWithMentions(): CharSequence {
         val userMentionSpan = MentionSpan(MentionType.User(UserId("@alice:matrix.org")))
         val atRoomMentionSpan = MentionSpan(MentionType.Everyone)

@@ -38,6 +38,24 @@ class SuggestionsProcessorTest {
     )
 
     @Test
+    fun `bot command rows pass through in order with distinct picker keys`() = runTest {
+        val builtin = SlashCommandSuggestion("/topic", "<text>", "Set topic")
+        val bot = SlashCommandSuggestion("/topic@hermes", "[text]", "Topic (from Hermes)", A_USER_ID_2)
+        val processor = SuggestionsProcessor(FakeSlashCommandService(getSuggestionsResult = { _, _ -> listOf(builtin, bot) }))
+        val result = processor.process(
+            suggestion = Suggestion(0, 1, SuggestionType.Command, "/"),
+            roomMembersState = RoomMembersState.Ready(persistentListOf()),
+            roomAliasSuggestions = emptyList(),
+            currentUserId = A_USER_ID,
+            canSendRoomMention = { true },
+            isInThread = false,
+        )
+        assertThat(result).containsExactly(ResolvedSuggestion.Command(builtin), ResolvedSuggestion.Command(bot)).inOrder()
+        assertThat(builtin.pickerKey()).isNotEqualTo(bot.pickerKey())
+        assertThat(builtin.pickerKey()).isNotEqualTo(bot.copy(command = builtin.command).pickerKey())
+    }
+
+    @Test
     fun `processing null suggestion will return empty suggestion`() = runTest {
         val result = suggestionsProcessor.process(
             suggestion = null,

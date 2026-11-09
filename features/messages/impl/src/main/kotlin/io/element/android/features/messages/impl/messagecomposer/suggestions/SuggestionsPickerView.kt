@@ -68,7 +68,7 @@ fun SuggestionsPickerView(
                     is ResolvedSuggestion.AtRoom -> "@room"
                     is ResolvedSuggestion.Member -> suggestion.roomMember.userId.value
                     is ResolvedSuggestion.Alias -> suggestion.roomId.value
-                    is ResolvedSuggestion.Command -> suggestion.command.command
+                    is ResolvedSuggestion.Command -> suggestion.command.pickerKey()
                 }
             }
         ) {
@@ -86,6 +86,8 @@ fun SuggestionsPickerView(
         }
     }
 }
+
+internal fun SlashCommandSuggestion.pickerKey(): String = "${botUserId?.value.orEmpty()}|$command"
 
 @Composable
 private fun SuggestionItemView(
@@ -213,6 +215,30 @@ internal fun SuggestionsPickerViewPreview() {
                     roomId = RoomId("!room:matrix.org"),
                     roomName = "My room",
                     roomAvatarUrl = null,
+                ),
+                ResolvedSuggestion.Command(
+                    SlashCommandSuggestion(
+                        command = "/model",
+                        parameters = "[name]",
+                        description = "Show or change the model (from Hermes)",
+                        botUserId = UserId("@hermes:server.org"),
+                    )
+                ),
+                ResolvedSuggestion.Command(
+                    SlashCommandSuggestion(
+                        command = "/help",
+                        parameters = null,
+                        description = "Command from Hermes",
+                        botUserId = UserId("@hermes:server.org"),
+                    )
+                ),
+                ResolvedSuggestion.Command(
+                    SlashCommandSuggestion(
+                        command = "/topic@hermes",
+                        parameters = "[text]",
+                        description = "Set a topic (from Hermes)",
+                        botUserId = UserId("@hermes:server.org"),
+                    )
                 ),
                 ResolvedSuggestion.Command(
                     command = SlashCommandSuggestion(

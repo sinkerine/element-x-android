@@ -125,6 +125,26 @@ class MarkdownTextEditorState(
         }
     }
 
+    /** Returns visible composer text with mention pills expanded to their Matrix identifiers. */
+    fun getMessagePlainText(): String {
+        val charSequence = text.value()
+        if (charSequence !is Spanned) return charSequence.toString()
+        return buildString {
+            append(charSequence)
+            for (mention in charSequence.getMentionSpans().sortedByDescending { charSequence.getSpanStart(it) }) {
+                val replacement = when (val type = mention.type) {
+                    is MentionType.User -> type.userId.value
+                    is MentionType.Everyone -> "@room"
+                    is MentionType.Room -> (type.roomIdOrAlias as? RoomIdOrAlias.Alias)?.roomAlias?.value
+                    else -> null
+                }
+                if (replacement != null) {
+                    replace(charSequence.getSpanStart(mention), charSequence.getSpanEnd(mention), replacement)
+                }
+            }
+        }
+    }
+
     fun getMentions(): List<IntentionalMention> {
         val mentionSpans = text.value().getMentionSpans()
         return mentionSpans.mapNotNull { mentionSpan ->

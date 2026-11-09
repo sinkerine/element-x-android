@@ -498,6 +498,25 @@ class MessageComposerPresenter(
         val message = currentComposerMessage(markdownTextEditorState, richTextEditorState, withMentions = true)
         val capturedMode = messageComposerContext.composerMode
 
+        if (capturedMode is MessageComposerMode.Normal || capturedMode is MessageComposerMode.Reply) {
+            val plainText = if (showTextFormatting) {
+                htmlToComposerPlainText(richTextEditorState.messageHtml)
+            } else {
+                markdownTextEditorState.getMessagePlainText()
+            }
+            val botCommand = slashCommandService.resolveBotCommand(plainText)
+            if (botCommand != null) {
+                val repliedTo = (capturedMode as? MessageComposerMode.Reply)?.eventId
+                resetComposer(markdownTextEditorState, richTextEditorState, fromEdit = false)
+                timelineController.invokeOnCurrentTimeline {
+                    slashCommandService.sendBotCommand(botCommand, this, repliedTo)
+                        .onFailure { Timber.e(it, "Failed to send bot command") }
+                }
+                onTextMessageSent(capturedMode)
+                return@launch
+            }
+        }
+
         val slashCommand = if (capturedMode is MessageComposerMode.Normal) {
             slashCommandService.parse(
                 textMessage = message.markdown,
@@ -603,6 +622,10 @@ class MessageComposerPresenter(
             }
         }
 
+        onTextMessageSent(capturedMode)
+    }
+
+    private suspend fun onTextMessageSent(capturedMode: MessageComposerMode) {
         val roomInfo = room.info()
         val roomMembers = room.membersStateFlow.value
 

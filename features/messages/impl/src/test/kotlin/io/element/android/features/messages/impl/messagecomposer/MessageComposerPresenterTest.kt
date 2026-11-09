@@ -95,6 +95,7 @@ import io.element.android.libraries.preferences.api.store.SessionPreferencesStor
 import io.element.android.libraries.preferences.api.store.VideoCompressionPreset
 import io.element.android.libraries.preferences.test.InMemorySessionPreferencesStore
 import io.element.android.libraries.push.test.notifications.conversations.FakeNotificationConversationService
+import io.element.android.libraries.slashcommands.api.BotCommandMessage
 import io.element.android.libraries.slashcommands.api.SlashCommand
 import io.element.android.libraries.slashcommands.api.SlashCommandService
 import io.element.android.libraries.slashcommands.test.FakeSlashCommandService
@@ -291,6 +292,7 @@ class MessageComposerPresenterTest : RobolectricTest() {
         )
         val presenter = createPresenter(
             room = joinedRoom,
+            slashCommandService = FakeSlashCommandService(resolveBotCommandResult = { error("Caption edits must not resolve bot commands") }),
             isRichTextEditorEnabled = false,
         )
         val permalinkBuilder = FakePermalinkBuilder(permalinkForUserLambda = { Result.success("") })
@@ -391,6 +393,108 @@ class MessageComposerPresenterTest : RobolectricTest() {
     }
 
     @Test
+    fun `null bot resolution preserves builtin command execution`() = runTest {
+        val timeline = FakeTimeline()
+        val builtin = SlashCommand.SendPlainText("hello")
+        var parsed = false
+        var proceeded = false
+        val presenter = createPresenter(
+            timeline = timeline,
+            slashCommandService = FakeSlashCommandService(
+                resolveBotCommandResult = { null },
+                parseResult = { _, _, _ ->
+                    parsed = true
+                    builtin
+                },
+                proceedSendMessageResult = { command, actualTimeline ->
+                    assertThat(command).isEqualTo(builtin)
+                    assertThat(actualTimeline).isSameInstanceAs(timeline)
+                    proceeded = true
+                    Result.success(Unit)
+                },
+            ),
+        )
+        presenter.test {
+            val state = awaitFirstItem()
+            state.textEditorState.setHtml("/plain hello")
+            state.eventSink(MessageComposerEvent.SendMessage)
+            advanceUntilIdle()
+            assertThat(parsed).isTrue()
+            assertThat(proceeded).isTrue()
+            assertThat(state.textEditorState.messageHtml()).isEmpty()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `null bot resolution preserves unknown command error and composer text`() = runTest {
+        val presenter = createPresenter(
+            slashCommandService = FakeSlashCommandService(
+                resolveBotCommandResult = { null },
+                parseResult = { _, _, _ -> SlashCommand.ErrorUnknownSlashCommand("Unknown command") },
+            ),
+        )
+        presenter.test {
+            val state = awaitFirstItem()
+            state.textEditorState.setHtml("/unknown")
+            state.eventSink(MessageComposerEvent.SendMessage)
+            val failed = awaitItem()
+            assertThat(failed.slashCommandAction).isInstanceOf(AsyncAction.Failure::class.java)
+            assertThat(failed.textEditorState.messageHtml()).isEqualTo("/unknown")
+            assertThat(analyticsService.capturedEvents).isEmpty()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `bot commands route normal and replies on main and thread timelines`() = runTest {
+        for (inThread in listOf(false, true)) {
+            for (reply in listOf(false, true)) {
+                for (richText in listOf(false, true)) {
+                    analyticsService.capturedEvents.clear()
+                    val timeline = FakeTimeline(mode = if (inThread) Timeline.Mode.Thread(A_THREAD_ID) else Timeline.Mode.Live)
+                    val command = BotCommandMessage(A_USER_ID, "/model a_b", null)
+                    var sent = false
+                    val presenter = createPresenter(
+                        timeline = timeline,
+                        threadRoot = if (inThread) A_THREAD_ID else null,
+                        isRichTextEditorEnabled = richText,
+                        slashCommandService = FakeSlashCommandService(
+                            resolveBotCommandResult = { text ->
+                                assertThat(text).isEqualTo("/model a_b")
+                                command
+                            },
+                            sendBotCommandResult = { message, actualTimeline, replyId ->
+                                assertThat(message).isEqualTo(command)
+                                assertThat(actualTimeline).isSameInstanceAs(timeline)
+                                assertThat(replyId).isEqualTo(if (reply) AN_EVENT_ID else null)
+                                sent = true
+                                if (inThread && reply && richText) Result.failure(IllegalStateException("Send failed")) else Result.success(Unit)
+                            },
+                        ),
+                    )
+                    presenter.test {
+                        var state = awaitFirstItem()
+                        if (reply) {
+                            state.eventSink(MessageComposerEvent.SetMode(aReplyMode()))
+                            state = awaitItem()
+                        }
+                        if (richText) state.textEditorState.setHtml("/model a_b") else state.textEditorState.setMarkdown("/model a_b")
+                        state.eventSink(MessageComposerEvent.SendMessage)
+                        advanceUntilIdle()
+                        assertThat(state.textEditorState.messageMarkdown(FakePermalinkBuilder())).isEmpty()
+                        assertThat(sent).isTrue()
+                        assertThat(analyticsService.capturedEvents).containsExactly(
+                            Composer(inThread = false, isEditing = false, isReply = reply, messageType = Composer.MessageType.Text)
+                        )
+                        cancelAndIgnoreRemainingEvents()
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun `present - send message with rich text enabled`() = runTest {
         val presenter = createPresenter(
             room = FakeJoinedRoom(
@@ -480,6 +584,7 @@ class MessageComposerPresenterTest : RobolectricTest() {
         )
         val presenter = createPresenter(
             joinedRoom,
+            slashCommandService = FakeSlashCommandService(resolveBotCommandResult = { error("Edits must not resolve bot commands") }),
         )
         moleculeFlow(RecompositionMode.Immediate) {
             val state = presenter.present()
@@ -492,9 +597,9 @@ class MessageComposerPresenterTest : RobolectricTest() {
             val withMessageState = awaitItem()
             assertThat(withMessageState.mode).isEqualTo(mode)
             assertThat(withMessageState.textEditorState.messageHtml()).isEqualTo(A_MESSAGE)
-            withMessageState.textEditorState.setHtml(ANOTHER_MESSAGE)
+            withMessageState.textEditorState.setHtml("/arxiv vision")
             val withEditedMessageState = awaitItem()
-            assertThat(withEditedMessageState.textEditorState.messageHtml()).isEqualTo(ANOTHER_MESSAGE)
+            assertThat(withEditedMessageState.textEditorState.messageHtml()).isEqualTo("/arxiv vision")
             withEditedMessageState.eventSink.invoke(MessageComposerEvent.SendMessage)
             skipItems(1)
             val messageSentState = awaitItem()
@@ -504,7 +609,7 @@ class MessageComposerPresenterTest : RobolectricTest() {
 
             assert(editMessageLambda)
                 .isCalledOnce()
-                .with(value(AN_EVENT_ID.toEventOrTransactionId()), value(ANOTHER_MESSAGE), value(ANOTHER_MESSAGE), any())
+                .with(value(AN_EVENT_ID.toEventOrTransactionId()), value("/arxiv vision"), value("/arxiv vision"), any())
 
             assertThat(analyticsService.capturedEvents).containsExactly(
                 Composer(
