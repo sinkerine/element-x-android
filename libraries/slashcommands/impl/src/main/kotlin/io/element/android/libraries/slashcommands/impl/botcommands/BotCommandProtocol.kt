@@ -22,8 +22,14 @@ internal const val BOT_COMMAND_CONTENT_KEY = "org.matrix.msc4391.command"
 internal const val MAX_SAFE_INTEGER = 9007199254740991L
 
 internal enum class BotCommandPrimitiveType(val wireName: String) {
-    STRING("string"), INTEGER("integer"), BOOLEAN("boolean"), USER_ID("user_id"),
-    SERVER_NAME("server_name"), ROOM_ALIAS("room_alias"), ROOM_ID("room_id"), EVENT_ID("event_id"),
+    STRING("string"),
+    INTEGER("integer"),
+    BOOLEAN("boolean"),
+    USER_ID("user_id"),
+    SERVER_NAME("server_name"),
+    ROOM_ALIAS("room_alias"),
+    ROOM_ID("room_id"),
+    EVENT_ID("event_id"),
 }
 
 internal sealed interface BotCommandLiteralValue {
@@ -123,7 +129,9 @@ internal fun parseBotCommandDescription(sender: UserId, contentJson: String, tim
             val primitive = parameter["optional"] as? JsonPrimitive ?: return null
             if (primitive.isString) return null
             primitive.booleanOrNull ?: return null
-        } else false
+        } else {
+            false
+        }
         BotCommandParameter(key, parseSchema(parameter["schema"]) ?: return null, parameter.description(), optional)
     }
     return BotCommandDescription(sender, command, aliasNames, content.description(), parsedParameters, timestamp ?: 0)

@@ -92,8 +92,11 @@ class RoomBotCommandsTest {
     @Test
     fun `matcher uses substring position then key weight stable ties and dedupe`() {
         val descriptions = listOf(
-            description("amodel"), description("model"), description("other", text = "model"),
-            description("model-two", aliases = listOf("model")), description("last", aliases = listOf("model")),
+            description("amodel"),
+            description("model"),
+            description("other", text = "model"),
+            description("model-two", aliases = listOf("model")),
+            description("last", aliases = listOf("model")),
         )
         val commands = descriptions.map { RoomBotCommand(it, "model bot", "hermes", false) }
         assertThat(matchBotCommands(commands, "MOD").map { it.description.command })

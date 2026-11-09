@@ -69,7 +69,9 @@ internal fun resolveBotCommand(commands: List<RoomBotCommand>, text: String, isB
                 if (qualifier.isEmpty() ||
                     (!qualifier.equals(command.qualifier, ignoreCase = true) &&
                         !qualifier.equals(command.description.botUserId.value.removePrefix("@"), ignoreCase = true))
-                ) return@mapNotNull null
+                ) {
+                    return@mapNotNull null
+                }
                 end += qualifier.length + 1
             }
             if (end < input.length && !input[end].isWhitespace()) return@mapNotNull null
@@ -79,7 +81,9 @@ internal fun resolveBotCommand(commands: List<RoomBotCommand>, text: String, isB
     val match = matches.firstOrNull() ?: return null
     if (!match.qualified && (isBuiltIn(input.takeWhile { !it.isWhitespace() }) ||
             matches.any { it.name == match.name && it.command !== match.command })
-    ) return null
+    ) {
+        return null
+    }
     return ResolvedBotCommand(match.command, input.drop(match.end).trimStart())
 }
 

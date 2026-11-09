@@ -79,7 +79,8 @@ class BotCommandContentTest {
     @Test
     fun `unsupported schemas anywhere suppress mapping even when optional or another union branch matches`() {
         val unsupported = listOf(
-            primitive(BotCommandPrimitiveType.ROOM_ID), primitive(BotCommandPrimitiveType.EVENT_ID),
+            primitive(BotCommandPrimitiveType.ROOM_ID),
+            primitive(BotCommandPrimitiveType.EVENT_ID),
             BotCommandSchema.ArrayOf(primitive(BotCommandPrimitiveType.STRING)),
             BotCommandSchema.Union(listOf(primitive(BotCommandPrimitiveType.STRING), primitive(BotCommandPrimitiveType.ROOM_ID))),
             BotCommandSchema.Union(listOf(primitive(BotCommandPrimitiveType.EVENT_ID), primitive(BotCommandPrimitiveType.STRING))),
@@ -107,7 +108,12 @@ class BotCommandContentTest {
     fun `payload uses canonical command with optional extra content and preserves arguments`() {
         val bot = UserId("@hermes:example.org")
         val description = BotCommandDescription(
-            bot, "Model", listOf("m"), "", listOf(parameter(primitive(BotCommandPrimitiveType.STRING), "name", true)), 0,
+            bot,
+            "Model",
+            listOf("m"),
+            "",
+            listOf(parameter(primitive(BotCommandPrimitiveType.STRING), "name", true)),
+            0,
         )
         val command = RoomBotCommand(description, "Hermes", "hermes", true)
         val payload = createBotCommandMessage(ResolvedBotCommand(command, "gpt-5.5 --provider openrouter"))

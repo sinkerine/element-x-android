@@ -72,7 +72,10 @@ class BotCommandProtocolTest {
         assertThat(parsed.aliases).isEmpty()
         assertThat(parsed.ts).isEqualTo(42)
         assertThat(parsed.parameters.map { it.key to it.optional }).containsExactly(
-            "target_room" to false, "timeout_seconds" to false, "apply_to_policy" to true, "target_users" to false,
+            "target_room" to false,
+            "timeout_seconds" to false,
+            "apply_to_policy" to true,
+            "target_users" to false,
         ).inOrder()
         assertThat(parsed.parameters.last().schema).isEqualTo(
             BotCommandSchema.ArrayOf(BotCommandSchema.Primitive(BotCommandPrimitiveType.USER_ID)),
@@ -96,8 +99,14 @@ class BotCommandProtocolTest {
     @Test
     fun `parameter count key uniqueness optional and schema presence are validated`() {
         val string = primitive("string")
-        listOf("null", "{}", "[null]", "[{}]", "[${parameter(string)},${parameter(string)}]",
-            (1..33).joinToString(prefix = "[", postfix = "]") { parameter(string, "key$it") })
+        listOf(
+            "null",
+            "{}",
+            "[null]",
+            "[{}]",
+            "[${parameter(string)},${parameter(string)}]",
+            (1..33).joinToString(prefix = "[", postfix = "]") { parameter(string, "key$it") },
+        )
             .forEach { assertThat(parse(content(parameters = it))).isNull() }
         listOf("1key", "", "bad-key", "a".repeat(65), "é").forEach {
             assertThat(parse(content(parameters = "[${parameter(string, it)}]"))).isNull()
@@ -116,12 +125,25 @@ class BotCommandProtocolTest {
         listOf("null", "[]", "{}", primitive("unknown"), """{"schema_type":"primitive","type":1}""")
             .forEach { assertThat(schemaValid(it)).isFalse() }
         fun literal(type: String, value: String) = """{"schema_type":"literal","literal_type":"$type","value":$value}"""
-        listOf(literal("string", "\"yes\""), literal("boolean", "false"), literal("integer", "1.0"),
-            literal("integer", "-9007199254740991"), literal("integer", "9007199254740991"), literal("integer", "1e2"))
+        listOf(
+            literal("string", "\"yes\""),
+            literal("boolean", "false"),
+            literal("integer", "1.0"),
+            literal("integer", "-9007199254740991"),
+            literal("integer", "9007199254740991"),
+            literal("integer", "1e2"),
+        )
             .forEach { assertThat(schemaValid(it)).isTrue() }
-        listOf(literal("string", "1"), literal("boolean", "\"true\""), literal("integer", "\"1\""),
-            literal("integer", "1.1"), literal("integer", "9007199254740992"), literal("integer", "-9007199254740992"),
-            literal("user_id", "\"@a:b\""), literal("integer", "null"))
+        listOf(
+            literal("string", "1"),
+            literal("boolean", "\"true\""),
+            literal("integer", "\"1\""),
+            literal("integer", "1.1"),
+            literal("integer", "9007199254740992"),
+            literal("integer", "-9007199254740992"),
+            literal("user_id", "\"@a:b\""),
+            literal("integer", "null"),
+        )
             .forEach { assertThat(schemaValid(it)).isFalse() }
     }
 
@@ -131,8 +153,15 @@ class BotCommandProtocolTest {
         fun array(items: String) = """{"schema_type":"array","items":$items}"""
         val string = primitive("string")
         listOf(array(string), union(string), array(union(string))).forEach { assertThat(schemaValid(it)).isTrue() }
-        listOf(union(""), union(union(string)), union(array(string)), array(array(string)), array(union(union(string))),
-            """{"schema_type":"union","variants":{}}""", """{"schema_type":"array"}""")
+        listOf(
+            union(""),
+            union(union(string)),
+            union(array(string)),
+            array(array(string)),
+            array(union(union(string))),
+            """{"schema_type":"union","variants":{}}""",
+            """{"schema_type":"array"}""",
+        )
             .forEach { assertThat(schemaValid(it)).isFalse() }
     }
 
