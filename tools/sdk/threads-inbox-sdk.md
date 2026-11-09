@@ -2,6 +2,8 @@
 
 Threads Inbox uses `Client.threadInboxPager`, `Client.threadInboxUnread` and `subscribeToThreadInboxUpdates` from the local Matrix Rust SDK fork's `main` branch. Android variants use the same locally built AAR so release compilation cannot silently select the older published bindings.
 
+The local AAR also carries the MSC4391 bot-command subscription `required_state` (`org.matrix.msc4391.command_description`, with wildcard state keys) and `Timeline.sendReplyWithExtraContent` reply FFI. For Hermes slash commands, build SDK commit `96d0135495d68dd76a80510a41a86e2f90270490` in a clean local clone checked out as `main`; this delivery is merged into the local SDK fork's `main` and preserves the Threads Inbox pager/unread APIs. The bindings also expose `Room.subscribeToStateEvents` and `Timeline.sendWithExtraContent`.
+
 Build prerequisites: Rust 1.96 or later with the Android target installed, cargo-ndk, JDK 21, Android SDK and NDK. Set `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and `ANDROID_NDK_HOME`. The default authorized checkout is `/home/sinkerine/orca/matrix-rust-sdk`; override it with `THREADS_INBOX_SDK_CHECKOUT` when reproducing elsewhere. The script requires the SDK checkout to be on `main` and pins the Kotlin packaging project to the revision used during verification.
 
 ```sh
