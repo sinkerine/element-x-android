@@ -19,6 +19,7 @@ setupDependencyInjection()
 
 dependencies {
     implementation(libs.coroutines.core)
+    implementation(libs.serialization.json)
     implementation(projects.libraries.androidutils)
     implementation(projects.libraries.preferences.api)
     implementation(projects.libraries.core)
