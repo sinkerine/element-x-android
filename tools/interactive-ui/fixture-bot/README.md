@@ -4,7 +4,7 @@ This standalone Node ESM harness uses `matrix-js-sdk` 45.0.0 and its Rust WASM c
 
 ```sh
 (cd tools/interactive-ui/fixture-bot && npm ci && node --test)
-nix develop --command ./gradlew :app:assembleGplayDebug
+nix develop --command ./tools/gradle-local.sh :app:assembleGplayDebug
 tools/interactive-ui/sandbox/synapse-up.sh
 node tools/interactive-ui/fixture-bot/bot.mjs provision
 node tools/interactive-ui/fixture-bot/bot.mjs serve --evidence build/e2e/interactive-ui/<UTC>
@@ -39,6 +39,8 @@ Use the returned event IDs for revisions and threads. Each send gets a new `ui_i
 Upload five PNGs for the carousel: red, green, blue, yellow, purple. Images are real RGB PNGs encrypted using AES-256-CTR with a random 256-bit key, a random 64-bit IV prefix, zero counter suffix, and SHA-256 over the ciphertext. The upload uses `application/octet-stream`. Descriptors and keys stay in the bot. Upload **two additional, unused URIs** for the valid/corrupt content scenario; `--image-offset 5` selects them. The corruption variant uses the second URI with an incorrect hash. Before the accepted cache repair, a previously decrypted URI could reuse old cached pixels; the separate URI was introduced to prove rejection of a fresh corrupt attachment despite that historical defect. Current warm/cold same-URI tests now reject altered hash/key/IV descriptors and plain requests for previously encrypted pixels. Keep the distinct-URI scenario as a fresh-attachment control alongside those same-URI checks.
 
 `sent.jsonl` records the actual event type fetched from Synapse after sending, and rejects a plaintext send. `actions.jsonl` is emitted only after the bot sees the action content; it records `wire_type`, decrypted type, action IDs/values, mentions and relations. Nonces are reduced to length and base64url checks. Counts deduplicate server event IDs; use an Alice sender filter for zero-event assertions because bot sends and edits also count. Marks cover events observed after the mark, not arbitrary server history. SDK logs remain local and are not a redaction-safe evidence API; inspect before sharing. Control errors intentionally return only exception names.
+
+Build before starting the emulator to keep memory peaks separate. The local build wrapper serializes builds across worktrees, limits Gradle to two workers, and exits its single-use daemon after the build. The emulator uses 2048 MiB guest RAM and two cores; new AVDs use a Pixel 2 profile, while existing profiles and sessions are preserved.
 
 The dedicated sandbox scripts refuse occupied ports and foreign container ownership. Synapse binds `127.0.0.1:18028`, is pinned to the local image RepoDigest, and retains data in ignored `build/e2e/interactive-ui/synapse`. `avd-up.sh` creates only `interactive_ui_a1`, API 33 Google APIs x86_64, under `~/.local/share/element-x-e2e/avds`, on port 5584. Run it with JDK 21 and the host emulator's shared libraries available. This NixOS host needed `steam-run` plus NSS, NSPR and libxkbfile libraries; local wrapper details are recorded in the ignored checkpoint summary. Install once on the verified dedicated device with `adb -s emulator-5584 install -r --no-incremental` after building; never retry installation in a loop. Use `adb -s emulator-5584 reverse tcp:18028 tcp:18028` for login.
 

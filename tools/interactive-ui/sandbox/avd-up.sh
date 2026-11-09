@@ -38,12 +38,12 @@ if [[ ! -f $ANDROID_AVD_HOME/$name.ini ]]; then
     printf 'no\n' | "$java_bin" -Dcom.android.sdkmanager.toolsdir="$sdk/cmdline-tools/latest" \
         -Dcom.android.sdklib.toolsdir="$sdk/cmdline-tools/latest" \
         -cp "$sdk/cmdline-tools/latest/lib/avdmanager-classpath.jar" com.android.sdklib.tool.AvdManagerCli \
-        create avd --name "$name" --package 'system-images;android-33;google_apis;x86_64' --device pixel_7_pro >/dev/null
+        create avd --name "$name" --package 'system-images;android-33;google_apis;x86_64' --device pixel_2 >/dev/null
 fi
 # On NixOS invoke this script in a host runtime wrapper, e.g. steam-run bash .../avd-up.sh.
 "$emulator" -version >/dev/null
 nohup "$emulator" -avd "$name" -port 5584 -no-window -no-audio -no-boot-anim -no-snapshot-save \
-    -gpu swiftshader_indirect -camera-back none >build/e2e/interactive-ui/emulator.log 2>&1 </dev/null &
+    -memory 2048 -cores 2 -gpu swiftshader_indirect -camera-back none >build/e2e/interactive-ui/emulator.log 2>&1 </dev/null &
 emulator_pid=$!
 printf '%s\n' "$emulator_pid" >build/e2e/interactive-ui/emulator.pid
 for ((i=0; i<120; i++)); do

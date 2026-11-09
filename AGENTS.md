@@ -76,7 +76,7 @@ Common Gradle tasks:
 ### Sandbox End-to-End Testing
 
 - Follow the [Element X Android e2e skill](.agents/skills/element-x-android-e2e/SKILL.md) to test features in a dedicated Android emulator sandbox.
-- Run from the current feature worktree's repository root. Build the current branch with `./gradlew :app:assembleGplayDebug`, then install the matching ABI debug APK using the installation rules below.
+- Run from the current feature worktree's repository root. Build the current branch with `./tools/gradle-local.sh :app:assembleGplayDebug` before starting the dedicated emulator, then install the matching ABI debug APK using the installation rules below.
 - Use Orca for interactive verification or Maestro for repeatable flows, with dedicated Matrix test accounts and rooms. Walk through the feature's journey and assert each expected result; launching the app alone is not verification.
 - Follow the skill's environment setup, fixture, evidence, and cleanup instructions. Keep local evidence under ignored `build/e2e/` and report missing dependencies or credentials as blockers.
 - Preserve existing sessions and use synthetic content in dedicated test fixtures. Never use personal rooms or clear an existing installation to prepare a test.
