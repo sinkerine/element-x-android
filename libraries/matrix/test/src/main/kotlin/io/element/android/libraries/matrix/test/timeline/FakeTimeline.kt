@@ -62,6 +62,22 @@ class FakeTimeline(
         lambdaError()
     }
 ) : Timeline {
+    var sendPlainTextWithExtraContentLambda: (
+        body: String,
+        intentionalMentions: List<IntentionalMention>,
+        extraContentJson: String?,
+        repliedToEventId: EventId?,
+    ) -> Result<Unit> = { _, _, _, _ -> lambdaError() }
+
+    override suspend fun sendPlainTextWithExtraContent(
+        body: String,
+        intentionalMentions: List<IntentionalMention>,
+        extraContentJson: String?,
+        repliedToEventId: EventId?,
+    ): Result<Unit> = simulateLongTask {
+        sendPlainTextWithExtraContentLambda(body, intentionalMentions, extraContentJson, repliedToEventId)
+    }
+
     var sendMessageLambda: (
         body: String,
         htmlBody: String?,

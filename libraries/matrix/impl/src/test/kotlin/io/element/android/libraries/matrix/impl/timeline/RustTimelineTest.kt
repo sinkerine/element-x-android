@@ -11,6 +11,10 @@ package io.element.android.libraries.matrix.impl.timeline
 
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
+import io.element.android.libraries.matrix.api.core.EventId
+import io.element.android.libraries.matrix.api.core.ThreadId
+import io.element.android.libraries.matrix.api.core.UserId
+import io.element.android.libraries.matrix.api.room.IntentionalMention
 import io.element.android.libraries.matrix.api.room.JoinedRoom
 import io.element.android.libraries.matrix.api.timeline.MatrixTimelineItem
 import io.element.android.libraries.matrix.api.timeline.Timeline
@@ -24,6 +28,12 @@ import io.element.android.services.toolbox.api.systemclock.SystemClock
 import io.element.android.services.toolbox.test.systemclock.A_FAKE_TIMESTAMP
 import io.element.android.services.toolbox.test.systemclock.FakeSystemClock
 import io.element.android.tests.testutils.testCoroutineDispatchers
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.slot
+import io.mockk.unmockkStatic
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -32,11 +42,127 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import org.matrix.rustcomponents.sdk.Mentions
+import org.matrix.rustcomponents.sdk.MessageContent
+import org.matrix.rustcomponents.sdk.MessageType
+import org.matrix.rustcomponents.sdk.RoomMessageEventContentWithoutRelation
 import org.matrix.rustcomponents.sdk.TimelineDiff
+import org.matrix.rustcomponents.sdk.contentWithoutRelationFromMessage
 import uniffi.matrix_sdk.PaginationStatus
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.cancellation.CancellationException
 import org.matrix.rustcomponents.sdk.Timeline as InnerTimeline
 
 class RustTimelineTest {
+    @Test
+    fun `plain text extra content forwards body mentions and extra JSON for main and thread sends and replies`() = runTest {
+        mockkStatic(::contentWithoutRelationFromMessage)
+        try {
+            val delegateDispatcher = testCoroutineDispatchers().io
+            var onTimelineDispatcher = false
+            val dispatcher = object : CoroutineDispatcher() {
+                override fun dispatch(context: CoroutineContext, block: Runnable) {
+                    delegateDispatcher.dispatch(context) {
+                        onTimelineDispatcher = true
+                        try {
+                            block.run()
+                        } finally {
+                            onTimelineDispatcher = false
+                        }
+                    }
+                }
+            }
+            val input = slot<MessageContent>()
+            val baseContent = mockk<RoomMessageEventContentWithoutRelation>()
+            val content = mockk<RoomMessageEventContentWithoutRelation>(relaxed = true)
+            val mentions = slot<Mentions>()
+            every { contentWithoutRelationFromMessage(capture(input)) } returns baseContent
+            every { baseContent.withMentions(capture(mentions)) } returns content
+            val body = "/model **literal** <tag> --provider openrouter"
+            val bot = UserId("@bot:example.org")
+            val extra = """{"org.matrix.msc4391.command":{"command":"model"}}"""
+            for (mode in listOf(Timeline.Mode.Live, Timeline.Mode.Thread(ThreadId("\$root")))) {
+                for (reply in listOf(null, EventId("\$reply"))) {
+                    for (extraJson in listOf(extra, null)) {
+                        var sends = 0
+                        var replies = 0
+                        val inner = FakeFfiTimeline().apply {
+                            sendWithExtraContentLambda = { actualContent, actualExtra ->
+                                sends++
+                                assertThat(onTimelineDispatcher).isTrue()
+                                assertThat(actualContent).isSameInstanceAs(content)
+                                assertThat(actualExtra).isEqualTo(extraJson)
+                                mockk()
+                            }
+                            sendReplyWithExtraContentLambda = { actualContent, id, actualExtra, addMentions ->
+                                replies++
+                                assertThat(onTimelineDispatcher).isTrue()
+                                assertThat(actualContent).isSameInstanceAs(content)
+                                assertThat(id).isEqualTo(reply?.value)
+                                assertThat(actualExtra).isEqualTo(extraJson)
+                                assertThat(addMentions).isFalse()
+                                mockk()
+                            }
+                        }
+                        val timeline = createRustTimeline(inner, mode = mode, dispatcher = dispatcher)
+                        timeline.sendPlainTextWithExtraContent(body, listOf(IntentionalMention.User(bot)), extraJson, reply).getOrThrow()
+                        assertThat(sends).isEqualTo(if (reply == null) 1 else 0)
+                        assertThat(replies).isEqualTo(if (reply == null) 0 else 1)
+                        assertThat(input.captured.body).isEqualTo(body)
+                        val text = (input.captured.msgType as MessageType.Text).content
+                        assertThat(text.body).isEqualTo(body)
+                        assertThat(text.formatted).isNull()
+                        assertThat(mentions.captured.userIds).containsExactly(bot.value)
+                        assertThat(mentions.captured.room).isFalse()
+                    }
+                }
+            }
+            verify(exactly = 8) { content.destroy() }
+        } finally {
+            unmockkStatic(::contentWithoutRelationFromMessage)
+        }
+    }
+
+    @Test
+    fun `plain text extra content wraps send and construction failures and destroys content`() = runTest {
+        mockkStatic(::contentWithoutRelationFromMessage)
+        try {
+            val failure = IllegalStateException("SDK failure")
+            val baseContent = mockk<RoomMessageEventContentWithoutRelation>()
+            val content = mockk<RoomMessageEventContentWithoutRelation>(relaxed = true)
+            every { contentWithoutRelationFromMessage(any()) } returns baseContent
+            every { baseContent.withMentions(any()) } returns content
+            val inner = FakeFfiTimeline().apply {
+                sendWithExtraContentLambda = { _, _ -> throw failure }
+                sendReplyWithExtraContentLambda = { _, _, _, _ -> throw failure }
+            }
+            val timeline = createRustTimeline(inner)
+            for (reply in listOf(null, EventId("\$reply"))) {
+                val result = timeline.sendPlainTextWithExtraContent("/model", emptyList(), "{}", reply)
+                assertThat(result.exceptionOrNull()).isSameInstanceAs(failure)
+            }
+            verify(exactly = 2) { content.destroy() }
+            val cancellation = CancellationException("SDK cancellation")
+            inner.sendWithExtraContentLambda = { _, _ -> throw cancellation }
+            inner.sendReplyWithExtraContentLambda = { _, _, _, _ -> throw cancellation }
+            for (reply in listOf(null, EventId("\$reply"))) {
+                val thrown = try {
+                    timeline.sendPlainTextWithExtraContent("/model", emptyList(), null, reply)
+                    null
+                } catch (exception: CancellationException) {
+                    exception
+                }
+                assertThat(thrown).isInstanceOf(CancellationException::class.java)
+            }
+            verify(exactly = 4) { content.destroy() }
+            every { contentWithoutRelationFromMessage(any()) } throws failure
+            assertThat(timeline.sendPlainTextWithExtraContent("/model", emptyList(), null, null).exceptionOrNull())
+                .isSameInstanceAs(failure)
+        } finally {
+            unmockkStatic(::contentWithoutRelationFromMessage)
+        }
+    }
+
     @Test
     fun `delayed timeline receipt cannot clear newer explicit unread`() = runTest {
         val actions = io.element.android.libraries.matrix.impl.room.threads.ThreadReadActions()

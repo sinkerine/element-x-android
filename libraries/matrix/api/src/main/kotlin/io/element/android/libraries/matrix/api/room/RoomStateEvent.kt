@@ -1,0 +1,21 @@
+/*
+ * Copyright (c) 2026 Element Creations Ltd.
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial.
+ * Please see LICENSE files in the repository root for full details.
+ */
+
+package io.element.android.libraries.matrix.api.room
+
+import io.element.android.libraries.matrix.api.core.EventId
+import io.element.android.libraries.matrix.api.core.UserId
+
+/** A room state event as stored by the SDK; [contentJson] is the raw `content` object. */
+data class RoomStateEvent(
+    val eventType: StateEventType,
+    val stateKey: String,
+    val sender: UserId,
+    val contentJson: String,
+    val eventId: EventId?,
+    val timestamp: Long?,
+)

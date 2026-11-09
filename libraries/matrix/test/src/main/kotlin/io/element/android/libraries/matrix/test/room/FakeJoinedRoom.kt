@@ -23,7 +23,9 @@ import io.element.android.libraries.matrix.api.room.JoinedRoom
 import io.element.android.libraries.matrix.api.room.RoomInfo
 import io.element.android.libraries.matrix.api.room.RoomMembersState
 import io.element.android.libraries.matrix.api.room.RoomNotificationSettingsState
+import io.element.android.libraries.matrix.api.room.RoomStateEvent
 import io.element.android.libraries.matrix.api.room.SendQueueUpdate
+import io.element.android.libraries.matrix.api.room.StateEventType
 import io.element.android.libraries.matrix.api.room.history.RoomHistoryVisibility
 import io.element.android.libraries.matrix.api.room.join.JoinRule
 import io.element.android.libraries.matrix.api.room.knock.KnockRequest
@@ -92,6 +94,7 @@ class FakeJoinedRoom(
     private val startLiveLocationShareResult: (Long) -> Result<EventId> = { lambdaError() },
     private val stopLiveLocationShareResult: () -> Result<Unit> = { lambdaError() },
     private val sendLiveLocationResult: (String) -> Result<Unit> = { lambdaError() },
+    var stateEventsFlowResult: (StateEventType) -> Flow<List<RoomStateEvent>> = { MutableStateFlow(emptyList()) },
     private val sendRawResult: (String, String) -> Result<EventId> = { _, _ -> lambdaError() },
     private val setOwnMemberDisplayNameResult: (String) -> Result<Unit> = { lambdaError() },
 ) : JoinedRoom, BaseRoom by baseRoom {
@@ -117,6 +120,8 @@ class FakeJoinedRoom(
     ): Result<Unit> = simulateLongTask {
         editMessageLambda(eventId, body, htmlBody, intentionalMentions)
     }
+
+    override fun stateEventsFlow(eventType: StateEventType): Flow<List<RoomStateEvent>> = stateEventsFlowResult(eventType)
 
     override suspend fun sendRaw(eventType: String, content: String): Result<EventId> = simulateLongTask {
         sendRawResult(eventType, content)

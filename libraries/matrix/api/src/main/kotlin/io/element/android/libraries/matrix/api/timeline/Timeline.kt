@@ -112,6 +112,18 @@ interface Timeline : AutoCloseable {
     val timelineItems: Flow<List<MatrixTimelineItem>>
 
     /**
+     * Sends [body] as an unformatted `m.text` message through the send queue, merging the top-level fields of
+     * [extraContentJson] (a JSON object, or null) into its content. With [repliedToEventId] it is sent as a reply that
+     * does not add the replied-to sender to `m.mentions`. Thread timelines add their thread relation.
+     */
+    suspend fun sendPlainTextWithExtraContent(
+        body: String,
+        intentionalMentions: List<IntentionalMention>,
+        extraContentJson: String?,
+        repliedToEventId: EventId?,
+    ): Result<Unit>
+
+    /**
      * Sends a text message to the room this timeline belongs to.
      *
      * @param body the message content, as plain text.

@@ -18,8 +18,11 @@ import org.matrix.rustcomponents.sdk.RequestConfigOverride
 import org.matrix.rustcomponents.sdk.Room
 import org.matrix.rustcomponents.sdk.RoomInfo
 import org.matrix.rustcomponents.sdk.RoomMembersIterator
+import org.matrix.rustcomponents.sdk.RoomStateEventsListener
+import org.matrix.rustcomponents.sdk.TaskHandle
 import org.matrix.rustcomponents.sdk.ThreadListService
 import uniffi.matrix_sdk.RoomMemberRole
+import uniffi.ruma_events.StateEventType
 
 class FakeFfiRoom(
     private val roomId: RoomId = A_ROOM_ID,
@@ -30,6 +33,7 @@ class FakeFfiRoom(
     private val suggestedRoleForUserLambda: (String) -> RoomMemberRole = { lambdaError() },
     private val roomInfo: RoomInfo = aRustRoomInfo(id = roomId.value),
     private val sendRawLambda: suspend (String, String, RequestConfigOverride?) -> String = { _, _, _ -> lambdaError() },
+    val subscribeToStateEventsLambda: (StateEventType, RoomStateEventsListener) -> TaskHandle = { _, _ -> lambdaError() },
     private val threadListServiceLambda: () -> ThreadListService = { lambdaError() },
 ) : Room(NoHandle) {
     override fun id(): String {
@@ -67,6 +71,9 @@ class FakeFfiRoom(
     override fun threadListService(): ThreadListService {
         return threadListServiceLambda()
     }
+
+    override fun subscribeToStateEvents(eventType: StateEventType, listener: RoomStateEventsListener): TaskHandle =
+        subscribeToStateEventsLambda(eventType, listener)
 
     override fun close() {
         // No-op

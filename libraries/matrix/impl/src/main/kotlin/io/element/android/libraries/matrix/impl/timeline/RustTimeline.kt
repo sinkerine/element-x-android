@@ -294,6 +294,23 @@ class RustTimeline(
         }
     }
 
+    override suspend fun sendPlainTextWithExtraContent(
+        body: String,
+        intentionalMentions: List<IntentionalMention>,
+        extraContentJson: String?,
+        repliedToEventId: EventId?,
+    ): Result<Unit> = withContext(dispatcher) {
+        runCatchingExceptions<Unit> {
+            MessageEventContent.from(body, null, intentionalMentions, asPlainText = true).use { content ->
+                if (repliedToEventId == null) {
+                    inner.sendWithExtraContent(content, extraContentJson)
+                } else {
+                    inner.sendReplyWithExtraContent(content, repliedToEventId.value, extraContentJson, false)
+                }
+            }
+        }
+    }
+
     override suspend fun sendMessage(
         body: String,
         htmlBody: String?,

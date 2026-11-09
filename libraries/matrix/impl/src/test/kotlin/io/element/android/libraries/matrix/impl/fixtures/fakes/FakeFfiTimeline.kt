@@ -8,8 +8,11 @@
 
 package io.element.android.libraries.matrix.impl.fixtures.fakes
 
+import io.element.android.tests.testutils.lambda.lambdaError
 import org.matrix.rustcomponents.sdk.NoHandle
 import org.matrix.rustcomponents.sdk.PaginationStatusListener
+import org.matrix.rustcomponents.sdk.RoomMessageEventContentWithoutRelation
+import org.matrix.rustcomponents.sdk.SendHandle
 import org.matrix.rustcomponents.sdk.TaskHandle
 import org.matrix.rustcomponents.sdk.Timeline
 import org.matrix.rustcomponents.sdk.TimelineDiff
@@ -17,6 +20,20 @@ import org.matrix.rustcomponents.sdk.TimelineListener
 import uniffi.matrix_sdk.PaginationStatus
 
 class FakeFfiTimeline(private val receiptAction: suspend () -> Unit = {}) : Timeline(NoHandle) {
+    var sendWithExtraContentLambda: suspend (RoomMessageEventContentWithoutRelation, String?) -> SendHandle = { _, _ -> lambdaError() }
+    var sendReplyWithExtraContentLambda: suspend (RoomMessageEventContentWithoutRelation, String, String?, Boolean) -> SendHandle =
+        { _, _, _, _ -> lambdaError() }
+
+    override suspend fun sendWithExtraContent(msg: RoomMessageEventContentWithoutRelation, extraContentJson: String?): SendHandle =
+        sendWithExtraContentLambda(msg, extraContentJson)
+
+    override suspend fun sendReplyWithExtraContent(
+        msg: RoomMessageEventContentWithoutRelation,
+        eventId: String,
+        extraContentJson: String?,
+        addMentions: Boolean,
+    ): SendHandle = sendReplyWithExtraContentLambda(msg, eventId, extraContentJson, addMentions)
+
     private var listener: TimelineListener? = null
     override suspend fun addListener(listener: TimelineListener): TaskHandle {
         this.listener = listener

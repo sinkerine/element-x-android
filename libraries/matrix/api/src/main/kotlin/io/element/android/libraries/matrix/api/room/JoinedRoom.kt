@@ -58,6 +58,12 @@ interface JoinedRoom : BaseRoom {
     val knockRequestsFlow: Flow<List<KnockRequest>>
 
     /**
+     * Emits the current state events of [eventType], one per state key, immediately and after every sync that changes
+     * any of them. Custom types are only populated when the SDK requests them in `required_state`.
+     */
+    fun stateEventsFlow(eventType: StateEventType): Flow<List<RoomStateEvent>>
+
+    /**
      * The live timeline of the room. Must be used to send Event to a room.
      */
     val liveTimeline: Timeline
