@@ -7,6 +7,7 @@
 
 package io.element.android.libraries.slashcommands.api
 
+import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.timeline.Timeline
 
 /**
@@ -17,7 +18,7 @@ import io.element.android.libraries.matrix.api.timeline.Timeline
  */
 interface SlashCommandService {
     /**
-     * Returns the commands whose name starts with what has been typed, so the composer can offer an autocomplete list.
+     * Returns enabled built-ins followed by matching bot commands, which are always enabled.
      *
      * @param text the current composer content.
      * @param isInThread whether the composer is in a thread, since not every command is available there.
@@ -26,6 +27,12 @@ interface SlashCommandService {
         text: String,
         isInThread: Boolean,
     ): List<SlashCommandSuggestion>
+
+    /** Resolves bot commands, excluding ambiguous bare names and enabled built-ins. Returns null on failure. */
+    suspend fun resolveBotCommand(plainText: String): BotCommandMessage?
+
+    /** Sends [message] on [timeline], mentioning only the bot and optionally replying to [repliedToEventId]. */
+    suspend fun sendBotCommand(message: BotCommandMessage, timeline: Timeline, repliedToEventId: EventId?): Result<Unit>
 
     /**
      * Parse the message and return a SlashCommand.

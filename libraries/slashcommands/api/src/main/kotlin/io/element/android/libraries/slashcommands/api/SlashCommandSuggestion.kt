@@ -7,8 +7,12 @@
 
 package io.element.android.libraries.slashcommands.api
 
+import io.element.android.libraries.matrix.api.core.UserId
+
 data class SlashCommandSuggestion(
     val command: String,
     val parameters: String?,
     val description: String,
+    /** The bot offering this command, or null for a built-in. */
+    val botUserId: UserId? = null,
 )

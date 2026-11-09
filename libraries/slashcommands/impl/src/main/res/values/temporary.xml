@@ -5,6 +5,8 @@
   ~ Please see LICENSE files in the repository root for full details.
   -->
 <resources>
+    <string name="slash_command_bot_description">%1$s (from %2$s)</string>
+    <string name="slash_command_bot_no_description">Command from %1$s</string>
     <string name="slash_command_error">Command error</string>
     <string name="slash_command_unrecognized">Unrecognized command: %1$s</string>
     <string name="slash_command_parameters_error">The command \"%1$s\" needs more parameters, or some parameters are incorrect.The syntax is\n\n%2$s</string>

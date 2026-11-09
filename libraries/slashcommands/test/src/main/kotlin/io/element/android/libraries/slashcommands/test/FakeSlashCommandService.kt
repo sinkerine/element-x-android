@@ -7,7 +7,9 @@
 
 package io.element.android.libraries.slashcommands.test
 
+import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.timeline.Timeline
+import io.element.android.libraries.slashcommands.api.BotCommandMessage
 import io.element.android.libraries.slashcommands.api.SlashCommand
 import io.element.android.libraries.slashcommands.api.SlashCommandService
 import io.element.android.libraries.slashcommands.api.SlashCommandSuggestion
@@ -19,7 +21,17 @@ class FakeSlashCommandService(
     private val parseResult: (CharSequence, String?, Boolean) -> SlashCommand = { _, _, _ -> lambdaError() },
     private val proceedSendMessageResult: (SlashCommand.SlashCommandSendMessage, Timeline) -> Result<Unit> = { _, _ -> lambdaError() },
     private val proceedAdminResult: (SlashCommand.SlashCommandAdmin) -> Result<Unit> = { lambdaError() },
+    private val resolveBotCommandResult: (String) -> BotCommandMessage? = { null },
+    private val sendBotCommandResult: (BotCommandMessage, Timeline, EventId?) -> Result<Unit> = { _, _, _ -> lambdaError() },
 ) : SlashCommandService {
+    override suspend fun resolveBotCommand(plainText: String): BotCommandMessage? = simulateLongTask {
+        resolveBotCommandResult(plainText)
+    }
+
+    override suspend fun sendBotCommand(message: BotCommandMessage, timeline: Timeline, repliedToEventId: EventId?): Result<Unit> = simulateLongTask {
+        sendBotCommandResult(message, timeline, repliedToEventId)
+    }
+
     override suspend fun getSuggestions(text: String, isInThread: Boolean): List<SlashCommandSuggestion> = simulateLongTask {
         getSuggestionsResult(text, isInThread)
     }
