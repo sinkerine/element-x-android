@@ -213,10 +213,11 @@ fun TimelineView(
         visible = true,
         enter = if (state.timelineMode is Timeline.Mode.Thread) androidx.compose.animation.EnterTransition.None else fadeIn(),
     ) {
-        val composeLocalTimelineEventRendererConfig = remember(state.useNewTimelineEventRenderer, state.timelineRoomInfo.currentUserId) {
+        val composeLocalTimelineEventRendererConfig = remember(state.useNewTimelineEventRenderer, state.timelineRoomInfo.currentUserId, lazyListState) {
             ComposeLocalTimelineEventRendererConfig(
                 isComposeRendererEnabled = state.useNewTimelineEventRenderer,
                 currentUserId = state.timelineRoomInfo.currentUserId,
+                viewportHeight = { lazyListState.layoutInfo.viewportSize.height },
             )
         }
         CompositionLocalProvider(LocalTimelineEventRendererConfig provides composeLocalTimelineEventRendererConfig) {

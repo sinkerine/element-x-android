@@ -14,6 +14,7 @@ import androidx.core.text.toSpannable
 import dev.zacsweers.metro.Inject
 import io.element.android.features.location.api.Location
 import io.element.android.features.messages.api.timeline.HtmlConverterProvider
+import io.element.android.features.messages.impl.timeline.model.event.AnswerNavigation
 import io.element.android.features.messages.impl.timeline.model.event.AttachmentItem
 import io.element.android.features.messages.impl.timeline.model.event.GalleryItem
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemAttachmentsContent
@@ -50,6 +51,7 @@ import io.element.android.libraries.matrix.api.timeline.item.event.GalleryMessag
 import io.element.android.libraries.matrix.api.timeline.item.event.ImageMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.LocationMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.MessageContent
+import io.element.android.libraries.matrix.api.timeline.item.event.MessageFormat
 import io.element.android.libraries.matrix.api.timeline.item.event.NoticeMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.OtherMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.ProfileDetails
@@ -120,6 +122,7 @@ class TimelineItemContentMessageFactory(
                 val formattedBody = render?.let(::parseHtml)
                     ?: textPillificationHelper.pillify(body).safeLinkify()
                 TimelineItemTextContent(
+                    answerNavigation = answerNavigation(messageType.formatted, formattedBody.length),
                     body = body,
                     htmlDocument = htmlDocument,
                     formattedBody = formattedBody,
@@ -298,6 +301,7 @@ class TimelineItemContentMessageFactory(
                 val formattedBody = render?.let(::parseHtml)
                     ?: textPillificationHelper.pillify(body).safeLinkify()
                 TimelineItemNoticeContent(
+                    answerNavigation = answerNavigation(messageType.formatted, formattedBody.length),
                     body = body,
                     htmlDocument = htmlDocument,
                     formattedBody = formattedBody,
@@ -480,6 +484,15 @@ class TimelineItemContentMessageFactory(
         }
         if (plainBody == null || MATHS_DELIMITER_HINTS.none(plainBody::contains)) return stored
         return mathsDetector.detect(plainBody, stored) ?: stored
+    }
+
+    private fun answerNavigation(formatted: FormattedBody?, renderedLength: Int): AnswerNavigation? {
+        if (formatted?.format != MessageFormat.HTML) return null
+        return AnswerNavigationParser.parse(formatted.body, renderedLength) { fragment ->
+            val fragmentBody = formatted.copy(body = fragment)
+            val sanitized = fragmentBody.toHtmlDocument(permalinkParser = permalinkParser)
+            renderDocument(fragmentBody, sanitized, sanitized?.wholeText())?.let(::parseHtml) ?: ""
+        }
     }
 
     private fun parseHtml(document: Document): CharSequence? {

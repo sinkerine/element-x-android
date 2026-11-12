@@ -16,11 +16,13 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import io.element.android.compound.theme.ElementTheme
@@ -51,12 +53,20 @@ fun TimelineItemTextView(
     onLinkLongClick: (Link) -> Unit,
     modifier: Modifier = Modifier,
     onContentLayoutChange: (ContentAvoidingLayoutData) -> Unit = {},
+    textStyleOverride: TextStyle? = null,
 ) {
     // The View <-> Compose interop is not working well with Compose UI tests (it loops indefinitely), so we skip it in the UI test mode.
     if (LocalUiTestMode.current) return
 
     // When the new timeline event renderer is enabled and the message has a parsed tree, render it
     // natively with Compose. Otherwise fall back to the legacy rich text editor view below.
+    val navigation = content.answerNavigation
+    if (navigation != null && !LocalTimelineEventRendererConfig.current.isComposeRendererEnabled) {
+        key(navigation) {
+            AnswerNavigationView(navigation, onLinkClick, onLinkLongClick, modifier, onContentLayoutChange)
+        }
+        return
+    }
     val messageTree = content.messageTree
     if (LocalTimelineEventRendererConfig.current.isComposeRendererEnabled && messageTree != null) {
         Box(modifier.semantics { contentDescription = content.plainText }) {
@@ -87,7 +97,7 @@ fun TimelineItemTextView(
                 if (isInPreview) body == AN_EMOJI_ONLY_TEXT else body.containsOnlyEmojis()
             }
     }
-    val textStyle = when {
+    val textStyle = textStyleOverride ?: when {
         emojiOnly -> ElementTheme.typography.fontHeadingXlRegular
         else -> ElementTheme.typography.fontBodyLgRegular
     }

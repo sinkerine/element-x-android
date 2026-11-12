@@ -1,0 +1,46 @@
+# Standalone focused flow. Requires the dedicated synthetic answer-navigation room/thread open,
+# a visible Sections action, Chrome onboarding completed, and the fixture source reachable
+# through adb reverse tcp:18038 tcp:18038. Does not clear app data or send messages.
+# The fixture has six headings: Summary, Evidence, Trade-offs, Evidence, Sources, End.
+appId: ${MAESTRO_APP_ID}
+---
+- tapOn:
+    text: Sections
+    index: 0
+- assertVisible: In this message
+- assertVisible: "1."
+- assertVisible: "4."
+- assertVisible: Matrix fixture server versions
+- assertVisible: 127.0.0.1
+- assertNotVisible: Quoted heading
+- tapOn: "1."
+- extendedWaitUntil:
+    visible: Summary
+    timeout: 10000
+- tapOn:
+    text: Sections
+    index: 0
+- tapOn: "4."
+- extendedWaitUntil:
+    visible: "SECOND EVIDENCE PASSAGE.*"
+    timeout: 10000
+- tapOn:
+    text: Sections
+    index: 0
+- assertVisible: Current
+- assertVisible: "4."
+- back
+- assertVisible: "SECOND EVIDENCE PASSAGE.*"
+- tapOn:
+    text: Sections
+    index: 0
+- tapOn: Matrix fixture server versions
+- extendedWaitUntil:
+    visible:
+      id: com.android.chrome:id/url_bar
+    timeout: 10000
+- assertVisible: "127.0.0.1:18038/_matrix/client/versions"
+- back
+- extendedWaitUntil:
+    visible: "SECOND EVIDENCE PASSAGE.*"
+    timeout: 10000

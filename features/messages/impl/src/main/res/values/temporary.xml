@@ -25,4 +25,8 @@
     <string name="screen_thread_my_messages_context">After %1$s: %2$s</string>
     <string name="a11y_thread_my_messages_on_screen">on screen</string>
     <string name="a11y_thread_my_messages_preview">Preview</string>
+    <string name="screen_answer_navigation_title">In this message</string>
+    <string name="screen_answer_navigation_sections">Sections</string>
+    <string name="screen_answer_navigation_sources">Sources</string>
+    <string name="screen_answer_navigation_current">Current</string>
 </resources>
