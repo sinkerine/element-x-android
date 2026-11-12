@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.dp
 import io.element.android.compound.theme.ElementTheme
@@ -51,6 +52,7 @@ import io.element.android.features.messages.impl.timeline.model.event.ensureActi
 import io.element.android.features.messages.impl.timeline.model.event.formattedCaptionOrNull
 import io.element.android.features.messages.impl.timeline.protection.TimelineProtectionEvent
 import io.element.android.features.messages.impl.timeline.protection.TimelineProtectionState
+import io.element.android.features.messages.impl.timeline.rememberTimelineReadingText
 import io.element.android.libraries.architecture.Presenter
 import io.element.android.libraries.designsystem.components.EqualWidthColumn
 import io.element.android.libraries.maths.api.containsMathsSpans
@@ -286,26 +288,34 @@ private fun CaptionView(
         LocalTextStyle provides ElementTheme.typography.fontBodyLgRegular
     ) {
         val hasMaths = remember(caption) { caption.containsMathsSpans() }
+        val readingText = rememberTimelineReadingText("caption")
+        val readingModifier = Modifier.onPlaced { readingText?.coordinates = it }
+        val measureLastLine = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange)
+        val onTextLayout: (android.text.Layout) -> Unit = {
+            readingText?.layout = it
+            measureLastLine(it)
+        }
         if (hasMaths) {
             BoxWithConstraints(modifier) {
                 EditorStyledText(
                     text = remember(caption, constraints.maxWidth) { caption.withMathsMaxWidth(constraints.maxWidth) },
+                    modifier = readingModifier,
                     style = ElementRichTextEditorStyle.textStyle(),
                     onLinkClickedListener = onLinkClick,
                     onLinkLongClickedListener = onLinkLongClick,
                     releaseOnDetach = false,
-                    onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
+                    onTextLayout = onTextLayout,
                 )
             }
         } else {
             EditorStyledText(
-                modifier = modifier,
+                modifier = modifier.then(readingModifier),
                 text = caption,
                 style = ElementRichTextEditorStyle.textStyle(),
                 onLinkClickedListener = onLinkClick,
                 onLinkLongClickedListener = onLinkLongClick,
                 releaseOnDetach = false,
-                onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
+                onTextLayout = onTextLayout,
             )
         }
     }

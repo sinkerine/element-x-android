@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -29,6 +30,7 @@ import io.element.android.features.messages.impl.timeline.model.event.AN_EMOJI_O
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemTextBasedContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemTextBasedContentPreviewParam
 import io.element.android.features.messages.impl.timeline.model.event.aTimelineItemTextContent
+import io.element.android.features.messages.impl.timeline.rememberTimelineReadingText
 import io.element.android.features.messages.impl.utils.containsOnlyEmojis
 import io.element.android.libraries.androidutils.text.LinkifyHelper
 import io.element.android.libraries.designsystem.preview.ElementPreview
@@ -97,14 +99,22 @@ fun TimelineItemTextView(
     ) {
         val text = getTextWithResolvedMentions(content)
         val hasMaths = remember(text) { text.containsMathsSpans() }
+        val readingText = rememberTimelineReadingText()
+        val readingModifier = Modifier.onPlaced { readingText?.coordinates = it }
+        val measureLastLine = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange)
+        val onTextLayout: (android.text.Layout) -> Unit = {
+            readingText?.layout = it
+            measureLastLine(it)
+        }
         if (hasMaths) {
             BoxWithConstraints(modifier.semantics { contentDescription = content.plainText }) {
                 EditorStyledText(
                     text = remember(text, constraints.maxWidth) { text.withMathsMaxWidth(constraints.maxWidth) },
+                    modifier = readingModifier,
                     onLinkClickedListener = onLinkClick,
                     onLinkLongClickedListener = onLinkLongClick,
                     style = ElementRichTextEditorStyle.textStyle(),
-                    onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
+                    onTextLayout = onTextLayout,
                     releaseOnDetach = false,
                 )
             }
@@ -112,10 +122,11 @@ fun TimelineItemTextView(
             Box(modifier.semantics { contentDescription = content.plainText }) {
                 EditorStyledText(
                     text = text,
+                    modifier = readingModifier,
                     onLinkClickedListener = onLinkClick,
                     onLinkLongClickedListener = onLinkLongClick,
                     style = ElementRichTextEditorStyle.textStyle(),
-                    onTextLayout = ContentAvoidingLayout.measureLegacyLastTextLine(onContentLayoutChange = onContentLayoutChange),
+                    onTextLayout = onTextLayout,
                     releaseOnDetach = false,
                 )
             }

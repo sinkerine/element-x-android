@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -104,6 +105,7 @@ import io.element.android.libraries.designsystem.theme.components.Icon
 import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.designsystem.utils.animateScrollToItemCenter
 import io.element.android.libraries.matrix.api.core.EventId
+import io.element.android.libraries.matrix.api.core.UniqueId
 import io.element.android.libraries.matrix.api.timeline.Timeline
 import io.element.android.libraries.matrix.api.user.MatrixUser
 import io.element.android.libraries.testtags.TestTag
@@ -175,6 +177,9 @@ fun TimelineView(
         state.eventSink(TimelineEvent.FocusOnEvent(eventId))
     }
 
+    val readingPosition = remember(lazyListState, state.timelineMode) { TimelineReadingPosition(lazyListState) }
+    readingPosition.keys = remember(state.timelineItems) { state.timelineItems.map { it.identifier() } }
+    val newestItemKey = state.timelineItems.firstOrNull()?.identifier()
     val eventsByKey = remember(state.timelineItems) { state.timelineItems.filterIsInstance<TimelineItem.Event>().associateBy { it.identifier() } }
     val latestEventsByKey by rememberUpdatedState(eventsByKey)
     val latestVisibleCallback by rememberUpdatedState(onVisibleEventIdsChange)
@@ -225,6 +230,7 @@ fun TimelineView(
                     modifier = Modifier
                         .fillMaxSize()
                         .nestedScroll(nestedScrollConnection)
+                        .onGloballyPositioned { readingPosition.onLayout(it, state.isLive) }
                         .testTag(TestTags.timeline),
                     state = lazyListState,
                     reverseLayout = true,
@@ -235,30 +241,33 @@ fun TimelineView(
                         contentType = { timelineItem -> timelineItem.contentType() },
                         key = { timelineItem -> timelineItem.identifier() },
                     ) { timelineItem ->
-                        TimelineItemRow(
-                            timelineItem = timelineItem,
-                            timelineMode = state.timelineMode,
-                            timelineRoomInfo = state.timelineRoomInfo,
-                            timelineProtectionState = timelineProtectionState,
-                            isLastOutgoingMessage = state.isLastOutgoingMessage(timelineItem.identifier()),
-                            focusedEventId = state.focusedEventId,
-                            outlinedEventId = outlinedEventId,
-                            displayThreadSummaries = state.displayThreadSummaries,
-                            onUserDataClick = onUserDataClick,
-                            onLinkClick = onLinkClick,
-                            onLinkLongClick = ::onLinkLongClick,
-                            onContentClick = onContentClick,
-                            onGalleryItemClick = onGalleryItemClick,
-                            onLongClick = onMessageLongClick,
-                            inReplyToClick = ::inReplyToClick,
-                            onReactionClick = onReactionClick,
-                            onReactionLongClick = onReactionLongClick,
-                            onMoreReactionsClick = onMoreReactionsClick,
-                            onReadReceiptClick = onReadReceiptClick,
-                            onSwipeToReply = onSwipeToReply,
-                            onJoinCallClick = onJoinCallClick,
-                            eventSink = state.eventSink,
-                        )
+                        readingPosition.Item(timelineItem.identifier()) { readingModifier ->
+                            TimelineItemRow(
+                                modifier = readingModifier,
+                                timelineItem = timelineItem,
+                                timelineMode = state.timelineMode,
+                                timelineRoomInfo = state.timelineRoomInfo,
+                                timelineProtectionState = timelineProtectionState,
+                                isLastOutgoingMessage = state.isLastOutgoingMessage(timelineItem.identifier()),
+                                focusedEventId = state.focusedEventId,
+                                outlinedEventId = outlinedEventId,
+                                displayThreadSummaries = state.displayThreadSummaries,
+                                onUserDataClick = onUserDataClick,
+                                onLinkClick = onLinkClick,
+                                onLinkLongClick = ::onLinkLongClick,
+                                onContentClick = onContentClick,
+                                onGalleryItemClick = onGalleryItemClick,
+                                onLongClick = onMessageLongClick,
+                                inReplyToClick = ::inReplyToClick,
+                                onReactionClick = onReactionClick,
+                                onReactionLongClick = onReactionLongClick,
+                                onMoreReactionsClick = onMoreReactionsClick,
+                                onReadReceiptClick = onReadReceiptClick,
+                                onSwipeToReply = onSwipeToReply,
+                                onJoinCallClick = onJoinCallClick,
+                                eventSink = state.eventSink,
+                            )
+                        }
                     }
                 }
 
@@ -274,6 +283,8 @@ fun TimelineView(
 
                 TimelineScrollHelper(
                     hasAnyEvent = state.hasAnyEvent,
+                    newestItemKey = newestItemKey,
+                    readingPosition = readingPosition,
                     lazyListState = lazyListState,
                     forceJumpToBottomVisibility = forceJumpToBottomVisibility,
                     forceJumpToReadMarkerVisibility = forceJumpToReadMarkerVisibility,
@@ -362,6 +373,8 @@ private fun TimelinePrefetchingHelper(
 @Composable
 private fun BoxScope.TimelineScrollHelper(
     hasAnyEvent: Boolean,
+    newestItemKey: UniqueId?,
+    readingPosition: TimelineReadingPosition,
     lazyListState: LazyListState,
     newEventState: NewEventState,
     isLive: Boolean,
@@ -380,9 +393,9 @@ private fun BoxScope.TimelineScrollHelper(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val isScrollFinished by remember { derivedStateOf { !lazyListState.isScrollInProgress } }
-    val canAutoScroll by remember {
+    val canAutoScroll by remember(lazyListState, isLive) {
         derivedStateOf {
-            lazyListState.firstVisibleItemIndex < 3 && isLive
+            !lazyListState.canScrollBackward && isLive
         }
     }
     val isJumpToUnreadVisible by remember(jumpToUnread, forceJumpToReadMarkerVisibility) {
@@ -409,10 +422,11 @@ private fun BoxScope.TimelineScrollHelper(
      * when a new message comes in.
      */
     fun scrollToBottom(force: Boolean) {
+        readingPosition.reset()
         coroutineScope.launch {
             if (lazyListState.firstVisibleItemIndex > 10) {
                 lazyListState.scrollToItem(0)
-            } else if (force || lazyListState.firstVisibleItemIndex != 0) {
+            } else if (force || lazyListState.canScrollBackward) {
                 lazyListState.animateScrollToItem(0)
             }
         }
@@ -428,6 +442,7 @@ private fun BoxScope.TimelineScrollHelper(
     }
 
     fun jumpToReadMarker() {
+        readingPosition.reset()
         when (val jtu = jumpToUnread) {
             JumpToUnreadState.Hidden -> Unit
             is JumpToUnreadState.InWindow -> coroutineScope.launch {
@@ -439,6 +454,7 @@ private fun BoxScope.TimelineScrollHelper(
 
     LaunchedEffect(jumpToLiveHandled, isLive) {
         if (!jumpToLiveHandled && isLive) {
+            readingPosition.reset()
             lazyListState.scrollToItem(0)
             jumpToLiveHandled = true
         }
@@ -447,6 +463,7 @@ private fun BoxScope.TimelineScrollHelper(
     val latestOnFocusEventRender by rememberUpdatedState(onFocusEventRender)
     LaunchedEffect(focusRequestState) {
         if (focusRequestState is FocusRequestState.Success && focusRequestState.isIndexed && !focusRequestState.rendered) {
+            readingPosition.reset()
             if (timelineMode is Timeline.Mode.Thread) {
                 // Preserve immediate initial thread focus while centering in the current viewport.
                 withContext(object : MotionDurationScale {
@@ -461,7 +478,9 @@ private fun BoxScope.TimelineScrollHelper(
         }
     }
 
-    LaunchedEffect(canAutoScroll, newEventState) {
+    LaunchedEffect(newestItemKey, canAutoScroll, newEventState) {
+        // ReadingPosition retains bottom-follow across list updates. Check the current boundary
+        // here: the presenter can publish new-event state before the new keyed list reaches us.
         val shouldScrollToBottom = isScrollFinished && when (newEventState) {
             is NewEventState.FromOther -> canAutoScroll
             NewEventState.FromMe -> true

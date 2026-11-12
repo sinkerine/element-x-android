@@ -38,6 +38,7 @@ import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMess
 import io.element.android.features.messages.impl.threads.mymessages.aThreadMyMessagesState
 import io.element.android.features.messages.impl.timeline.components.MessageShieldData
 import io.element.android.features.messages.impl.timeline.components.aCriticalShield
+import io.element.android.features.messages.impl.timeline.model.NewEventState
 import io.element.android.features.messages.impl.timeline.model.TimelineItem
 import io.element.android.features.messages.impl.timeline.model.event.aTimelineItemTextContent
 import io.element.android.features.messages.impl.timeline.model.event.aTimelineItemUnknownContent
@@ -69,6 +70,7 @@ import io.element.android.wysiwyg.link.Link
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Ignore
@@ -76,6 +78,121 @@ import org.junit.Test
 import org.robolectric.annotation.GraphicsMode
 
 class TimelineViewTest : RobolectricTest() {
+    @Test
+    fun `reading inside the newest event exposes a working return to latest`() = runAndroidComposeUiTest {
+        val listState = LazyListState()
+        val items = List(20) { aTimelineItemEvent(content = aTimelineItemUnknownContent()) }.toImmutableList()
+        setTimelineView(
+            state = aTimelineState(timelineItems = items, isLive = true),
+            lazyListState = listState,
+            forceJumpToBottomVisibility = true,
+        )
+        runOnIdle { runBlocking { listState.scrollToItem(0, 30) } }
+        runOnIdle { assertEquals(30, listState.firstVisibleItemScrollOffset) }
+        onNodeWithContentDescription(activity!!.getString(CommonStrings.a11y_jump_to_bottom)).performClick()
+        runOnIdle {
+            assertEquals(0, listState.firstVisibleItemIndex)
+            assertEquals(0, listState.firstVisibleItemScrollOffset)
+        }
+    }
+
+    @Test
+    fun `manual scroll within the newest three events suspends incoming auto follow`() = runAndroidComposeUiTest {
+        val listState = LazyListState()
+        val items = List(20) { aTimelineItemEvent(content = aTimelineItemUnknownContent()) }.toImmutableList()
+        val state = mutableStateOf(aTimelineState(timelineItems = items, isLive = true))
+        setTimelineView(state = state.value, lazyListState = listState, layout = { content -> content(state.value) })
+        runOnIdle { runBlocking { listState.scrollToItem(1, 30) } }
+        runOnIdle {
+            state.value = state.value.copy(
+                timelineItems = (listOf(aTimelineItemEvent(content = aTimelineItemUnknownContent())) + items).toImmutableList(),
+                newEventState = NewEventState.FromOther,
+            )
+        }
+        runOnIdle {
+            assertEquals(items[1].identifier(), listState.layoutInfo.visibleItemsInfo.first().key)
+            assertEquals(30, listState.firstVisibleItemScrollOffset)
+        }
+    }
+
+    @Test
+    fun `new event classification before keyed list update respects manual scrolling`() = runAndroidComposeUiTest {
+        val listState = LazyListState()
+        val items = List(20) { aTimelineItemEvent(content = aTimelineItemUnknownContent()) }.toImmutableList()
+        val state = mutableStateOf(aTimelineState(timelineItems = items, isLive = true))
+        setTimelineView(state = state.value, lazyListState = listState, layout = { content -> content(state.value) })
+        runOnIdle { runBlocking { listState.scrollToItem(1, 30) } }
+        // TimelinePresenter can classify the SDK update before the corresponding keyed rows
+        // are composed. The original key's captured bottom status must not override a later drag.
+        runOnIdle { state.value = state.value.copy(newEventState = NewEventState.FromOther) }
+        runOnIdle {
+            assertEquals(1, listState.firstVisibleItemIndex)
+            assertEquals(30, listState.firstVisibleItemScrollOffset)
+        }
+        runOnIdle {
+            state.value = state.value.copy(
+                timelineItems = (listOf(aTimelineItemEvent(content = aTimelineItemUnknownContent())) + items).toImmutableList(),
+            )
+        }
+        runOnIdle {
+            assertEquals(items[1].identifier(), listState.layoutInfo.visibleItemsInfo.first().key)
+            assertEquals(30, listState.firstVisibleItemScrollOffset)
+        }
+    }
+
+    @Test
+    fun `manual scroll inside the newest event reveals return to latest`() = runAndroidComposeUiTest {
+        val listState = LazyListState()
+        val items = List(20) { aTimelineItemEvent(content = aTimelineItemUnknownContent()) }.toImmutableList()
+        setTimelineView(state = aTimelineState(timelineItems = items, isLive = true), lazyListState = listState)
+        runOnIdle { runBlocking { listState.scrollToItem(0, 30) } }
+        onNodeWithContentDescription(activity!!.getString(CommonStrings.a11y_jump_to_bottom)).assertIsDisplayed()
+    }
+
+    @Test
+    fun `bottom follow continues across successive incoming events`() = runAndroidComposeUiTest {
+        val listState = LazyListState()
+        val state = mutableStateOf(aTimelineState(
+            timelineItems = List(20) { aTimelineItemEvent(content = aTimelineItemUnknownContent()) }.toImmutableList(),
+            isLive = true,
+        ))
+        setTimelineView(state = state.value, lazyListState = listState, layout = { content -> content(state.value) })
+        repeat(3) {
+            runOnIdle {
+                state.value = state.value.copy(
+                    timelineItems = (listOf(aTimelineItemEvent(content = aTimelineItemUnknownContent())) + state.value.timelineItems).toImmutableList(),
+                    newEventState = NewEventState.FromOther,
+                )
+            }
+            runOnIdle {
+                assertEquals(0, listState.firstVisibleItemIndex)
+                assertEquals(0, listState.firstVisibleItemScrollOffset)
+            }
+        }
+    }
+
+    @Test
+    fun `return to latest resumes bottom follow after manual reading`() = runAndroidComposeUiTest {
+        val listState = LazyListState()
+        val state = mutableStateOf(aTimelineState(
+            timelineItems = List(20) { aTimelineItemEvent(content = aTimelineItemUnknownContent()) }.toImmutableList(),
+            isLive = true,
+        ))
+        setTimelineView(state = state.value, lazyListState = listState, layout = { content -> content(state.value) })
+        runOnIdle { runBlocking { listState.scrollToItem(4, 30) } }
+        onNodeWithContentDescription(activity!!.getString(CommonStrings.a11y_jump_to_bottom)).performClick()
+        runOnIdle {
+            state.value = state.value.copy(
+                timelineItems = (listOf(aTimelineItemEvent(content = aTimelineItemUnknownContent())) + state.value.timelineItems).toImmutableList(),
+                newEventState = NewEventState.FromOther,
+            )
+        }
+        runOnIdle {
+            assertEquals(0, listState.firstVisibleItemIndex)
+            assertEquals(0, listState.firstVisibleItemScrollOffset)
+        }
+    }
+
     @Test
     fun `visible ids follow reverse list order include partial events skip virtual rows and avoid duplicates`() = runAndroidComposeUiTest {
         val listState = LazyListState()

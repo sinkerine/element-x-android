@@ -199,7 +199,9 @@ class TimelineItemInteractiveUiStatusLayoutTest : RobolectricTest() {
             assertThat(after).isEqualTo(before)
             assertThat(statusAfter.top.value).isWithin(2f).of(statusBefore.top.value)
         }
-        assertThat(rowAfter.offset).isEqualTo(rowBefore.offset)
+        // Reverse-list offsets are measured from the bottom. Keep the card's physical top
+        // fixed when the late retry affordance disappears and changes its measured height.
+        assertThat(rowAfter.offset + rowAfter.size).isEqualTo(rowBefore.offset + rowBefore.size)
         assertThat((statusAfter.bottom - statusAfter.top).value).isWithin(1f).of((statusBefore.bottom - statusBefore.top).value)
         scope.cancel()
     }
