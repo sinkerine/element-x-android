@@ -1268,6 +1268,55 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
         assertThat((resultWithoutFeatureFlag as TimelineItemTextBasedContent).messageTree).isNull()
     }
 
+    @Test
+    fun `answer navigation is enabled for text and notice without the alternate renderer`() = runTest {
+        val html = "<h2>Summary</h2><p>${"Detail ".repeat(350)}</p><h2>Evidence</h2>" +
+            "<p>First evidence</p><h2>Evidence</h2><p>Second evidence</p><h2>Sources</h2><a href='https://example.org'>Author label</a>"
+        val formatted = FormattedBody(MessageFormat.HTML, html)
+        val factory = createTimelineItemContentMessageFactory(
+            domConverterTransform = { SpannedString(it.text()) },
+            permalinkParser = FakePermalinkParser { PermalinkData.FallbackLink(Uri.parse(it)) },
+        )
+        for (type in listOf(TextMessageType("body", formatted), NoticeMessageType("body", formatted))) {
+            val result = factory.create(createMessageContent(type = type), A_USER_ID, aProfileDetails(), AN_EVENT_ID) as TimelineItemTextBasedContent
+            assertThat(result.answerNavigation!!.sections.map { it.title }).containsExactly("Summary", "Evidence", "Evidence", "Sources").inOrder()
+            assertThat(result.answerNavigation!!.sources.single().label).isEqualTo("Author label")
+            assertThat(result.htmlDocument!!.select("h2")).isEmpty()
+            assertThat(result.body).isEqualTo("body")
+        }
+        val edited = factory.create(
+            createMessageContent(type = TextMessageType("short", FormattedBody(MessageFormat.HTML, "<p>short</p>")), isEdited = true),
+            A_USER_ID,
+            aProfileDetails(),
+            AN_EVENT_ID,
+        ) as TimelineItemTextBasedContent
+        assertThat(edited.answerNavigation).isNull()
+        assertThat(edited.isEdited).isTrue()
+    }
+
+    @Test
+    fun `answer navigation retains section links through existing span conversion`() = runTest {
+        val html = "<h2>Summary</h2><p>${"Detail ".repeat(350)}</p><h2>Evidence</h2>" +
+            "<a href='https://example.org'>Evidence link</a><h2>Sources</h2><a href='https://example.org'>Author label</a>"
+        val factory = createTimelineItemContentMessageFactory(
+            permalinkParser = FakePermalinkParser { PermalinkData.FallbackLink(Uri.parse(it)) },
+            domConverterTransform = { dom ->
+                buildSpannedString {
+                    dom.body().childNodes().forEach { append(it.toString()) }
+                    dom.select("a[href]").forEach { link -> inSpans(URLSpan(link.attr("href"))) { append(link.text()) } }
+                }
+            },
+        )
+        val result = factory.create(
+            createMessageContent(type = TextMessageType("body", FormattedBody(MessageFormat.HTML, html))),
+            A_USER_ID,
+            aProfileDetails(),
+            AN_EVENT_ID,
+        ) as TimelineItemTextBasedContent
+        val sectionBody = result.answerNavigation!!.sections[1].body as Spanned
+        assertThat(sectionBody.getSpans<URLSpan>().map { it.url }).contains("https://example.org")
+    }
+
     private fun createMessageContent(
         body: String = "Body",
         inReplyTo: InReplyTo? = null,

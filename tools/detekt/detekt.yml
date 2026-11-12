@@ -242,6 +242,7 @@ Compose:
       - LocalUiTestMode
       - LocalSdkIntVersionProvider
       - LocalTimelineEventRendererConfig
+      - LocalReadingItem
   CompositionLocalNaming:
     active: true
   ContentEmitterReturningValues:

@@ -13,7 +13,11 @@ import android.graphics.Canvas
 import android.text.SpannableString
 import android.text.SpannedString
 import android.text.style.AbsoluteSizeSpan
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.CompositionLocalProvider
@@ -28,6 +32,8 @@ import androidx.compose.ui.test.v2.runAndroidComposeUiTest
 import androidx.compose.ui.unit.dp
 import io.element.android.compound.theme.ElementTheme
 import io.element.android.features.messages.impl.timeline.model.NewEventState
+import io.element.android.features.messages.impl.timeline.model.event.AnswerNavigation
+import io.element.android.features.messages.impl.timeline.model.event.AnswerSection
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemTextContent
 import io.element.android.features.messages.impl.timeline.model.event.aTimelineItemImageContent
 import io.element.android.features.messages.impl.timeline.model.event.aTimelineItemTextContent
@@ -40,6 +46,7 @@ import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.matrix.api.timeline.Timeline
 import io.element.android.tests.testutils.robolectric.RobolectricTest
 import io.element.android.tests.testutils.setSafeContent
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -183,6 +190,60 @@ class TimelineStableReadingTest : RobolectricTest() {
             assertTrue("Image container must resize", growth > 0)
             assertEquals("Caption below the resized media keeps its position", start, fixture.textStart() - growth)
         }
+    }
+
+    @Test(timeout = 30_000)
+    fun `room structured fragments preserve reading across edits and answer removal`() = verifyStructuredFragments(thread = false)
+
+    @Test(timeout = 30_000)
+    fun `thread structured fragments preserve reading across edits and answer removal`() = verifyStructuredFragments(thread = true)
+
+    private fun verifyStructuredFragments(thread: Boolean) = runAndroidComposeUiTest {
+        val fixture = Fixture(thread)
+        val readingBody = (0 until 20).joinToString("\n\n") { "Reading fragment passage $it: unchanged text." }
+        fun structured(earlier: Int, later: Int) = content(1).copy(answerNavigation = AnswerNavigation(
+            introduction = SpannedString("Introduction"),
+            sections = listOf(
+                AnswerSection("Evidence", 2, SpannedString("Evidence"), content(earlier).formattedBody),
+                AnswerSection("Evidence", 2, SpannedString("Evidence"), SpannedString(readingBody)),
+                AnswerSection("Evidence", 2, SpannedString("Evidence"), content(later).formattedBody),
+            ).toImmutableList(),
+            sources = persistentListOf(),
+        ))
+        fixture.items.value = listOf(fixture.answer.copy(content = structured(20, 20)))
+        setTimeline(fixture)
+        fun readingTop() = nativeTextViews(activity!!.window.decorView)
+            .last { it.text.toString() == readingBody && it.isAttachedToWindow }
+            .let { view -> IntArray(2).also(view::getLocationOnScreen)[1] }
+        val initialTop = runOnIdle { readingTop() }
+        runOnIdle { runBlocking { fixture.list.scrollBy(30f - initialTop) } }
+        val before = runOnIdle {
+            assertEquals("Place the middle fragment at the reading position", 30, readingTop())
+            readingTop()
+        }
+        runOnIdle { fixture.items.value = listOf(fixture.answer.copy(content = structured(40, 20))) }
+        runOnIdle { assertEquals("Earlier fragment growth must not move the reading fragment", before, readingTop()) }
+        runOnIdle { fixture.items.value = listOf(fixture.answer.copy(content = structured(40, 40))) }
+        runOnIdle { assertEquals("Later fragment growth must not move the reading fragment", before, readingTop()) }
+        runOnIdle { fixture.appendChunk(otherSender = true) }
+        runOnIdle { assertEquals("A later event must preserve the structured reading position", before, readingTop()) }
+        runOnIdle {
+            fixture.items.value = fixture.items.value.map {
+                if (it.id == fixture.answer.id) it.copy(content = aTimelineItemTextContent("Short", formattedBody = SpannedString("Short"))) else it
+            }
+        }
+        runOnIdle {
+            assertTrue(
+                "An edit can remove all fragments and restore the ordinary body",
+                nativeTextViews(activity!!.window.decorView)
+                .any { it.text.toString() == "Short" && it.isAttachedToWindow }
+            )
+        }
+    }
+
+    private fun nativeTextViews(view: View): List<TextView> = buildList {
+        if (view is TextView) add(view)
+        if (view is ViewGroup) repeat(view.childCount) { addAll(nativeTextViews(view.getChildAt(it))) }
     }
 
     private class Fixture(thread: Boolean = false) {

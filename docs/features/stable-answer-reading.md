@@ -7,7 +7,7 @@ Please see LICENSE in the repository root for full details.
 
 # Stable reading while an answer grows
 
-Android implementation on branch `feat/stable-answer-reading`, based on `bc37934daa`. Enabled by default, with no new setting, strings or protocol fields.
+Android implementation based on `bc37934daa`, integrated with local develop's answer/source navigation at `d48e56f14e`. Enabled by default, with no new setting, strings or protocol fields.
 
 ## Scope and existing implementation
 
@@ -73,10 +73,20 @@ The emulator initially segfaulted in its host `RenderThread` with `swiftshader_i
 
 Heavy builds/tests and emulator sessions use the absolute common Git directory's `e2e-feature-build.lock`, plus the local Gradle wrapper's lock. Work was coordinated with the sibling workspace and sessions were handed off without overlap. No screenshot baselines were recorded. The final emulator was shut down cleanly, its adb reverse removed, and this workspace's Synapse container stopped. AVD/session data and fixtures are preserved. No existing session was cleared.
 
-## Limits and integration follow-ups
+## Combined develop validation
+
+The final integration registers distinct fragment slots in `AnswerNavigationView`: `answer:introduction`, `answer:section:<ordinal>:heading`, and `answer:section:<ordinal>:body`. `TimelineItemTextView` accepts and forwards the stable reading key, native `Layout`, and placed coordinates. Duplicate heading names stay independent. The navigation viewport callback and forward-jump passage rectangle are preserved.
+
+Combined validation passes **767 tests, zero failures/errors, one existing skip**, including new native room/thread regressions that grow fragments before and after the selected passage, add later messages, and remove navigation by editing to a short body. The combined debug APK, Android lint and detekt pass (`integration/checks-2.log`). Detekt explicitly allowlists the per-row reading context and the composable follows the repository's modifier/parameter conventions.
+
+The existing 23-action/check navigation flow passes on the combined APK in both room and thread timelines, including backward/forward jumps, duplicate labels, current-section re-entry, dismissal and a browser round trip to the actual fixture server. In both timelines, growing earlier and later sections and adding two senders' chunks retains the same passage at exactly **0px** displacement in four further image comparisons, each with correlation 1.0. These use real Matrix edits and distinct per-row fragment slots. Raw evidence is under `integration/`; the dedicated emulator and server were stopped and reverse ports removed afterward.
+
+Before workspace archival, evidence, unit XML results, the verified APK/AAR and the dedicated AVD/session are preserved in the common Git directory at `.git/e2e-evidence/stable-answer-reading/`. The archived AVD registration points to its preserved location. Build caches and the isolated SDK compilation tree are excluded; the SDK source revision and verified AAR remain recorded.
+
+## Limits and integration details
 
 Native anchoring is at rendered-line granularity, not a guarantee to retain an arbitrary word through rewriting, font changes or viewport reflow. If an edit removes the line or makes recovery ambiguous, row anchoring is the fallback. Internal rearrangement inside a non-text card retains its row top; individual controls and paragraphs are not separate anchors.
 
-The sibling answer/source-navigation implementation splits native text into fragments. Future integration must give each fragment a distinct stable reading slot through `rememberTimelineReadingText(key)`, preserving introduction and section-ordinal/heading/body identities, forward its `Layout`, and register its placed coordinates. Its forward-jump fix also adds a viewport-height callback in `LocalTimelineEventRendererConfig` and `TimelineView`, which must be retained when reconciling those files. The sibling was informed; neither worktree was modified or merged by the other. No Hermes change or answer-continuation protocol was implemented.
+The answer/source-navigation fragment integration is included and verified as described above. Fragment identity uses introduction/section ordinal/heading/body roles, never heading text, rendered text or a random key. The existing caption keeps its separate `caption` slot. No Hermes change or answer-continuation protocol was implemented.
 
-The full repository test suite was not run; automated checks cover the messages implementation, its lint dependencies and the debug app build. Changes remain uncommitted in this isolated worktree, with no merges, pushes, PRs or personal-device installs.
+The full repository test suite was not run; automated checks cover the messages implementation, its lint dependencies and the debug app build. The feature and navigation integration are committed for local develop. No pushes, PRs or personal-device installs are performed.

@@ -48,7 +48,11 @@ internal class TimelineReadingPosition(private val list: LazyListState) {
             (previous.firstKey != firstKey || previous.scrollOffset != list.firstVisibleItemScrollOffset)
         val manualScroll = positionChanged && previous.keys == keys && !sizeChanged && !correctionPending
         correctionPending = false
-        if (previous == null || list.isScrollInProgress || manualScroll || previous.viewportSize != viewport.size) {
+        if (previous == null) {
+            capture(firstKey, sizes, top, bottom, viewport)
+            return
+        }
+        if (list.isScrollInProgress || manualScroll || previous.viewportSize != viewport.size) {
             capture(firstKey, sizes, top, bottom, viewport)
             return
         }
@@ -139,14 +143,14 @@ internal class TimelineReadingPosition(private val list: LazyListState) {
     }
 
     @Composable
-    fun Item(key: UniqueId, content: @Composable (Modifier) -> Unit) {
+    fun Item(key: UniqueId, modifier: Modifier = Modifier, content: @Composable (Modifier) -> Unit) {
         val item = remember(this, key) { ReadingItem() }
         DisposableEffect(this, key) {
             items[key] = item
             onDispose { items.remove(key) }
         }
         CompositionLocalProvider(LocalReadingItem provides item) {
-            content(Modifier.onPlaced { item.coordinates = it })
+            content(modifier.onPlaced { item.coordinates = it })
         }
     }
 

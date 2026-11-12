@@ -28,4 +28,6 @@ data class ComposeLocalTimelineEventRendererConfig(
     val isComposeRendererEnabled: Boolean,
     /** The current user ID, if known. This can be used to display UI sent by/owned by the current user differently. */
     val currentUserId: UserId?,
+    /** Current viewport height in pixels, read only when an explicit section jump is requested. */
+    val viewportHeight: () -> Int = { 0 },
 )

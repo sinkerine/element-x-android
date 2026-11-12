@@ -19,6 +19,9 @@ import org.jsoup.nodes.Document
 sealed interface TimelineItemTextBasedContent :
     TimelineItemEventContent,
     TimelineItemEventMutableContent {
+    /** Optional render-only navigation for long, structured text and notice messages. */
+    val answerNavigation: AnswerNavigation? get() = null
+
     /** The raw body of the event, in Markdown format. */
     val body: String
 
