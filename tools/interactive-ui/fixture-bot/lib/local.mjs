@@ -6,7 +6,7 @@ import { resolve, join } from 'node:path';
 import { createHmac, randomBytes } from 'node:crypto';
 export const baseUrl = 'http://127.0.0.1:18028';
 export const controlUrl = 'http://127.0.0.1:18029';
-export const localDir = join(homedir(), '.local/share/element-x-e2e/interactive-ui');
+export const localDir = process.env.ELEMENT_X_E2E_STATE_DIR ?? join(homedir(), '.local/share/element-x-e2e/interactive-ui');
 export const credentialsPath = join(localDir, 'credentials.json');
 export const tokenPath = join(localDir, 'control-token');
 export const sandboxDir = resolve('build/e2e/interactive-ui/synapse');

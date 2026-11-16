@@ -75,6 +75,20 @@ Common Gradle tasks:
 
 ### Sandbox End-to-End Testing
 
+The agent runs E2E tests when a feature is first added. Future pushes and deployments of the existing feature do not require rerunning E2E tests. Existing unit tests must still run.
+
+The `android-sandbox` entrypoint covers a cold debug build through emulator journey and cleanup, with at most two Gradle workers, a 4 GiB debug heap and 2 GiB Kotlin heap, then one 2 GiB/two-CPU emulator. Builds, unit tests and emulator execution are serialized. This conservative whole-stack estimate is not a measured peak.
+
+```qex-e2e android-sandbox
+{
+  "resources": {
+    "cpu": 8,
+    "mem": "24GiB"
+  },
+  "timeout": "2h"
+}
+```
+
 - Follow the [Element X Android e2e skill](.agents/skills/element-x-android-e2e/SKILL.md) to test features in a dedicated Android emulator sandbox.
 - Run from the current feature worktree's repository root. Build the current branch with `./tools/gradle-local.sh :app:assembleGplayDebug` before starting the dedicated emulator, then install the matching ABI debug APK using the installation rules below.
 - Use Orca for interactive verification or Maestro for repeatable flows, with dedicated Matrix test accounts and rooms. Walk through the feature's journey and assert each expected result; launching the app alone is not verification.

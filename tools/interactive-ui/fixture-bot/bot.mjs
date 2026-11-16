@@ -8,6 +8,7 @@ import { resolve, join } from 'node:path';
 import { createClient, ClientEvent, RoomEvent, MatrixEventEvent } from 'matrix-js-sdk';
 import { fixture, patch, uniquePayload, message, revisionContent, applyImages, ACTION_KEY } from './lib/fixtures.mjs';
 import { mathsFixture } from './lib/maths-fixtures.mjs';
+import { writeDeviceFixtures, evidenceAllowed, sendFixtureContent, createGalleryControl } from './lib/gallery-fixtures.mjs';
 import { encryptAttachment, solidPng } from './lib/attachment.mjs';
 import { baseUrl, controlUrl, credentialsPath, tokenPath, secureWrite, secureRead, request, provision } from './lib/local.mjs';
 
@@ -19,8 +20,7 @@ const quietLogger = { trace: noop, debug: noop, info: noop, warn: noop, error: n
 
 async function serve() {
     const evidence = resolve(option(args, '--evidence') ?? `build/e2e/interactive-ui/${new Date().toISOString().replace(/[:.]/g, '-')}`);
-    const allowed = ['interactive-ui', 'latex'].map(name => resolve('build/e2e', name) + '/');
-    if (!allowed.some(root => evidence.startsWith(root))) throw new Error('Evidence must be below build/e2e/interactive-ui or build/e2e/latex');
+    if (!evidenceAllowed(evidence)) throw new Error('Evidence must be below build/e2e/{interactive-ui,latex,mixed-file-gallery}');
     await mkdir(join(evidence, 'bot'), { recursive: true, mode: 0o700 });
     const accounts = JSON.parse(await secureRead(credentialsPath));
     if (!accounts.alice || !accounts.uibot) throw new Error('Incomplete provisioning');
@@ -46,10 +46,11 @@ async function serve() {
     const uploads = [];
     const marks = new Map();
     let roomId;
+    const state = { get roomId() { return roomId; }, plainRoomId: undefined, observed, events: new Map() };
     let sequence = 0;
     let lastMark;
     async function record(event) {
-        if (event.getRoomId() !== roomId || !event.getId()) return;
+        if (![roomId, state.plainRoomId].includes(event.getRoomId()) || !event.getId()) return;
         const wireType = event.getWireType();
         if (!['m.room.encrypted', 'm.room.message'].includes(wireType)) return;
         let entry = observed.get(event.getId());
@@ -57,6 +58,7 @@ async function serve() {
             entry = { sequence: ++sequence, event_id: event.getId(), sender: event.getSender(), wire_type: wireType, encrypted: wireType === 'm.room.encrypted' };
             observed.set(event.getId(), entry);
         }
+        state.events.set(event.getId(), event);
         const content = event.getContent();
         const action = content[ACTION_KEY];
         if (action && !entry.action) {
@@ -82,13 +84,8 @@ async function serve() {
         handler(client.getSyncState());
     });
     async function sendContent(content) {
-        if (!roomId) throw new Error('Run setup-room first');
-        const result = await client.sendEvent(roomId, 'm.room.message', content);
-        // Fetch from Synapse: prove the actual server event type, independently of local echo/room state.
-        const wire = await client.fetchRoomEvent(roomId, result.event_id);
-        const observation = { event_id: result.event_id, wire_type: wire.type, encrypted: wire.type === 'm.room.encrypted' };
+        const observation = await sendFixtureContent(client, roomId, state.plainRoomId, content);
         await appendFile(join(evidence, 'bot/sent.jsonl'), JSON.stringify(observation) + '\n', { mode: 0o600 });
-        if (!observation.encrypted) throw new Error('Server stored an unencrypted fixture event');
         return observation;
     }
     function since(values) {
@@ -98,7 +95,10 @@ async function serve() {
         if (!marks.has(id)) throw new Error('Unknown mark');
         return marks.get(id);
     }
+    const galleryControl = createGalleryControl({ client, state, aliceId: accounts.alice.userId, since, sendContent });
     async function control(values) {
+        const galleryResult = await galleryControl(values);
+        if (galleryResult !== undefined) return galleryResult;
         const [command, name] = values;
         if (command === 'setup-room') {
             if (!roomId) {
@@ -120,7 +120,11 @@ async function serve() {
         if (command === 'count-events' || command === 'actions') {
             const sender = option(values, '--sender');
             const senderId = accounts[sender]?.userId ?? sender;
-            const entries = [...observed.values()].filter(e => e.sequence > since(values) && (!senderId || e.sender === senderId));
+            const selectedRoom = option(values, '--room');
+            if (selectedRoom && selectedRoom !== 'plain') throw new Error('Unknown fixture room');
+            const targetRoom = selectedRoom === 'plain' ? state.plainRoomId : roomId;
+            const entries = [...observed.values()].filter(e => state.events.get(e.event_id)?.getRoomId() === targetRoom &&
+                e.sequence > since(values) && (!senderId || e.sender === senderId));
             return command === 'count-events' ? { count: entries.length } : { actions: entries.filter(e => e.action) };
         }
         if (command === 'send-maths') return sendContent(mathsFixture(name));
@@ -158,7 +162,7 @@ async function serve() {
         }
         if (command === 'status') return { ready: true, room_id: roomId, uploads: uploads.length, observations: observed.size };
         if (command === 'shutdown') {
-            if (roomId) { await client.leave(roomId); await client.forget(roomId); }
+            for (const id of [roomId, state.plainRoomId].filter(Boolean)) { await client.leave(id); await client.forget(id); }
             setTimeout(() => { client.stopClient(); server.close(); process.exit(0); }, 100);
             return { stopped: true };
         }
@@ -189,7 +193,11 @@ async function serve() {
     process.on('SIGTERM', stop); process.on('SIGINT', stop);
 }
 async function main() {
-    if (args[0] === 'provision') console.log(JSON.stringify(await provision()));
+    if (args[0] === 'device-fixtures') {
+        if (args.length !== 3 || args[1] !== '--out' || !args[2] || args[2].startsWith('--')) throw new Error('device-fixtures requires --out <dir>');
+        const manifest = await writeDeviceFixtures(args[2]);
+        console.log(JSON.stringify({ files: manifest.files.length }));
+    } else if (args[0] === 'provision') console.log(JSON.stringify(await provision()));
     else if (args[0] === 'serve') await serve();
     else if (args[0] === 'ctl') {
         const token = (await secureRead(tokenPath)).trim();
@@ -198,6 +206,6 @@ async function main() {
         const result = await response.json();
         if (!response.ok) throw new Error(`Control request HTTP ${response.status} ${result.error}`);
         console.log(JSON.stringify(result));
-    } else throw new Error('Usage: bot.mjs provision | serve [--evidence build/e2e/{interactive-ui,latex}/<UTC>] | ctl <command>');
+    } else throw new Error('Usage: bot.mjs device-fixtures --out <dir> | provision | serve [--evidence build/e2e/{interactive-ui,latex,mixed-file-gallery}/<UTC>] | ctl <command>');
 }
 main().catch(error => { console.error(`Fixture bot failed: ${error.name}`); process.exitCode = 1; });
