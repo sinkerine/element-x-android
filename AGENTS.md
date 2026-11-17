@@ -77,17 +77,31 @@ Common Gradle tasks:
 
 The agent runs E2E tests when a feature is first added. Future pushes and deployments of the existing feature do not require rerunning E2E tests. Existing unit tests must still run.
 
-The `android-sandbox` entrypoint covers a cold debug build through emulator journey and cleanup, with at most two Gradle workers, a 4 GiB debug heap and 2 GiB Kotlin heap, then one 2 GiB/two-CPU emulator. Builds, unit tests and emulator execution are serialized. This conservative whole-stack estimate is not a measured peak.
+The `android-sandbox` entrypoint covers a cold debug build through emulator journey and cleanup, with at most two Gradle workers, a 3 GiB debug heap and 1 GiB Kotlin heap, then one 1536 MiB/two-CPU emulator. Builds, unit tests and emulator execution are serialized. The 12 GiB/four-CPU whole-stack claim includes native, test-worker, graphics and fixture overhead; it is an estimate, not a measured peak. Re-read this declaration for each new Qex submission rather than reusing a previous run's generated estimates.
 
 ```qex-e2e android-sandbox
 {
   "resources": {
-    "cpu": 8,
-    "mem": "24GiB"
+    "cpu": 4,
+    "mem": "12GiB"
   },
   "timeout": "2h"
 }
 ```
+
+The user approved the additional `android-sdk-private` variant for the mixed-file-gallery SDK log-privacy repair (see `docs/features/mixed-file-gallery-sdk-privacy-amendment.md`). It covers SDK dependency preparation, send-queue regressions, sequential x86_64/arm64 native builds, Kotlin AAR packaging, Android debug checks and the isolated emulator journey through cleanup. Rust jobs are capped at two; Gradle uses at most two workers, a 3 GiB debug heap and 1 GiB Kotlin heap; the single emulator uses 1536 MiB and two CPUs. Rust, Gradle and emulator stages are serialized. The 12 GiB/four-CPU claim is an estimate, not a measured peak; the four-hour bound allows a cold native build. Re-read the declaration before each new submission.
+
+```qex-e2e android-sdk-private
+{
+  "resources": {
+    "cpu": 4,
+    "mem": "12GiB"
+  },
+  "timeout": "4h"
+}
+```
+
+SDK-private builds use `tools/sdk/build-gallery-private-sdk`; see `tools/sdk/threads-inbox-sdk.md` for the caller's lock contract, exact source/ABI/provenance checks and scratch setup/teardown. Rebuildable Rust, JNI and packaging caches stay under `${XDG_CACHE_HOME:-$HOME/.cache}/dev-scratch/element-x-android/<workspace-name>/sdk-gallery-private/`. Keep the source patch, useful logs/provenance and recovery AAR in their documented durable locations; retain reusable caches unless cleanup is explicitly requested and ownership/inactivity verified.
 
 - Follow the [Element X Android e2e skill](.agents/skills/element-x-android-e2e/SKILL.md) to test features in a dedicated Android emulator sandbox.
 - Run from the current feature worktree's repository root. Build the current branch with `./tools/gradle-local.sh :app:assembleGplayDebug` before starting the dedicated emulator, then install the matching ABI debug APK using the installation rules below.
