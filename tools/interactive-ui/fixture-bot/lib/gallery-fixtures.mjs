@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { encryptAttachment, decryptAttachment, solidPng } from './attachment.mjs';
+import { hasPngSignature, pngObservation } from './png-evidence.mjs';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 function pdfFixture() {
@@ -48,7 +49,7 @@ export async function writeDeviceFixtures(out) {
         const path = join(out, name);
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, bytes);
-        files.push({ name, mime, size: bytes.length, sha256: sha256(bytes) });
+        files.push({ name, mime, size: bytes.length, sha256: sha256(bytes), png: mime === 'image/png' ? pngObservation(bytes) : null });
     }
     const manifest = { files };
     await writeFile(join(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
@@ -105,7 +106,9 @@ async function projectGallery(client, entry, content, caption, fetchMedia) {
             has_file: !!file, file_v: file?.v ?? null,
             file_keys_complete: !!(file?.url && file?.key?.k && file?.key?.kty && file?.key?.alg && file?.key?.key_ops &&
                 file?.key?.ext !== undefined && file?.iv && file?.hashes?.sha256 && file?.v === 'v2'),
-            plaintext_sha256: sha256(plaintext) });
+            plaintext_sha256: sha256(plaintext),
+            png: item.itemtype === 'm.image' || item.info?.mimetype === 'image/png' || hasPngSignature(plaintext)
+                ? pngObservation(plaintext) : null });
     }
     const relation = content['m.relates_to'];
     return { event_id: entry.event_id, wire_type: entry.wire_type, encrypted: entry.encrypted, msgtype: content.msgtype,

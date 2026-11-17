@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { encryptAttachment, decryptAttachment, solidPng } from './attachment.mjs';
 import { MatrixEvent } from 'matrix-js-sdk';
+import { deflateSync, inflateSync } from 'node:zlib';
 const load = () => import('./gallery-fixtures.mjs');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const bot = resolve('bot.mjs');
@@ -26,6 +27,8 @@ test('gallery fixtures are deterministic and match the manifest', async () => {
             assert.equal(file.size, bytes.length);
             assert.equal(file.sha256, sha(bytes));
             assert.equal(typeof file.mime, 'string');
+            if (file.mime === 'image/png') assert.deepEqual(file.png, expectedSolid(file.name === 'red.png' ? [230, 35, 45] : [35, 180, 70]));
+            else assert.equal(file.png, null);
         }
         assert.deepEqual(await readFile(join(dir, 'red.png')), solidPng(0));
         assert.deepEqual(await readFile(join(dir, 'green.png')), solidPng(1));
@@ -212,4 +215,128 @@ test('state directory honours ELEMENT_X_E2E_STATE_DIR', () => {
     delete env.ELEMENT_X_E2E_STATE_DIR;
     const fallback = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { env, encoding: 'utf8' }));
     assert.equal(fallback.localDir, join(homedir(), '.local/share/element-x-e2e/interactive-ui'));
+});
+
+// Independently encoded by ImageMagick: convert -size 96x64 'xc:rgb(230,35,45)' -depth 8
+// -set comment 'independent encoded counterpart' PNG24:counterpart.png. No external runtime dependency.
+const counterpart = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAGAAAABACAIAAABqVuVZAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCxEBKSiUT86JAAAAJ3RFWHRjb21tZW50AGluZGVwZW5kZW50IGVuY29kZWQgY291bnRlcnBhcnQYNCikAAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDI2LTExLTE3VDAxOjQxOjQwKzAwOjAwsHB7mQAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyNi0xMS0xN1QwMTo0MTo0MCswMDowMMEtwyUAAAAodEVYdGRhdGU6dGltZXN0YW1wADIwMjYtMTEtMTdUMDE6NDE6NDArMDA6MDCWOOL6AAAAnElEQVR42u3QMRHAIADAQMBKZ/w7QkcV9DLS4V9BLvM8e/Bt3Q74O4OCQcGgYFAwKBgUDAoGBYOCQcGgYFAwKBgUDAoGBYOCQcGgYFAwKBgUDAoGBYOCQcGgYFAwKBgUDAoGBYOCQcGgYFAwKBgUDAoGBYOCQcGgYFAwKBgUDAoGBYOCQcGgYFAwKBgUDAoGBYOCQcGgYFAwKBgUXto0AbYO4SV1AAAAAElFTkSuQmCC', 'base64');
+function expectedSolid(rgb, width = 96, height = 64) {
+    return { width, height, rgb_sha256: sha(Buffer.from(Array.from({ length: width * height }, () => rgb).flat())) };
+}
+function pngChunk(type, data) {
+    const name = Buffer.from(type), length = Buffer.alloc(4), checksum = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    let crc = 0xffffffff;
+    for (const byte of Buffer.concat([name, data])) {
+        crc ^= byte;
+        for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, name, data, checksum]);
+}
+function rewritePng(bytes, transform) {
+    const chunks = [];
+    for (let offset = 8; offset < bytes.length;) {
+        const size = bytes.readUInt32BE(offset);
+        chunks.push({ type: bytes.toString('ascii', offset + 4, offset + 8), data: bytes.subarray(offset + 8, offset + 8 + size) });
+        offset += size + 12;
+    }
+    return Buffer.concat([bytes.subarray(0, 8), ...transform(chunks).map(c => pngChunk(c.type, c.data))]);
+}
+test('PNG evidence accepts independently encoded identical pixels and rejects changed pixels or dimensions', async () => {
+    const { pngObservation } = await import('./png-evidence.mjs');
+    assert.notEqual(sha(counterpart), sha(solidPng(0)));
+    assert.deepEqual(pngObservation(counterpart), expectedSolid([230, 35, 45]));
+    assert.deepEqual(pngObservation(counterpart), pngObservation(solidPng(0)));
+    assert.notDeepEqual(pngObservation(solidPng(1)), pngObservation(counterpart));
+    const resized = rewritePng(solidPng(0), chunks => chunks.map(c => {
+        if (c.type === 'IHDR') { c = { ...c, data: Buffer.from(c.data) }; c.data.writeUInt32BE(48, 0); c.data.writeUInt32BE(128, 4); }
+        if (c.type === 'IDAT') c = { ...c, data: deflateSync(Buffer.concat(Array.from({ length: 128 }, () => Buffer.concat([Buffer.from([0]), Buffer.from(Array(48).fill([230, 35, 45]).flat())])))) };
+        return c;
+    }));
+    assert.deepEqual(pngObservation(resized), expectedSolid([230, 35, 45], 48, 128));
+    assert.notDeepEqual(pngObservation(resized), pngObservation(counterpart));
+});
+test('PNG evidence handles all five filters, split IDAT and metadata without changing RGB order', async () => {
+    const { pngObservation } = await import('./png-evidence.mjs');
+    // Hand-calculated 2x5 RGB scanlines: filters None, Sub, Up, Average, Paeth.
+    const rows = Buffer.from([
+        0, 10,20,30, 40,50,60,
+        1, 15,25,35, 30,30,30,
+        2, 5,5,5, 5,5,5,
+        3, 15,20,25, 15,15,15,
+        4, 5,5,5, 5,5,5,
+    ]);
+    const pixels = Buffer.from([10,20,30,40,50,60, 15,25,35,45,55,65, 20,30,40,50,60,70, 25,35,45,52,62,72, 30,40,50,57,67,77]);
+    const bytes = rewritePng(solidPng(0), chunks => chunks.flatMap(c => {
+        if (c.type === 'IHDR') { const header = Buffer.from(c.data); header.writeUInt32BE(2); header.writeUInt32BE(5, 4); return [{ ...c, data: header }, { type: 'eXIf', data: Buffer.from('synthetic metadata') }]; }
+        if (c.type === 'IDAT') { const data = deflateSync(rows); return [{ ...c, data: data.subarray(0, 5) }, { ...c, data: data.subarray(5) }]; }
+        return [c];
+    }));
+    assert.deepEqual(pngObservation(bytes), { width: 2, height: 5, rgb_sha256: sha(pixels) });
+});
+test('PNG evidence fails closed for malformed or unsupported encodings', async () => {
+    const { pngObservation } = await import('./png-evidence.mjs');
+    const original = solidPng(0);
+    const badCrc = Buffer.from(original); badCrc[29] ^= 1;
+    const mutateHeader = mutate => rewritePng(original, chunks => chunks.map(c => {
+        if (c.type !== 'IHDR') return c;
+        const data = Buffer.from(c.data); mutate(data); return { ...c, data };
+    }));
+    const invalid = [Buffer.from('not PNG'), original.subarray(0, -1), badCrc, Buffer.concat([original, Buffer.from([0])]),
+        mutateHeader(h => { h[8] = 16; }), mutateHeader(h => { h[9] = 6; }), mutateHeader(h => { h[12] = 1; }),
+        mutateHeader(h => h.writeUInt32BE(0)), mutateHeader(h => h.writeUInt32BE(0x7fffffff)),
+        rewritePng(original, c => [...c.slice(0, 1), { type: 'tRNS', data: Buffer.alloc(6) }, ...c.slice(1)]),
+        rewritePng(original, c => [...c.slice(0, 1), { type: 'ABCD', data: Buffer.alloc(0) }, ...c.slice(1)]),
+        rewritePng(original, c => [c[0], c[0], ...c.slice(1)]),
+        rewritePng(original, c => c.filter(x => x.type !== 'IDAT')),
+        rewritePng(original, c => [c[0], c[1], { type: 'tEXt', data: Buffer.from('key\0value') }, c[1], c[2]]),
+        rewritePng(original, c => c.map(x => x.type === 'IDAT' ? { ...x, data: Buffer.concat([x.data, Buffer.from([0])]) } : x)),
+        rewritePng(original, c => c.map(x => x.type === 'IDAT' ? { ...x, data: deflateSync(Buffer.from([5])) } : x)),
+        rewritePng(original, c => c.map(x => x.type === 'IDAT' ? { ...x, data: deflateSync(Buffer.alloc(64 * 289 + 1)) } : x)),
+        rewritePng(original, c => c.map(x => x.type === 'IDAT' ? { ...x, data: Buffer.from('bad zlib') } : x)),
+    ];
+    for (const bytes of invalid) assert.throws(() => pngObservation(bytes), /PNG/);
+    const badFilter = rewritePng(original, c => c.map(x => {
+        if (x.type !== 'IDAT') return x;
+        const rows = inflateSync(x.data); rows[0] = 5; return { ...x, data: deflateSync(rows) };
+    }));
+    assert.throws(() => pngObservation(badFilter), /PNG/);
+});
+test('gallery-last emits PNG observations from actual authenticated decrypted SDK event bytes', async () => {
+    const h = harness(await load());
+    await h.control(['send-gallery', 'mixed']);
+    const content = h.sends[0].content;
+    // The expected fixture name and declared dimensions stay unchanged, while received bytes vary.
+    const replaceImage = bytes => {
+        const { ciphertext, file } = encryptAttachment(bytes);
+        file.url = content.itemtypes[1].file.url;
+        content.itemtypes[1].file = file; h.media.set(file.url, ciphertext);
+    };
+    const project = async () => {
+        const event = new MatrixEvent({ event_id: '$actual', room_id: '!encrypted', sender: '@alice:test', type: 'm.room.message', content });
+        h.observe('$actual', content); h.state.events.set('$actual', event);
+        return h.control(['gallery-last', '--sender', 'alice']);
+    };
+    replaceImage(counterpart);
+    const result = await project();
+    assert.deepEqual(result.items[1].png, expectedSolid([230, 35, 45]));
+    assert.equal(result.items[1].plaintext_sha256, sha(counterpart));
+    assert.notEqual(result.items[1].plaintext_sha256, sha(solidPng(0)));
+    assert.equal(result.items[2].png, null);
+    assert.equal(result.items[2].plaintext_sha256, sha((await load()).galleryFixtures().find(f => f.name === 'report.pdf').bytes));
+    assert.ok(h.downloads.every(d => d.options.headers.Authorization === 'Bearer synthetic-token'));
+    replaceImage(solidPng(1));
+    assert.deepEqual((await project()).items[1].png, expectedSolid([35, 180, 70]));
+    replaceImage(Buffer.from('malformed PNG'));
+    await assert.rejects(project(), /PNG/);
+    replaceImage(rewritePng(counterpart, chunks => chunks.map(c => {
+        if (c.type !== 'IHDR') return c;
+        const data = Buffer.from(c.data); data[9] = 6; return { ...c, data };
+    })));
+    await assert.rejects(project(), /PNG/);
+    // Plaintext media uses the same decoder after authenticated download.
+    await h.control(['setup-room', '--plain']); h.media.set('mxc://test/plain-png', counterpart);
+    h.observe('$plain-png', { ...content, itemtypes: [{ itemtype: 'm.image', body: 'arbitrary', info: { mimetype: 'image/png' }, url: 'mxc://test/plain-png' }] }, { room: '!plain', encrypted: false, sequence: 5 });
+    assert.deepEqual((await h.control(['gallery-last', '--room', 'plain'])).items[0].png, expectedSolid([230, 35, 45]));
 });
