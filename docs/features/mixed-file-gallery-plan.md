@@ -2,6 +2,8 @@
 
 Status: **Approved by the user (2026-11-16).**
 
+The later user-approved [image-integrity amendment](mixed-file-gallery-integrity-amendment.md) governs the original-byte assertions for image fixtures in AC2/AC6/AC11/AC12, C0 and J2/J5/J6/J10. The original wording below is retained as approval history; all other requirements remain in force.
+
 Feature slug `mixed-file-gallery`, branch `curly-seal`, worktree `/home/sinkerine/.paseo/worktrees/3b36k2jo/curly-seal`
 (Paseo workspace `wks_2b8adb01b9517d57`), base `refs/remotes/origin/develop` at `0b30b979f4`. Run state:
 `/home/sinkerine/dev/element-x-android/.git/worktrees/curly-seal/e2e-feature/mixed-file-gallery` (`$RUN`).
