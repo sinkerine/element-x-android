@@ -101,6 +101,18 @@ The user approved the additional `android-sdk-private` variant for the mixed-fil
 }
 ```
 
+The user approved all iterations of the `android-foundation-private` variant in `docs/features/mixed-file-gallery-foundation-amendment.md`. It covers qualified, pinned single-source Foundation control/patched compilation and artifact/API/linkage validation, then Android checks and one emulator journey through cleanup. It excludes a full AndroidX build. Compiler heap is at most 2 GiB with two backend threads; Gradle and emulator bounds match `android-sandbox`. All stages are serialized. The 4 CPU/12 GiB estimate is not a measured peak; the four-hour bound includes cold input acquisition and qualification. Use workspace-specific `foundation-private` scratch as described in the amendment and preserve useful provenance/recovery outputs.
+
+```qex-e2e android-foundation-private
+{
+  "resources": {
+    "cpu": 4,
+    "mem": "12GiB"
+  },
+  "timeout": "4h"
+}
+```
+
 SDK-private builds use `tools/sdk/build-gallery-private-sdk`; see `tools/sdk/threads-inbox-sdk.md` for the caller's lock contract, exact source/ABI/provenance checks and scratch setup/teardown. Rebuildable Rust, JNI and packaging caches stay under `${XDG_CACHE_HOME:-$HOME/.cache}/dev-scratch/element-x-android/<workspace-name>/sdk-gallery-private/`. Keep the source patch, useful logs/provenance and recovery AAR in their documented durable locations; retain reusable caches unless cleanup is explicitly requested and ownership/inactivity verified.
 
 - Follow the [Element X Android e2e skill](.agents/skills/element-x-android-e2e/SKILL.md) to test features in a dedicated Android emulator sandbox.

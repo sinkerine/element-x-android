@@ -1,0 +1,65 @@
+--- a/commonMain/androidx/compose/foundation/gestures/AnchoredDraggable.kt
++++ b/commonMain/androidx/compose/foundation/gestures/AnchoredDraggable.kt
+@@ -14,6 +14,7 @@
+  * limitations under the License.
+  */
+ 
++// Locally modified by Element Creations Ltd. (2026): retire anchor target hints before mutation ownership is released.
+ package androidx.compose.foundation.gestures
+ 
+ import androidx.annotation.FloatRange
+@@ -1156,17 +1157,21 @@
+         block: suspend AnchoredDragScope.(anchors: DraggableAnchors<T>) -> Unit,
+     ) {
+         dragMutex.mutate(dragPriority) {
+-            restartable(inputs = { anchors }) { latestAnchors ->
+-                anchoredDragScope.block(latestAnchors)
+-            }
+-            val closest = anchors.closestAnchor(offset)
+-            if (closest != null) {
+-                val closestAnchorOffset = anchors.positionOf(closest)
+-                val isAtClosestAnchor = abs(offset - closestAnchorOffset) < 0.5f
+-                if (isAtClosestAnchor && confirmValueChange.invoke(closest)) {
+-                    settledValue = closest
+-                    currentValue = closest
++            try {
++                restartable(inputs = { anchors }) { latestAnchors ->
++                    anchoredDragScope.block(latestAnchors)
+                 }
++                val closest = anchors.closestAnchor(offset)
++                if (closest != null) {
++                    val closestAnchorOffset = anchors.positionOf(closest)
++                    val isAtClosestAnchor = abs(offset - closestAnchorOffset) < 0.5f
++                    if (isAtClosestAnchor && confirmValueChange.invoke(closest)) {
++                        settledValue = closest
++                        currentValue = closest
++                    }
++                }
++            } finally {
++                dragTarget = null
+             }
+         }
+     }
+@@ -1200,8 +1205,8 @@
+         block: suspend AnchoredDragScope.(anchor: DraggableAnchors<T>, targetValue: T) -> Unit,
+     ) {
+         if (anchors.hasPositionFor(targetValue)) {
+-            try {
+-                dragMutex.mutate(dragPriority) {
++            dragMutex.mutate(dragPriority) {
++                try {
+                     dragTarget = targetValue
+                     restartable(inputs = { anchors to this@AnchoredDraggableState.targetValue }) {
+                         (anchors, latestTarget) ->
+@@ -1213,9 +1218,9 @@
+                         settledValue = targetValue
+                         currentValue = targetValue
+                     }
++                } finally {
++                    dragTarget = null
+                 }
+-            } finally {
+-                dragTarget = null
+             }
+         } else {
+             if (confirmValueChange(targetValue)) {
