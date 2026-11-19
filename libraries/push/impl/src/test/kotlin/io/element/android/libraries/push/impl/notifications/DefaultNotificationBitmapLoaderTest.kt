@@ -17,8 +17,8 @@ import io.element.android.libraries.designsystem.components.avatar.AvatarSize
 import io.element.android.libraries.matrix.api.media.MatrixMediaLoader
 import io.element.android.libraries.matrix.api.media.MediaFile
 import io.element.android.libraries.matrix.api.media.MediaSource
-import io.element.android.libraries.matrix.ui.media.DefaultImageLoaderFactory
-import io.element.android.libraries.matrix.ui.media.test.FakeInitialsAvatarBitmapGenerator
+import io.element.android.libraries.matrixmedia.impl.DefaultImageLoaderFactory
+import io.element.android.libraries.matrixmedia.test.FakeInitialsAvatarBitmapGenerator
 import io.element.android.services.toolbox.test.sdk.FakeBuildVersionSdkIntProvider
 import io.element.android.tests.testutils.robolectric.RobolectricTest
 import kotlinx.coroutines.test.runTest
