@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Build the approved log-private SDK without modifying its source checkout.
+
+The caller owns the worktree/shared build guards and, for independent E2E,
+resource admission. Rust, packaging and downstream Android work are serialized.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+import zipfile
+
+SDK_REVISION = "96d0135495d68dd76a80510a41a86e2f90270490"
+COMPONENTS_REVISION = "917946f48c904750a6ab4b2a9d66f94513db0c99"
+TARGETS = ("x86_64-linux-android", "aarch64-linux-android")
+ABI_NAMES = ("x86_64", "arm64-v8a")
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def query(args, cwd=None, env=None):
+    return subprocess.check_output(args, cwd=cwd, env=env, text=True).strip()
+
+
+def api_signatures(public_api, kotlin_name):
+    # UInt/value-class arguments produce a JVM hash suffix on the Kotlin method name.
+    method = re.compile(r"\b" + re.escape(kotlin_name) + r"(?:-[A-Za-z0-9_-]+)?\(")
+    return {line.strip() for line in public_api.splitlines() if method.search(line)}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("sdk_source", type=Path, help="Read-only existing Matrix Rust SDK repository")
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[2]
+    source_repo = args.sdk_source.resolve()
+    patch = root / "tools/sdk/gallery-log-privacy.patch"
+    source_patch = root / "tools/sdk/gallery-source-log-privacy.patch"
+    work = root / "build/sdk-gallery-private"
+    work.mkdir(parents=True, exist_ok=True, mode=0o700)
+    logs = work / "logs"
+    logs.mkdir(exist_ok=True)
+    cache = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache")))
+    workspace_key = re.sub(r"[^A-Za-z0-9._-]", "-", root.name)
+    scratch = cache / "dev-scratch/element-x-android" / workspace_key / "sdk-gallery-private"
+    scratch.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env.update({"CARGO_BUILD_JOBS": "2", "CARGO_HOME": str(scratch / "cargo-home"),
+                "CARGO_TARGET_DIR": str(scratch / "cargo-target"), "CMAKE_BUILD_PARALLEL_LEVEL": "2",
+                "RUST_TEST_THREADS": "1", "TOKIO_WORKER_THREADS": "2", "RAYON_NUM_THREADS": "2"})
+    ndk = Path(env["ANDROID_NDK_HOME"])
+    env["ANDROID_NDK_ROOT"] = str(ndk)
+    env["NDK_VERSION"] = ndk.name
+    java = Path(env["JAVA_HOME"]) / "bin"
+    clang = next(ndk.glob("toolchains/llvm/prebuilt/*/bin/clang"))
+    nm = next(ndk.glob("toolchains/llvm/prebuilt/*/bin/llvm-nm"))
+    env["CC_x86_64-linux-android"] = str(clang)
+    env["CC_x86_64_linux_android"] = str(clang)
+    toolchain = {name: query(command, env=env) for name, command in {
+        "rustc": ["rustc", "--version"], "cargo": ["cargo", "--version"], "cargo_ndk": ["cargo", "ndk", "--version"],
+    }.items()}
+    version = re.search(r"rustc (\d+)\.(\d+)", toolchain["rustc"])
+    if version is None or tuple(map(int, version.groups())) < (1, 96):
+        raise RuntimeError("This SDK requires Rust 1.96 or later")
+
+    def run(label, command, cwd=None):
+        logfile = logs / (label + ".log")
+        print("SDK stage:", label, "log:", logfile, flush=True)
+        with logfile.open("w") as output:
+            result = subprocess.run(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT)
+        if result.returncode:
+            raise RuntimeError("SDK stage failed: " + label + "; inspect " + str(logfile))
+
+    if query(["git", "-C", str(source_repo), "rev-parse", SDK_REVISION]) != SDK_REVISION:
+        raise RuntimeError("Required SDK revision is unavailable")
+    sdk = work / "source"
+    if not sdk.exists():
+        run("clone-sdk", ["git", "clone", "--shared", "--no-checkout", str(source_repo), str(sdk)])
+        run("checkout-sdk", ["git", "checkout", "-B", "main", SDK_REVISION], sdk)
+    if query(["git", "rev-parse", "HEAD"], sdk) != SDK_REVISION:
+        raise RuntimeError("Existing isolated SDK has a different revision")
+    changed = query(["git", "diff", "--name-only"], sdk)
+    if not changed:
+        run("apply-privacy-patch", ["git", "apply", str(patch)], sdk)
+    run("validate-privacy-patch", ["git", "apply", "--reverse", "--check", str(patch)], sdk)
+    with tempfile.TemporaryDirectory(prefix="expected-index-", dir=work) as temporary_index:
+        expected_env = dict(env, GIT_INDEX_FILE=str(Path(temporary_index) / "index"))
+        query(["git", "read-tree", SDK_REVISION], sdk, expected_env)
+        query(["git", "apply", "--cached", str(patch)], sdk, expected_env)
+        filename_private_tree = query(["git", "write-tree"], sdk, expected_env)
+        query(["git", "apply", "--cached", str(source_patch)], sdk, expected_env)
+        expected_tree = query(["git", "write-tree"], sdk, expected_env)
+        already_applied = subprocess.run(["git", "diff", "--quiet", expected_tree, "--"], cwd=sdk, env=env)
+        if already_applied.returncode:
+            # Upgrade only the exact previously approved tree; never overwrite other source edits.
+            run("validate-previous-private-sdk-source", ["git", "diff", "--exit-code", filename_private_tree, "--"], sdk)
+            run("apply-source-privacy-patch", ["git", "apply", str(source_patch)], sdk)
+        run("validate-exact-sdk-source", ["git", "diff", "--exit-code", expected_tree, "--"], sdk)
+    if query(["git", "ls-files", "--others", "--exclude-standard"], sdk):
+        raise RuntimeError("Unexpected untracked SDK source inputs")
+    components = scratch / "components"
+    if not components.exists():
+        run("clone-components", ["git", "clone", "--no-checkout", "https://github.com/matrix-org/matrix-rust-components-kotlin.git", str(components)])
+        run("checkout-components", ["git", "checkout", "--detach", COMPONENTS_REVISION], components)
+    if query(["git", "rev-parse", "HEAD"], components) != COMPONENTS_REVISION:
+        raise RuntimeError("Kotlin packaging revision differs")
+
+    source_files = query(["git", "ls-files"], sdk).splitlines()
+    source_identity = {name: sha256(sdk / name) for name in source_files if (sdk / name).is_file()}
+    (work / "sdk-source-inputs.json").write_text(json.dumps(source_identity, sort_keys=True, indent=2) + "\n")
+    sdk_ci = ["nix", "develop", str(root) + "#sdkLint", "--command"]
+    toolchain["sdk_lint_rustc"] = query(sdk_ci + ["rustc", "--version"], sdk, env)
+    toolchain["sdk_lint_rustfmt"] = query(sdk_ci + ["rustfmt", "--version"], sdk, env)
+    (work / "toolchain.json").write_text(json.dumps(toolchain, sort_keys=True, indent=2) + "\n")
+    run("sdk-format", sdk_ci + ["cargo", "fmt", "--all", "--", "--check"], sdk)
+    run("sdk-lint", sdk_ci + ["cargo", "clippy", "--locked", "-p", "matrix-sdk", "--features", "testing", "--lib", "--", "-D", "warnings"], sdk)
+    test_args = ["cargo", "test", "--locked", "-p", "matrix-sdk", "--features", "testing", "--lib", "send_queue"]
+    discovered = query(test_args + ["--", "--list"], sdk, env)
+    if not any(line.endswith(": test") for line in discovered.splitlines()):
+        raise RuntimeError("No send-queue regression tests discovered")
+    (work / "sdk-test-discovery.txt").write_text(discovered + "\n")
+    run("sdk-send-queue-tests", test_args, sdk)
+    integration_args = ["cargo", "test", "--locked", "-p", "matrix-sdk", "--features", "testing", "--test", "integration", "send_queue"]
+    integration_discovery = query(integration_args + ["--", "--list"], sdk, env)
+    if not any(line.endswith(": test") for line in integration_discovery.splitlines()):
+        raise RuntimeError("No send-queue integration regressions discovered")
+    (work / "sdk-integration-discovery.txt").write_text(integration_discovery + "\n")
+    run("sdk-send-queue-integration", integration_args, sdk)
+    jni = scratch / "jniLibs"
+    jni.mkdir(exist_ok=True)
+    for target in TARGETS:
+        run("sdk-" + target, ["cargo", "ndk", "-t", target, "-o", str(jni), "rustc", "--locked", "-p", "matrix-sdk-ffi", "--features", "sentry",
+                              "--", "-C", "link-arg=-Wl,--threads=2"], sdk)
+    library = scratch / "cargo-target" / TARGETS[0] / "debug/libmatrix_sdk_ffi.so"
+    run("kotlin-bindings", ["cargo", "run", "--locked", "-p", "uniffi-bindgen", "--", "generate", "--library", str(library),
+                            "--language", "kotlin", "--config", str(sdk / "bindings/matrix-sdk-ffi/uniffi.toml"),
+                            "--out-dir", str(components / "sdk/sdk-android/src/main/kotlin")], sdk)
+    env.update({"GALLERY_SDK_BUILD_ROOT": str(scratch / "components-build"), "GALLERY_SDK_JNI_ROOT": str(jni)})
+    run("package-kotlin-aar", ["./gradlew", ":sdk:sdk-android:assembleDebug", "--max-workers=2", "--no-parallel", "--no-daemon",
+                              "--project-cache-dir", str(scratch / "components-cache"), "-I", str(root / "tools/sdk/gallery-sdk-build.gradle"),
+                              "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8", "-Pkotlin.daemon.jvmargs=-Xmx1g",
+                              "-Pkotlin.compiler.execution.strategy=in-process"], components)
+    aar = scratch / "components-build/sdk/sdk-android/outputs/aar/sdk-android-debug.aar"
+    destination = root / "libraries/rustsdk/matrix-rust-sdk.aar"
+    previous = work / "previous-sdk.aar"
+    if destination.exists() and not previous.exists():
+        shutil.copy2(destination, previous)
+
+    def exports(archive, abi, label):
+        library_path = scratch / (label + "-" + abi + ".so")
+        with zipfile.ZipFile(archive) as bundle:
+            library_path.write_bytes(bundle.read("jni/" + abi + "/libmatrix_sdk_ffi.so"))
+        names = {line.split()[-1] for line in query([str(nm), "--dynamic", "--defined-only", str(library_path)], env=env).splitlines() if line.split()}
+        return {name for name in names if name.startswith(("uniffi_", "ffi_matrix_sdk_ffi"))}
+
+    symbol_counts = {}
+    for abi in ABI_NAMES:
+        actual = exports(aar, abi, "new")
+        if len(actual) < 50:
+            raise RuntimeError("SDK ABI has no meaningful FFI export inventory: " + abi)
+        required = ("timeline_send_gallery", "timeline_send_reply_with_extra_content", "client_thread_inbox_pager", "client_thread_inbox_unread")
+        if any(not any(name.endswith(suffix) for name in actual) for suffix in required):
+            raise RuntimeError("Retained gallery/Hermes/Threads API missing: " + abi)
+        if previous.exists() and exports(previous, abi, "previous") - actual:
+            raise RuntimeError("Previously available FFI exports disappeared: " + abi)
+        symbol_counts[abi] = len(actual)
+    with zipfile.ZipFile(aar) as bundle:
+        jar = scratch / "classes.jar"
+        jar.write_bytes(bundle.read("classes.jar"))
+    previous_jar = scratch / "previous-classes.jar"
+    if previous.exists():
+        with zipfile.ZipFile(previous) as bundle:
+            previous_jar.write_bytes(bundle.read("classes.jar"))
+    required_bindings = {
+        "Client": ("threadInboxPager", "threadInboxUnread", "subscribeToThreadInboxUpdates"),
+        "Timeline": ("sendGallery", "sendWithExtraContent", "sendReplyWithExtraContent"),
+        "Room": ("subscribeToStateEvents",),
+    }
+    api_inventory = {}
+    for name, methods in required_bindings.items():
+        run("api-" + name, [str(java / "javap"), "-public", "-classpath", str(jar), "org.matrix.rustcomponents.sdk." + name])
+        public_api = (logs / ("api-" + name + ".log")).read_text()
+        if previous.exists():
+            run("previous-api-" + name, [str(java / "javap"), "-public", "-classpath", str(previous_jar),
+                                         "org.matrix.rustcomponents.sdk." + name])
+            previous_api = (logs / ("previous-api-" + name + ".log")).read_text()
+        for method in methods:
+            actual = api_signatures(public_api, method)
+            if not actual:
+                raise RuntimeError("Retained Kotlin API missing: " + name + "." + method)
+            if previous.exists():
+                baseline = api_signatures(previous_api, method)
+                if not baseline or baseline - actual:
+                    raise RuntimeError("Retained Kotlin API signature changed: " + name + "." + method)
+            api_inventory[name + "." + method] = sorted(actual)
+    (work / "kotlin-api-inventory.json").write_text(json.dumps(api_inventory, sort_keys=True, indent=2) + "\n")
+    if any(sha256(sdk / name) != digest for name, digest in source_identity.items()):
+        raise RuntimeError("SDK source changed during its build")
+    provenance = {"sdk_revision": SDK_REVISION, "sdk_source_tree": expected_tree, "components_revision": COMPONENTS_REVISION, "patch_sha256": sha256(patch), "source_patch_sha256": sha256(source_patch),
+                  "aar_sha256": sha256(aar), "ffi_export_counts": symbol_counts, "kotlin_api": api_inventory, "toolchain": toolchain,
+                  "cargo_jobs": 2, "rust_test_threads": 1, "gradle_workers": 2, "scratch": str(scratch)}
+    (work / "provenance.json").write_text(json.dumps(provenance, sort_keys=True, indent=2) + "\n")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".private-sdk-", dir=destination.parent)
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    properties = destination.with_suffix(".private.properties")
+    descriptor, properties_name = tempfile.mkstemp(prefix=".private-sdk-properties-", dir=destination.parent)
+    os.close(descriptor)
+    staged_properties = Path(properties_name)
+    try:
+        shutil.copyfile(aar, temporary)
+        if sha256(temporary) != provenance["aar_sha256"]:
+            raise RuntimeError("SDK staging copy differs")
+        staged_properties.write_text("aar.sha256=" + provenance["aar_sha256"] + "\nprivacy.patch.sha256=" + provenance["patch_sha256"] +
+                                     "\nsource.privacy.patch.sha256=" + provenance["source_patch_sha256"] + "\nsdk.revision=" + SDK_REVISION +
+                                     "\ncomponents.revision=" + COMPONENTS_REVISION + "\n")
+        # The caller retains the build guards until both validated files are installed.
+        temporary.replace(destination)
+        staged_properties.replace(properties)
+    finally:
+        temporary.unlink(missing_ok=True)
+        staged_properties.unlink(missing_ok=True)
+    print("Private SDK installed; SHA-256:", provenance["aar_sha256"], flush=True)
+
+
+if __name__ == "__main__":
+    main()

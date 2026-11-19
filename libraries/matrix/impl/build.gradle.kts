@@ -1,5 +1,10 @@
 import extension.setupDependencyInjection
 import extension.testCommonDependencies
+import java.io.File
+import java.io.OutputStream
+import java.security.DigestInputStream
+import java.security.MessageDigest
+import java.util.Properties
 
 /*
  * Copyright (c) 2025 Element Creations Ltd.
@@ -21,12 +26,26 @@ android {
 setupDependencyInjection()
 
 dependencies {
-    // Threads Inbox requires the aggregate API on the SDK fork's main branch.
+    // Threads Inbox and log-private media uploads require the verified local SDK.
     // Use the same bindings for every variant; mixing published and local APIs
     // makes release compilation differ from the verified debug build.
-    require(file("${rootDir.path}/libraries/rustsdk/matrix-rust-sdk.aar").exists()) {
-        "Build the matrix-rust-sdk main branch with tools/sdk/build-threads-inbox-sdk before building the app."
+    val sdkAar = file("${rootDir.path}/libraries/rustsdk/matrix-rust-sdk.aar")
+    val sdkProvenance = file("${rootDir.path}/libraries/rustsdk/matrix-rust-sdk.private.properties")
+    val privacyPatch = file("${rootDir.path}/tools/sdk/gallery-log-privacy.patch")
+    val sourcePrivacyPatch = file("${rootDir.path}/tools/sdk/gallery-source-log-privacy.patch")
+    val rebuildSdkMessage = "Build the log-private SDK with tools/sdk/build-gallery-private-sdk <sdk-repository> before building the app."
+    require(sdkAar.exists() && sdkProvenance.exists()) { rebuildSdkMessage }
+    fun sha256(input: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        DigestInputStream(input.inputStream(), digest).use { it.copyTo(OutputStream.nullOutputStream()) }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
+    val provenance = Properties().apply { sdkProvenance.inputStream().use { load(it) } }
+    require(
+        provenance.getProperty("aar.sha256") == sha256(sdkAar) &&
+            provenance.getProperty("privacy.patch.sha256") == sha256(privacyPatch) &&
+            provenance.getProperty("source.privacy.patch.sha256") == sha256(sourcePrivacyPatch)
+    ) { rebuildSdkMessage }
     implementation(projects.libraries.rustsdk)
     implementation(projects.libraries.rustlsTls)
 

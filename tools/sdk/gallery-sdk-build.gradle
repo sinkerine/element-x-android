@@ -1,0 +1,17 @@
+// Copyright 2026 Element Creations Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+// Keep generated packaging outputs and JNI libraries in this workspace's scratch tree.
+gradle.beforeProject { project ->
+    def buildRoot = System.getenv('GALLERY_SDK_BUILD_ROOT')
+    def jniRoot = System.getenv('GALLERY_SDK_JNI_ROOT')
+    if (!buildRoot || !jniRoot) {
+        throw new GradleException('Set the gallery SDK build and JNI scratch locations')
+    }
+    def relative = project.path == ':' ? 'root' : project.path.substring(1).replace(':', '/')
+    project.layout.buildDirectory.set(new File(buildRoot, relative))
+    project.plugins.withId('com.android.library') {
+        if (project.path == ':sdk:sdk-android') {
+            project.extensions.getByName('android').sourceSets.getByName('main').jniLibs.setSrcDirs([new File(jniRoot)])
+        }
+    }
+}

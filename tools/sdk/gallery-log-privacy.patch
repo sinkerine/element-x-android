@@ -1,0 +1,20 @@
+--- a/crates/matrix-sdk/src/send_queue/upload.rs
++++ b/crates/matrix-sdk/src/send_queue/upload.rs
+@@ -295,7 +295,7 @@
+         let send_event_txn = config.txn_id.map_or_else(ChildTransactionId::new, Into::into);
+ 
+         Span::current().record("event_txn", tracing::field::display(&*send_event_txn));
+-        debug!(filename, %content_type, %upload_file_txn, "sending an attachment");
++        debug!(%content_type, %upload_file_txn, "sending an attachment");
+ 
+         let file_media_request = Media::make_local_file_media_request(&upload_file_txn);
+ 
+@@ -427,7 +427,7 @@
+ 
+             let upload_file_txn = TransactionId::new();
+ 
+-            debug!(filename, %content_type, %upload_file_txn, "uploading a gallery attachment");
++            debug!(%content_type, %upload_file_txn, "uploading a gallery attachment");
+ 
+             let file_media_request = Media::make_local_file_media_request(&upload_file_txn);
+ 

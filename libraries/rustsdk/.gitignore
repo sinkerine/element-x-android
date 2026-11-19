@@ -1,2 +1,4 @@
 # Built application files
 *.aar
+matrix-rust-sdk.private.properties
+.private-sdk-*
