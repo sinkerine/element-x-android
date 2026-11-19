@@ -166,13 +166,14 @@ class AnswerNavigationParserTest : RobolectricTest() {
     @Test
     fun `all display fragments pass through existing sanitizer`() {
         val fragments = mutableListOf<String>()
-        AnswerNavigationParser.parse("$prose<p>Intro</p>$headings<h2>Sources</h2><a href='https://a.example'>A</a>", 2_000) {
+        val html = "$prose<p id='private' onclick='ignored()'>Intro</p>$headings<h2>Sources</h2><a href='https://a.example'>A</a>"
+        AnswerNavigationParser.parse(html, 2_000) {
             val sanitized = FormattedBody(MessageFormat.HTML, it).toHtmlDocument(permalinkParser)?.body()?.html().orEmpty()
             fragments.add(sanitized)
             sanitized
         }
         assertThat(fragments).isNotEmpty()
-        assertThat(fragments.joinToString()).doesNotContain("<h2>")
+        assertThat(fragments.joinToString()).doesNotContain("onclick=")
         assertThat(fragments.joinToString()).doesNotContain("id=")
     }
 }

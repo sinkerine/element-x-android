@@ -31,6 +31,12 @@ class MigrationPresenter(
     override fun present(): MigrationState {
         var migrationAction: AsyncData<Unit> by remember { mutableStateOf(AsyncData.Uninitialized) }
         var retryCount by remember { mutableIntStateOf(0) }
+        val onRetry: () -> Unit = remember {
+            {
+                migrationAction = AsyncData.Loading(Unit)
+                retryCount++
+            }
+        }
 
         LaunchedEffect(retryCount) {
             try {
@@ -49,10 +55,7 @@ class MigrationPresenter(
 
         return MigrationState(
             migrationAction = migrationAction,
-            onRetry = {
-                migrationAction = AsyncData.Loading(Unit)
-                retryCount++
-            },
+            onRetry = onRetry,
         )
     }
 }
