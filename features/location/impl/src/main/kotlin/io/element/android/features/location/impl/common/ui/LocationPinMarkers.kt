@@ -28,6 +28,7 @@ import org.maplibre.compose.interaction.ClickResult
 import org.maplibre.compose.layers.CircleLayer
 import org.maplibre.compose.layers.SymbolLayer
 import org.maplibre.compose.sources.GeoJsonData
+import org.maplibre.compose.sources.GeoJsonOptions
 import org.maplibre.compose.sources.GeoJsonSource
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.spatialk.geojson.Feature
@@ -93,11 +94,12 @@ fun LocationPinMarkers(
     // Create GeoJSON source with clustering
     val markersSource = rememberGeoJsonSource(
         data = GeoJsonData.JsonString(geoJsonString),
-    ) {
-        cluster = true
-        clusterMinPoints = 3
-        clusterRadius = 30
-    }
+        options = GeoJsonOptions(
+            cluster = true,
+            clusterMinPoints = 3,
+            clusterRadius = 30,
+        ),
+    )
 
     // Cluster circle layer
     CircleLayer(

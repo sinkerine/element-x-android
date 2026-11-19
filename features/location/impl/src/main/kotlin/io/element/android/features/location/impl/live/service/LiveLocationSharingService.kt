@@ -93,13 +93,13 @@ class LiveLocationSharingService : Service() {
         val locationProvider = createLocationProvider(context = applicationContext)
         appPreferencesStore.getLiveLocationMinimumDistanceInMetersUpdateFlow()
             .flatMapLatest { minDistanceMeters ->
-                val locationRequest = LocationRequest {
+                val locationRequest = LocationRequest(
                     // High accuracy is required: with Balanced, some fused providers (e.g. microG) never enable
                     // the GPS, so no location update is received when no network location is available.
-                    accuracy = LocationAccuracy.High
-                    minimumInterval = UPDATE_INTERVAL_IN_SECOND.seconds
-                    minimumDistance = minDistanceMeters.meters
-                }
+                    accuracy = LocationAccuracy.High,
+                    minimumInterval = UPDATE_INTERVAL_IN_SECOND.seconds,
+                    minimumDistance = minDistanceMeters.meters,
+                )
                 locationProvider.updates(locationRequest)
             }
             .onEach { locationEvent ->
@@ -118,13 +118,9 @@ class LiveLocationSharingService : Service() {
                             LocationUnavailableReason.TemporarilyUnavailable -> Unit
                             LocationUnavailableReason.Unsupported,
                             LocationUnavailableReason.PermissionDenied,
-                            // The provider has no classification for the failure, it is unexpected.
-                            null -> coordinator.dispatchUnrecoverableError()
-                            // Reasons added in a future library version: keep sharing rather than hard failing.
-                            else -> Timber.w("Unhandled location unavailable reason: ${locationEvent.reason}")
+                            LocationUnavailableReason.UnexpectedFailure -> coordinator.dispatchUnrecoverableError()
                         }
                     }
-                    else -> Timber.w("Unhandled location event: $locationEvent")
                 }
             }
             .launchIn(coroutineScope)

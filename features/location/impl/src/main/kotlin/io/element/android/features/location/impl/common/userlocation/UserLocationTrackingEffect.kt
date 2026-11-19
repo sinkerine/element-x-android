@@ -72,13 +72,13 @@ internal fun UserLocationTrackingEffect(
     ) { location ->
         val target = location?.position ?: return@UserLocationTrackingEffect
         val position = mapState.cameraPosition.copy(
-            center = target,
+            target = target,
             // Force pointing to NORTH
             bearing = 0.0,
             zoom = mapState.cameraPosition.zoom.coerceAtLeast(MapDefaults.DEFAULT_ZOOM)
         )
         if (hasPositioned) {
-            mapState.animateCamera(position.toCameraUpdate(), CameraAnimation.Fly.Standard)
+            mapState.animateCamera(position.toCameraUpdate(), CameraAnimation.Fly())
         } else {
             mapState.setCameraPosition(position)
             hasPositioned = true
