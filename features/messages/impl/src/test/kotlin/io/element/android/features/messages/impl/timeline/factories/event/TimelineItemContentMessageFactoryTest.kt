@@ -37,8 +37,8 @@ import io.element.android.features.messages.impl.timeline.model.event.TimelineIt
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemVideoContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemVoiceContent
 import io.element.android.features.messages.impl.timeline.model.event.captionOrNull
-import io.element.android.features.messages.impl.timeline.model.event.formattedCaptionOrNull
 import io.element.android.features.messages.impl.timeline.model.event.captionTreeOrNull
+import io.element.android.features.messages.impl.timeline.model.event.formattedCaptionOrNull
 import io.element.android.features.messages.test.timeline.FakeHtmlConverterProvider
 import io.element.android.features.messages.test.timeline.FakeTextPillificator
 import io.element.android.libraries.androidutils.filesize.FakeFileSizeFormatter

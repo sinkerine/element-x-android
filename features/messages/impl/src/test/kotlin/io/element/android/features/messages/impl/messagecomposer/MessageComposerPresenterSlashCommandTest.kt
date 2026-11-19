@@ -26,7 +26,6 @@ import io.element.android.features.messages.test.timeline.FakeTextPillificator
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher
 import io.element.android.libraries.emoji.api.recentemojis.EmptyGetRecentEmojis
 import io.element.android.libraries.emoji.test.fakeEmojiPickerPresenterFactory
-import io.element.android.libraries.featureflag.test.FakeFeatureFlagService
 import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.matrix.api.permalink.PermalinkBuilder

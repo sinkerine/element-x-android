@@ -66,8 +66,6 @@ import io.element.android.libraries.emoji.api.recentemojis.EmptyGetRecentEmojis
 import io.element.android.libraries.emoji.test.FakeEmojiPickerState
 import io.element.android.libraries.emoji.test.fakeEmojiPickerPresenter
 import io.element.android.libraries.emoji.test.fakeEmojiPickerPresenterFactory
-import io.element.android.libraries.featureflag.api.FeatureFlags
-import io.element.android.libraries.featureflag.test.FakeFeatureFlagService
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.ThreadId
@@ -2046,7 +2044,6 @@ class MessageComposerPresenterTest : RobolectricTest() {
         mediaOptimizationConfigProvider: FakeMediaOptimizationConfigProvider = FakeMediaOptimizationConfigProvider(),
         threadRoot: ThreadId? = null,
         slashCommandService: SlashCommandService = FakeSlashCommandService(),
-        featureFlagService: FakeFeatureFlagService = FakeFeatureFlagService(),
         emojiPickerPresenter: EmojiPickerPresenter = fakeEmojiPickerPresenter(),
         addRecentEmoji: AddRecentEmoji = AddRecentEmoji { Result.success(Unit) },
     ) = MessageComposerPresenter(

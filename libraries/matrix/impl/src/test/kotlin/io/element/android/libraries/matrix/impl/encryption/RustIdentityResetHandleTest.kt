@@ -9,6 +9,7 @@ package io.element.android.libraries.matrix.impl.encryption
 
 import com.google.common.truth.Truth.assertThat
 import io.element.android.libraries.matrix.test.A_USER_ID
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.matrix.rustcomponents.sdk.AuthData
@@ -26,7 +27,7 @@ class RustIdentityResetHandleTest {
     @Test
     fun `password reset includes challenge session`() = runTest {
         val handle = Handle()
-        RustPasswordIdentityResetHandle(A_USER_ID, handle, "test-session").resetPassword("test-password").getOrThrow()
+        RustPasswordIdentityResetHandle(A_USER_ID, handle, "test-session", StandardTestDispatcher(testScheduler)).resetPassword("test-password").getOrThrow()
         val details = (handle.auth as AuthData.Password).passwordDetails
         assertThat(details.identifier).isEqualTo(A_USER_ID.value)
         assertThat(details.password).isEqualTo("test-password")
@@ -36,7 +37,7 @@ class RustIdentityResetHandleTest {
     @Test
     fun `oauth reset includes challenge session`() = runTest {
         val handle = Handle()
-        RustIdentityOAuthResetHandle(handle, "https://example.org/approve", "test-session").resetOAuth().getOrThrow()
+        RustIdentityOAuthResetHandle(handle, "https://example.org/approve", "test-session", StandardTestDispatcher(testScheduler)).resetOAuth().getOrThrow()
         assertThat((handle.auth as AuthData.OAuth).session).isEqualTo("test-session")
     }
 }

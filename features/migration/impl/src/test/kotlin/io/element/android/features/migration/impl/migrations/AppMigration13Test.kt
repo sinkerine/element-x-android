@@ -125,7 +125,7 @@ class AppMigration13Test {
     }
 
     @Test
-    fun `legacy session ends up in the sessions directories after AppMigration11`() = runTest {
+    fun `legacy session ends up in the sessions directories after AppMigration12`() = runTest {
         // Name used by old versions of the application, see AppMigration05 and AppMigration06
         val legacyUserId = "@alice:server.org"
         val legacyName = "@alice_server.org"
@@ -140,7 +140,7 @@ class AppMigration13Test {
             )
         )
 
-        AppMigration11(sessionStore).migrate(isFreshInstall = false)
+        AppMigration12(sessionStore).migrate(isFreshInstall = false)
         createMigration(sessionStore).migrate(isFreshInstall = false)
 
         val expectedName = UUID.nameUUIDFromBytes(legacyUserId.toByteArray()).toString()

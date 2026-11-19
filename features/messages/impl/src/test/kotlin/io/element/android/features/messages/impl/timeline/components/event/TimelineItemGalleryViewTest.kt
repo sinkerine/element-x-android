@@ -20,8 +20,8 @@ import io.element.android.features.messages.impl.timeline.factories.event.MathsS
 import io.element.android.features.messages.impl.timeline.factories.event.TimelineItemContentMessageFactory
 import io.element.android.features.messages.impl.timeline.model.event.GalleryItem
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemGalleryContent
-import io.element.android.features.messages.test.timeline.FakeTextPillificator
 import io.element.android.features.messages.test.timeline.FakeHtmlConverterProvider
+import io.element.android.features.messages.test.timeline.FakeTextPillificator
 import io.element.android.libraries.androidutils.filesize.FakeFileSizeFormatter
 import io.element.android.libraries.designsystem.preview.ElementPreview
 import io.element.android.libraries.featureflag.test.FakeFeatureFlagService
