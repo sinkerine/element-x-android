@@ -1,6 +1,14 @@
 # Threads Inbox SDK integration
 
-Threads Inbox uses `Client.threadInboxPager`, `Client.threadInboxUnread` and `subscribeToThreadInboxUpdates` from the local Matrix Rust SDK fork's `main` branch. Android variants use the same locally built AAR so release compilation cannot silently select the older published bindings.
+Threads Inbox uses `Client.threadInboxPager`, `Client.threadInboxUnread` and `subscribeToThreadInboxUpdates` from the local Matrix Rust SDK fork's `main` branch. All Android variants use the same local release AAR.
+
+Install the verified release AAR for SDK source `b303bb5785980bd860310bb2f5f8b301fa351172` at `libraries/rustsdk/matrix-rust-sdk.aar`. Its SHA-256 is `02f1dcefb2cfff3a543e86870707283b7166358bb5ff1912088d17e1ffbbdd3d`. The release was packaged with Kotlin components `93488b7a668e2cd5752b85d59da4f81d791e87b2`. The local fork-maintenance handoff is `~/.local/state/fork-maintenance/20261119T030355Z/matrix-rust-sdk/local-android-aar/`.
+
+Write the adjacent `matrix-rust-sdk.private.properties` from the verified handoff with `sdk.revision`, `aar.sha256`, `privacy.patch.sha256`, and `source.privacy.patch.sha256`. The patch hashes refer to the two checked-in patches integrated in SDK commit `1b0061d0635c155961b882f1da4ecc8f345772c1`. Keep both local inputs outside Git. Gradle enforces the source revision, exact release bytes, and patch hashes.
+
+## Historical SDK build recipe
+
+The following commands reproduce the earlier log-private SDK for the branches that use it. The historical `tools/sdk/build-gallery-private-sdk` output predates the current release pin.
 
 The local AAR also carries the MSC4391 bot-command subscription `required_state` (`org.matrix.msc4391.command_description`, with wildcard state keys) and `Timeline.sendReplyWithExtraContent` reply FFI. For Hermes slash commands, build SDK commit `96d0135495d68dd76a80510a41a86e2f90270490` in a clean local clone checked out as `main`; this delivery is merged into the local SDK fork's `main` and preserves the Threads Inbox pager/unread APIs. The bindings also expose `Room.subscribeToStateEvents` and `Timeline.sendWithExtraContent`.
 

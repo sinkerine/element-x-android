@@ -38,7 +38,9 @@ dependencies {
     val sdkProvenance = file("${rootDir.path}/libraries/rustsdk/matrix-rust-sdk.private.properties")
     val privacyPatch = file("${rootDir.path}/tools/sdk/gallery-log-privacy.patch")
     val sourcePrivacyPatch = file("${rootDir.path}/tools/sdk/gallery-source-log-privacy.patch")
-    val rebuildSdkMessage = "Build the log-private SDK with tools/sdk/build-gallery-private-sdk <sdk-repository> before building the app."
+    val sdkRevision = "b303bb5785980bd860310bb2f5f8b301fa351172"
+    val sdkChecksum = "02f1dcefb2cfff3a543e86870707283b7166358bb5ff1912088d17e1ffbbdd3d"
+    val rebuildSdkMessage = "Install the verified local Matrix SDK release AAR and its provenance. See tools/sdk/threads-inbox-sdk.md."
     require(sdkAar.exists() && sdkProvenance.exists()) { rebuildSdkMessage }
     fun sha256(input: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -47,7 +49,9 @@ dependencies {
     }
     val provenance = Properties().apply { sdkProvenance.inputStream().use { load(it) } }
     require(
-        provenance.getProperty("aar.sha256") == sha256(sdkAar) &&
+        provenance.getProperty("sdk.revision") == sdkRevision &&
+            provenance.getProperty("aar.sha256") == sdkChecksum &&
+            sha256(sdkAar) == sdkChecksum &&
             provenance.getProperty("privacy.patch.sha256") == sha256(privacyPatch) &&
             provenance.getProperty("source.privacy.patch.sha256") == sha256(sourcePrivacyPatch)
     ) { rebuildSdkMessage }
