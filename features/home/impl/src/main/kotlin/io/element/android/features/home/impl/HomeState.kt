@@ -28,7 +28,6 @@ data class HomeState(
     val homeSpacesState: HomeSpacesState,
     val snackbarMessage: SnackbarMessage?,
     val canReportBug: Boolean,
-    val directLogoutState: DirectLogoutState,
     val showThreads: Boolean,
     val isThreadsDrawerOpen: Boolean,
     val threadsUnreadCount: Int,

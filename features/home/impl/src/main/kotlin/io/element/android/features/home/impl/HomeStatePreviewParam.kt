@@ -67,7 +67,6 @@ internal fun aHomeState(
     canReportBug: Boolean = true,
     showThreads: Boolean = false,
     isThreadsDrawerOpen: Boolean = false,
-    directLogoutState: DirectLogoutState = aDirectLogoutState(),
     showMultiAccountAnnouncement: Boolean = false,
     totalUnreadCount: Long = 0L,
     eventSink: (HomeEvent) -> Unit = {}
@@ -81,7 +80,6 @@ internal fun aHomeState(
     isThreadsDrawerOpen = isThreadsDrawerOpen,
     threadsUnreadCount = 0,
     threadsHaveMention = false,
-    directLogoutState = directLogoutState,
     showMultiAccountAnnouncement = showMultiAccountAnnouncement,
     currentHomeNavigationBarItem = currentHomeNavigationBarItem,
     roomListState = roomListState,

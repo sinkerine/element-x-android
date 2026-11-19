@@ -53,8 +53,6 @@ import io.element.android.libraries.di.annotations.SessionCoroutineScope
 import io.element.android.libraries.emoji.api.picker.EmojiPickerPresenter
 import io.element.android.libraries.emoji.api.recentemojis.AddRecentEmoji
 import io.element.android.libraries.emoji.api.recentemojis.GetRecentEmojis
-import io.element.android.libraries.featureflag.api.FeatureFlagService
-import io.element.android.libraries.featureflag.api.FeatureFlags
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UserId

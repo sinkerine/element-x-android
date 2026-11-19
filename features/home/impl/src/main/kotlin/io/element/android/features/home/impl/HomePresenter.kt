@@ -144,7 +144,6 @@ class HomePresenter(
             isThreadsDrawerOpen = isThreadsDrawerOpen,
             threadsUnreadCount = 0,
             threadsHaveMention = false,
-            directLogoutState = directLogoutState,
             showMultiAccountAnnouncement = showMultiAccountAnnouncement,
             totalUnreadCount = totalUnreadCount,
             eventSink = ::handleEvent,

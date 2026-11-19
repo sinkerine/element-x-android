@@ -50,7 +50,6 @@ import io.element.android.libraries.designsystem.theme.components.HorizontalDivi
 import io.element.android.libraries.designsystem.theme.components.Icon
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.media.MediaSource
-import io.element.android.libraries.matrixmedia.api.MediaRequestData
 import io.element.android.libraries.matrix.ui.media.contentvalidation.ContentValidationState
 import io.element.android.libraries.matrix.ui.media.contentvalidation.ContentValidationValue
 import io.element.android.libraries.matrix.ui.media.contentvalidation.InvalidContentView
