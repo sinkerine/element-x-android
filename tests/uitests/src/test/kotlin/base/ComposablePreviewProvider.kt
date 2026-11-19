@@ -30,12 +30,25 @@ object ComposablePreviewProvider : TestParameterValuesProvider() {
         AndroidComposablePreviewScanner()
             .scanPackageTrees(*PACKAGE_TREES)
             .getPreviews()
-            .filter { composablePreview -> composablePreview.methodName.endsWith("A11yPreview").not() }
+            .filterNot { it.methodName.endsWith("A11yPreview") }
+            // Appended parameter cases must not shift the established shard assignments.
+            .sortedBy { it.isAppendedGalleryPreview() }
             .withIndex()
             .toList()
     }
 
     override fun provideValues(context: Context): List<IndexedValue<ComposablePreview<AndroidPreviewInfo>>> = values
+}
+
+private fun ComposablePreview<AndroidPreviewInfo>.isAppendedGalleryPreview(): Boolean {
+    val index = previewIndex ?: return false
+    return when (declaringClass) {
+        "io.element.android.features.messages.impl.timeline.components.event.TimelineItemGalleryViewKt" ->
+            methodName == "TimelineItemGalleryViewPreview" && index >= 10
+        "io.element.android.libraries.mediaviewer.impl.viewer.MediaViewerViewKt" ->
+            methodName in listOf("MediaViewerViewPreview", "MediaViewerViewLandscapePreview") && index >= 25
+        else -> false
+    }
 }
 
 object ComposableA11yPreviewProvider : TestParameterValuesProvider() {

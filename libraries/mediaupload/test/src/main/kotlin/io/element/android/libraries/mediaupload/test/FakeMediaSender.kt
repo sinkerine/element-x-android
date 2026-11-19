@@ -21,13 +21,15 @@ class FakeMediaSender(
     private val sendVoiceMessageResult: () -> Result<Unit> = { lambdaError() },
     private val sendGalleryResult: () -> Result<Unit> = { lambdaError() },
     private val cleanUpResult: () -> Unit = { lambdaError() },
+    private val preProcessMediaLambda: (uri: Uri, mimeType: String) -> Result<MediaUploadInfo> = { _, _ -> preProcessMediaResult() },
+    private val sendGalleryLambda: (infos: List<MediaUploadInfo>, caption: String?) -> Result<Unit> = { _, _ -> sendGalleryResult() },
 ) : MediaSender {
     override suspend fun preProcessMedia(
         uri: Uri,
         mimeType: String,
         mediaOptimizationConfig: MediaOptimizationConfig,
     ): Result<MediaUploadInfo> {
-        return preProcessMediaResult()
+        return preProcessMediaLambda(uri, mimeType)
     }
 
     override suspend fun sendPreProcessedMedia(
@@ -65,7 +67,7 @@ class FakeMediaSender(
         formattedCaption: String?,
         inReplyToEventId: EventId?,
     ): Result<Unit> {
-        return sendGalleryResult()
+        return sendGalleryLambda(mediaUploadInfos, caption)
     }
 
     override fun cleanUp() {

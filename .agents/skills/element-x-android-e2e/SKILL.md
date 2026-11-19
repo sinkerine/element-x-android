@@ -39,9 +39,9 @@ If no AVD exists, create a dedicated test AVD using Android Studio Device Manage
 
 ## Keep build and emulator memory peaks separate
 
-Build the APK with `./tools/gradle-local.sh :app:assembleGplayDebug` before starting a dedicated emulator. The wrapper serializes local builds across worktrees, limits Gradle to two workers with parallel task execution disabled, uses a 4 GiB debug heap and a 2 GiB Kotlin daemon heap, and lets the single-use Gradle daemon exit after the build. Run it inside `nix develop --command` when needed. Direct `gradlew` invocations bypass the shared build lock. Avoid overlapping unit tests, release builds, and debug builds with emulator testing. Preserve any emulator already in use by another session.
+Build the APK with `./tools/gradle-local.sh :app:assembleGplayDebug` before starting a dedicated emulator. The wrapper serializes local builds across worktrees, limits Gradle to two workers with parallel task execution disabled, uses a 3 GiB debug heap and a 1 GiB Kotlin daemon heap, and lets the single-use Gradle daemon exit after the build. Run it inside `nix develop --command` when needed. Direct `gradlew` invocations bypass the shared build lock. Avoid overlapping unit tests, release builds, and debug builds with emulator testing. Preserve any emulator already in use by another session.
 
-The dedicated `tools/interactive-ui/sandbox/avd-up.sh` launcher caps guest RAM at 2048 MiB and CPUs at two. New AVDs use the smaller Pixel 2 profile; existing AVD profiles and sessions are preserved. Emulator host memory also includes graphics and virtualization overhead.
+The dedicated `tools/interactive-ui/sandbox/avd-up.sh` launcher caps guest RAM at 1536 MiB and CPUs at two. New AVDs use the smaller Pixel 2 profile; existing AVD profiles and sessions are preserved. Emulator host memory also includes graphics and virtualization overhead.
 
 ## Select and inspect the emulator through Orca
 

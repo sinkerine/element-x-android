@@ -10,6 +10,7 @@ package io.element.android.features.messages.impl.timeline.model.event
 import io.element.android.libraries.matrix.api.media.MediaSource
 import io.element.android.libraries.matrix.ui.media.MediaRequestData
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
 import kotlin.time.Duration
 
 data class TimelineItemGalleryContent(
@@ -23,6 +24,12 @@ data class TimelineItemGalleryContent(
     override val type: String = "TimelineItemGalleryContent"
 
     val showCaption = caption != null
+
+    /** Images and videos with their index in [items], shown in the grid. */
+    val visualItems: ImmutableList<IndexedValue<GalleryItem>> = items.withIndex().filter { it.value.type.isVisualMedia() }.toImmutableList()
+
+    /** Audio and file items with their index in [items], shown as rows below the grid. */
+    val fileItems: ImmutableList<IndexedValue<GalleryItem>> = items.withIndex().filterNot { it.value.type.isVisualMedia() }.toImmutableList()
 }
 
 data class GalleryItem(
@@ -37,6 +44,8 @@ data class GalleryItem(
     val thumbnailHeight: Int?,
     val blurhash: String?,
     val duration: Duration = Duration.ZERO,
+    val formattedFileSize: String = "",
+    val fileExtension: String = "",
 ) {
     enum class Type {
         Image,

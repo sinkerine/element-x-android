@@ -48,7 +48,6 @@ import io.element.android.features.messages.impl.threads.list.ThreadsListNode
 import io.element.android.features.messages.impl.timeline.TimelineController
 import io.element.android.features.messages.impl.timeline.debug.EventDebugInfoNode
 import io.element.android.features.messages.impl.timeline.model.TimelineItem
-import io.element.android.features.messages.impl.timeline.model.event.GalleryItem
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemAttachmentsContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemAudioContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemEventContentWithAttachment
@@ -60,6 +59,7 @@ import io.element.android.features.messages.impl.timeline.model.event.TimelineIt
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemVoiceContent
 import io.element.android.features.messages.impl.timeline.model.event.blurHash
 import io.element.android.features.messages.impl.timeline.model.event.duration
+import io.element.android.features.messages.impl.timeline.model.event.toGalleryItemData
 import io.element.android.features.poll.api.create.CreatePollEntryPoint
 import io.element.android.features.poll.api.create.CreatePollMode
 import io.element.android.libraries.androidutils.system.DeviceHasVulkanSupport
@@ -162,7 +162,9 @@ class MessagesFlowNode(
             val thumbnailSource: MediaSource?,
             val canUseOverlay: Boolean,
             val blurHash: String?,
-        ) : NavTarget
+        ) : NavTarget {
+            override fun toString(): String = "MediaViewer(mode=${mode::class.simpleName}, eventId=$eventId, canUseOverlay=$canUseOverlay)"
+        }
 
         @Parcelize
         data class GalleryViewer(
@@ -171,16 +173,23 @@ class MessagesFlowNode(
             val galleryInfo: GalleryInfo,
             val canUseOverlay: Boolean,
             val galleryItems: List<GalleryItemData> = emptyList(),
-        ) : NavTarget
+        ) : NavTarget {
+            override fun toString(): String = "GalleryViewer(eventId=$eventId, itemCount=${galleryItems.size}, initialIndex=${galleryInfo.initialIndex})"
+        }
 
         @Parcelize
-        data class AttachmentPreview(val timelineMode: Timeline.Mode, val attachments: ImmutableList<Attachment>, val inReplyToEventId: EventId?) : NavTarget
+        data class AttachmentPreview(val timelineMode: Timeline.Mode, val attachments: ImmutableList<Attachment>, val inReplyToEventId: EventId?) : NavTarget {
+            override fun toString(): String =
+                "AttachmentPreview(timelineMode=$timelineMode, attachmentCount=${attachments.size}, inReplyToEventId=$inReplyToEventId)"
+        }
 
         @Parcelize
         data class LocationViewer(val mode: ShowLocationMode) : NavTarget
 
         @Parcelize
-        data class EventDebugInfo(val eventId: EventId?, val debugInfo: TimelineItemDebugInfo) : NavTarget
+        data class EventDebugInfo(val eventId: EventId?, val debugInfo: TimelineItemDebugInfo) : NavTarget {
+            override fun toString(): String = "EventDebugInfo(eventId=$eventId)"
+        }
 
         @Parcelize
         data class ForwardEvent(
@@ -216,7 +225,9 @@ class MessagesFlowNode(
         data object ThreadsList : NavTarget
 
         @Parcelize
-        data class AvatarPreview(val name: String, val avatarUrl: String) : NavTarget
+        data class AvatarPreview(val name: String, val avatarUrl: String) : NavTarget {
+            override fun toString(): String = "AvatarPreview"
+        }
     }
 
     private val callback: MessagesEntryPoint.Callback = callback()
@@ -848,16 +859,7 @@ class MessagesFlowNode(
                     ),
                     initialIndex = galleryItemIndex,
                 )
-                val galleryItems = event.content.items.map { galleryItem ->
-                    GalleryItemData(
-                        filename = galleryItem.filename,
-                        mimeType = galleryItem.mimeType,
-                        mediaSource = galleryItem.mediaSource,
-                        thumbnailSource = galleryItem.thumbnailSource,
-                        type = galleryItem.type.toMediaViewerType(),
-                        blurHash = galleryItem.blurhash,
-                    )
-                }.reversed()
+                val galleryItems = event.content.toGalleryItemData().reversed()
                 NavTarget.GalleryViewer(
                     eventId = event.eventId,
                     galleryInfo = galleryInfo,
@@ -882,16 +884,7 @@ class MessagesFlowNode(
                     ),
                     initialIndex = galleryItemIndex,
                 )
-                val galleryItems = event.content.attachments.map { attachment ->
-                    GalleryItemData(
-                        filename = attachment.filename,
-                        mimeType = attachment.mimeType,
-                        mediaSource = attachment.mediaSource,
-                        thumbnailSource = attachment.thumbnailSource,
-                        type = GalleryItemData.Type.File,
-                        blurHash = null,
-                    )
-                }.reversed()
+                val galleryItems = event.content.toGalleryItemData().reversed()
                 NavTarget.GalleryViewer(
                     eventId = event.eventId,
                     galleryInfo = galleryInfo,
@@ -976,14 +969,5 @@ class MessagesFlowNode(
         ) {
             BackstackWithOverlayBox(modifier)
         }
-    }
-}
-
-private fun GalleryItem.Type.toMediaViewerType(): GalleryItemData.Type {
-    return when (this) {
-        GalleryItem.Type.Image -> GalleryItemData.Type.Image
-        GalleryItem.Type.Video -> GalleryItemData.Type.Video
-        GalleryItem.Type.Audio -> GalleryItemData.Type.Audio
-        GalleryItem.Type.File -> GalleryItemData.Type.File
     }
 }

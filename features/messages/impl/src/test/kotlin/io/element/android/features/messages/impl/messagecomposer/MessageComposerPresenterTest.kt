@@ -6,12 +6,24 @@
  * Please see LICENSE files in the repository root for full details.
  */
 
-@file:OptIn(ExperimentalCoroutinesApi::class)
+@file:OptIn(ExperimentalCoroutinesApi::class, ExperimentalTestApi::class)
 
 package io.element.android.features.messages.impl.messagecomposer
 
 import android.net.Uri
+import android.widget.EditText
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.v2.runAndroidComposeUiTest
 import app.cash.molecule.RecompositionMode
 import app.cash.molecule.moleculeFlow
 import app.cash.turbine.ReceiveTurbine
@@ -21,21 +33,33 @@ import im.vector.app.features.analytics.plan.Composer
 import im.vector.app.features.analytics.plan.Interaction
 import io.element.android.features.location.api.LocationService
 import io.element.android.features.location.test.FakeLocationService
+import io.element.android.features.messages.api.timeline.voicemessages.composer.aVoiceMessageComposerState
 import io.element.android.features.messages.impl.FakeMessagesNavigator
 import io.element.android.features.messages.impl.MessagesNavigator
+import io.element.android.features.messages.impl.MessagesPresenterTest
+import io.element.android.features.messages.impl.MessagesState
+import io.element.android.features.messages.impl.R
+import io.element.android.features.messages.impl.aMessagesState
+import io.element.android.features.messages.impl.actionlist.ActionListEvent
+import io.element.android.features.messages.impl.actionlist.ActionListState
+import io.element.android.features.messages.impl.actionlist.model.TimelineItemAction
 import io.element.android.features.messages.impl.attachments.Attachment
+import io.element.android.features.messages.impl.crypto.sendfailure.VerifiedUserSendFailure
 import io.element.android.features.messages.impl.draft.ComposerDraftService
 import io.element.android.features.messages.impl.draft.FakeComposerDraftService
 import io.element.android.features.messages.impl.messagecomposer.suggestions.SuggestionsProcessor
+import io.element.android.features.messages.impl.setMessagesView
 import io.element.android.features.messages.impl.timeline.TimelineController
+import io.element.android.features.messages.impl.timeline.aTimelineItemEvent
+import io.element.android.features.messages.impl.timeline.components.event.aGalleryItem
+import io.element.android.features.messages.impl.timeline.components.event.aTimelineItemGalleryContent
+import io.element.android.features.messages.impl.timeline.model.event.GalleryItem
 import io.element.android.features.messages.impl.utils.FakeMentionSpanFormatter
 import io.element.android.features.messages.impl.utils.FakeTextPillificationHelper
 import io.element.android.features.messages.impl.utils.TextPillificationHelper
 import io.element.android.libraries.architecture.AsyncAction
 import io.element.android.libraries.core.mimetype.MimeTypes
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher
-import io.element.android.libraries.featureflag.api.FeatureFlags
-import io.element.android.libraries.featureflag.test.FakeFeatureFlagService
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.ThreadId
@@ -87,6 +111,7 @@ import io.element.android.libraries.mediaupload.api.MediaUploadInfo
 import io.element.android.libraries.mediaupload.impl.DefaultMediaSender
 import io.element.android.libraries.mediaupload.test.FakeMediaOptimizationConfigProvider
 import io.element.android.libraries.mediaupload.test.FakeMediaPreProcessor
+import io.element.android.libraries.mediaviewer.api.local.LocalMediaFactory
 import io.element.android.libraries.mediaviewer.test.FakeLocalMediaFactory
 import io.element.android.libraries.permissions.api.PermissionsPresenter
 import io.element.android.libraries.permissions.test.FakePermissionsPresenter
@@ -99,6 +124,7 @@ import io.element.android.libraries.slashcommands.api.BotCommandMessage
 import io.element.android.libraries.slashcommands.api.SlashCommand
 import io.element.android.libraries.slashcommands.api.SlashCommandService
 import io.element.android.libraries.slashcommands.test.FakeSlashCommandService
+import io.element.android.libraries.testtags.TestTags
 import io.element.android.libraries.textcomposer.mentions.MentionSpanProvider
 import io.element.android.libraries.textcomposer.mentions.MentionSpanTheme
 import io.element.android.libraries.textcomposer.mentions.ResolvedSuggestion
@@ -106,6 +132,7 @@ import io.element.android.libraries.textcomposer.model.MessageComposerMode
 import io.element.android.libraries.textcomposer.model.Suggestion
 import io.element.android.libraries.textcomposer.model.SuggestionType
 import io.element.android.libraries.textcomposer.model.TextEditorState
+import io.element.android.libraries.ui.strings.CommonStrings
 import io.element.android.services.analytics.test.FakeAnalyticsService
 import io.element.android.tests.testutils.WarmUpRule
 import io.element.android.tests.testutils.lambda.any
@@ -120,8 +147,11 @@ import io.mockk.mockk
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.Test
@@ -141,6 +171,85 @@ class MessageComposerPresenterTest : RobolectricTest() {
     private val localMediaFactory = FakeLocalMediaFactory(mockMediaUrl)
     private val analyticsService = FakeAnalyticsService()
     private val notificationConversationService = FakeNotificationConversationService()
+
+    @Test
+    fun `expanded gallery action sheet opens the real caption composer and submits exactly one edit`() = runAndroidComposeUiTest {
+        val scope = TestScope(UnconfinedTestDispatcher())
+        val event = aTimelineItemEvent(content = aTimelineItemGalleryContent(caption = "Q3 docs", items = listOf(
+            aGalleryItem(filename = "red.png"),
+            aGalleryItem(filename = "report.pdf", type = GalleryItem.Type.File),
+            aGalleryItem(filename = "tone.wav", type = GalleryItem.Type.Audio),
+            aGalleryItem(filename = "notes.txt", type = GalleryItem.Type.File),
+            aGalleryItem(filename = "noext", type = GalleryItem.Type.File),
+        )))
+        val edits = mutableListOf<Triple<EventOrTransactionId, String?, String?>>()
+        val timeline = FakeTimeline().apply {
+            editCaptionLambda = { id, caption, formatted ->
+                edits.add(Triple(id, caption, formatted))
+                Result.success(Unit)
+            }
+        }
+        val room = FakeJoinedRoom(
+            baseRoom = FakeBaseRoom(roomPermissions = FakeRoomPermissions(canSendMessage = { true })),
+            liveTimeline = timeline,
+            typingNoticeResult = { Result.success(Unit) },
+        )
+        val composer = scope.createPresenter(room = room, isRichTextEditorEnabled = false)
+        val target = mutableStateOf<ActionListState.Target>(ActionListState.Target.Success(
+            event = event,
+            sentTimeFull = "Today",
+            displayEmojiReactions = true,
+            recentEmojis = persistentListOf("👍️", "👎️", "🔥", "❤️", "👏"),
+            verifiedUserSendFailure = VerifiedUserSendFailure.None,
+            actions = persistentListOf(
+                TimelineItemAction.Reply,
+                TimelineItemAction.ReplyInThread,
+                TimelineItemAction.Forward,
+                TimelineItemAction.EditCaption,
+                TimelineItemAction.CopyLink,
+                TimelineItemAction.CopyCaption,
+                TimelineItemAction.RemoveCaption,
+                TimelineItemAction.ViewSource,
+                TimelineItemAction.Redact,
+            ),
+        ))
+        val presenter = with(MessagesPresenterTest()) {
+            scope.createMessagesPresenter(
+                timeline = timeline,
+                joinedRoom = room,
+                messageComposerPresenter = composer,
+                actionListPresenter = {
+                    ActionListState(target.value) { if (it == ActionListEvent.Clear) target.value = ActionListState.Target.None }
+                },
+            )
+        }
+        lateinit var state: MessagesState
+        try {
+            setMessagesView(state = aMessagesState(), inspectionMode = false, stateProvider = {
+                    presenter.present().copy(voiceMessageComposerState = aVoiceMessageComposerState()).also { state = it }
+                })
+            mainClock.advanceTimeBy(1_000)
+            onNode(isDialog()).performTouchInput { swipeUp() }
+            mainClock.advanceTimeBy(1_000)
+            onNodeWithText("Edit caption").performScrollTo().performTouchInput { click() }
+            mainClock.advanceTimeBy(1_000)
+            runOnIdle {
+                assertThat(target.value).isEqualTo(ActionListState.Target.None)
+                assertThat(state.composerState.mode).isEqualTo(MessageComposerMode.EditCaption(event.eventOrTransactionId, "Q3 docs"))
+                assertThat((state.composerState.textEditorState as TextEditorState.Markdown).state.text.value().toString()).isEqualTo("Q3 docs")
+                activity!!.window.decorView.findViewWithTag<EditText>(TestTags.plainTextEditor.value).setText("Q3 docs v2")
+            }
+            onNodeWithContentDescription(activity!!.getString(CommonStrings.action_send_edited_message)).performClick()
+            scope.runCurrent()
+            mainClock.advanceTimeBy(1_000)
+            runOnIdle {
+                assertThat(edits).containsExactly(Triple(event.eventOrTransactionId, "Q3 docs v2", null))
+                assertThat(state.composerState.mode).isEqualTo(MessageComposerMode.Normal)
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
 
     @Test
     fun `present - initial state`() = runTest {
@@ -779,6 +888,81 @@ class MessageComposerPresenterTest : RobolectricTest() {
     }
 
     @Test
+    fun `present - Pick media from gallery launches the multi picker by default`() = runTest {
+        val uris = List(2) { mockk<Uri>("picked-$it") }
+        val preview = lambdaRecorder<ImmutableList<Attachment>, EventId?, Unit> { attachments, _ ->
+            assertThat(attachments.map { (it as Attachment.Media).localMedia.uri }).containsExactlyElementsIn(uris).inOrder()
+            assertThat(attachments.map { (it as Attachment.Media).sendAsFile }).containsExactlyElementsIn(List(2) { false })
+        }
+        val presenter = createPresenter(navigator = FakeMessagesNavigator(onPreviewAttachmentLambda = preview))
+        pickerProvider.givenMultipleResults(uris)
+        presenter.test {
+            awaitFirstItem().eventSink(MessageComposerEvent.PickAttachmentSource.FromGallery)
+            preview.assertions().isCalledOnce()
+        }
+    }
+
+    @Test
+    fun `present - Pick files launches the multi picker and previews mixed files in pick order`() = runTest {
+        val uris = List(3) { mockk<Uri>("picked-$it") }
+        val names = listOf("red.png", "report.pdf", "tone.wav")
+        val mimeTypes = listOf("image/png", "application/pdf", "audio/wav")
+        val mixedFactory = object : LocalMediaFactory by localMediaFactory {
+            override fun createFromUri(uri: Uri, mimeType: String?, name: String?, formattedFileSize: String?) =
+                localMediaFactory.createFromUri(uri, mimeTypes[uris.indexOf(uri)], names[uris.indexOf(uri)], formattedFileSize)
+        }
+        val preview = lambdaRecorder<ImmutableList<Attachment>, EventId?, Unit> { attachments, _ ->
+            assertThat(attachments.map { (it as Attachment.Media).localMedia.uri }).containsExactlyElementsIn(uris).inOrder()
+            assertThat(attachments.map { (it as Attachment.Media).localMedia.info.mimeType }).containsExactlyElementsIn(mimeTypes).inOrder()
+            assertThat(attachments.map { (it as Attachment.Media).localMedia.info.filename }).containsExactlyElementsIn(names).inOrder()
+            assertThat(attachments.map { (it as Attachment.Media).sendAsFile }).containsExactlyElementsIn(List(3) { true })
+        }
+        val presenter = createPresenter(navigator = FakeMessagesNavigator(onPreviewAttachmentLambda = preview), localMediaFactory = mixedFactory)
+        pickerProvider.givenMultipleResults(uris)
+        presenter.test {
+            awaitFirstItem().eventSink(MessageComposerEvent.PickAttachmentSource.FromFiles)
+            preview.assertions().isCalledOnce()
+        }
+    }
+
+    @Test
+    fun `present - Pick 60 files previews all of them`() = runTest {
+        val uris = List(60) { mockk<Uri>("picked-$it") }
+        val preview = lambdaRecorder<ImmutableList<Attachment>, EventId?, Unit> { attachments, _ ->
+            assertThat(attachments.map { (it as Attachment.Media).localMedia.uri }).containsExactlyElementsIn(uris).inOrder()
+            assertThat(attachments.map { (it as Attachment.Media).sendAsFile }).containsExactlyElementsIn(List(60) { true })
+        }
+        val presenter = createPresenter(navigator = FakeMessagesNavigator(onPreviewAttachmentLambda = preview))
+        pickerProvider.givenMultipleResults(uris)
+        presenter.test {
+            awaitFirstItem().eventSink(MessageComposerEvent.PickAttachmentSource.FromFiles)
+            preview.assertions().isCalledOnce()
+        }
+    }
+
+    @Test
+    fun `present - Pick 61 files posts the gallery limit snackbar and keeps the reply mode`() = runTest {
+        val preview = lambdaRecorder { _: ImmutableList<Attachment>, _: EventId? -> }
+        val presenter = createPresenter(navigator = FakeMessagesNavigator(onPreviewAttachmentLambda = preview))
+        pickerProvider.givenMultipleResults(List(61) { mockk() })
+        presenter.test {
+            var state = awaitFirstItem()
+            val reply = aReplyMode()
+            state.eventSink(MessageComposerEvent.SetMode(reply))
+            state = awaitItem()
+            state.textEditorState.setHtml("draft")
+            state.eventSink(MessageComposerEvent.PickAttachmentSource.FromFiles)
+            preview.assertions().isNeverCalled()
+            assertThat(state.mode).isEqualTo(reply)
+            assertThat(state.textEditorState.messageHtml()).isEqualTo("draft")
+            snackbarDispatcher.snackbarMessage.test {
+                assertThat(awaitItem()?.messageResId).isEqualTo(R.string.screen_room_attachments_limit)
+            }
+            expectNoEvents()
+        }
+    }
+
+    @Test
     fun `present - Open attachments menu`() = runTest {
         val presenter = createPresenter()
         presenter.test {
@@ -931,9 +1115,6 @@ class MessageComposerPresenterTest : RobolectricTest() {
         )
         val presenter = createPresenter(
             navigator = navigator,
-            featureFlagService = FakeFeatureFlagService(
-                initialState = mapOf(FeatureFlags.SendGalleryMessages.key to true)
-            ),
         )
         pickerProvider.givenMimeType(MimeTypes.Images)
         // Two Uris take the multi-item branch (handlePickedMediaList) instead of delegating to the
@@ -1762,6 +1943,7 @@ class MessageComposerPresenterTest : RobolectricTest() {
         ),
         timeline: Timeline = room.liveTimeline,
         navigator: MessagesNavigator = FakeMessagesNavigator(),
+        localMediaFactory: LocalMediaFactory = this@MessageComposerPresenterTest.localMediaFactory,
         pickerProvider: PickerProvider = this@MessageComposerPresenterTest.pickerProvider,
         locationService: LocationService = FakeLocationService(true),
         sessionPreferencesStore: SessionPreferencesStore = InMemorySessionPreferencesStore(),
@@ -1781,7 +1963,6 @@ class MessageComposerPresenterTest : RobolectricTest() {
         mediaOptimizationConfigProvider: FakeMediaOptimizationConfigProvider = FakeMediaOptimizationConfigProvider(),
         threadRoot: ThreadId? = null,
         slashCommandService: SlashCommandService = FakeSlashCommandService(),
-        featureFlagService: FakeFeatureFlagService = FakeFeatureFlagService(),
     ) = MessageComposerPresenter(
         navigator = navigator,
         sessionCoroutineScope = this,
@@ -1825,7 +2006,6 @@ class MessageComposerPresenterTest : RobolectricTest() {
         mediaOptimizationConfigProvider = mediaOptimizationConfigProvider,
         notificationConversationService = notificationConversationService,
         slashCommandService = slashCommandService,
-        featureFlagService = featureFlagService,
         contentScannerService = { _, _ -> },
         contentValidationCache = InMemoryEventContentValidationCache(),
     ).apply {

@@ -319,6 +319,8 @@ class TimelineItemContentMessageFactory(
                         is GalleryItemType.Image -> {
                             GalleryItem(
                                 filename = item.content.filename,
+                                formattedFileSize = fileSizeFormatter.format(item.content.info?.size ?: 0L),
+                                fileExtension = galleryFileExtension(item.content.filename),
                                 mimeType = item.content.info?.mimetype ?: MimeTypes.OctetStream,
                                 mediaSource = item.content.source,
                                 type = GalleryItem.Type.Image,
@@ -333,6 +335,8 @@ class TimelineItemContentMessageFactory(
                         is GalleryItemType.Video -> {
                             GalleryItem(
                                 filename = item.content.filename,
+                                formattedFileSize = fileSizeFormatter.format(item.content.info?.size ?: 0L),
+                                fileExtension = galleryFileExtension(item.content.filename),
                                 mimeType = item.content.info?.mimetype ?: MimeTypes.OctetStream,
                                 mediaSource = item.content.source,
                                 type = GalleryItem.Type.Video,
@@ -348,6 +352,8 @@ class TimelineItemContentMessageFactory(
                         is GalleryItemType.Audio -> {
                             GalleryItem(
                                 filename = item.content.filename,
+                                formattedFileSize = fileSizeFormatter.format(item.content.info?.size ?: 0L),
+                                fileExtension = galleryFileExtension(item.content.filename),
                                 mimeType = item.content.info?.mimetype ?: MimeTypes.OctetStream,
                                 mediaSource = item.content.source,
                                 type = GalleryItem.Type.Audio,
@@ -363,6 +369,8 @@ class TimelineItemContentMessageFactory(
                         is GalleryItemType.File -> {
                             GalleryItem(
                                 filename = item.content.filename,
+                                formattedFileSize = fileSizeFormatter.format(item.content.info?.size ?: 0L),
+                                fileExtension = galleryFileExtension(item.content.filename),
                                 mimeType = item.content.info?.mimetype ?: MimeTypes.OctetStream,
                                 mediaSource = item.content.source,
                                 type = GalleryItem.Type.File,
@@ -377,11 +385,8 @@ class TimelineItemContentMessageFactory(
                         is GalleryItemType.Other -> null
                     }
                 }
-                val hasPreviews = galleryItems.any { it.thumbnailSource != null }
-                val isOnlyVisualMedia = galleryItems.all { item ->
-                    item.type.isVisualMedia()
-                }
-                if (isOnlyVisualMedia && hasPreviews) {
+                val visual = galleryItems.filter { it.type.isVisualMedia() }
+                if (visual.isNotEmpty() && visual.any { it.thumbnailSource != null }) {
                     TimelineItemGalleryContent(
                         body = messageType.body,
                         caption = messageType.body.trimEnd().takeIf { it.isNotEmpty() },
@@ -395,6 +400,7 @@ class TimelineItemContentMessageFactory(
                         when (item) {
                             is GalleryItemType.File -> {
                                 AttachmentItem(
+                                    type = GalleryItem.Type.File,
                                     filename = item.content.filename,
                                     mimeType = item.content.info?.mimetype ?: MimeTypes.OctetStream,
                                     mediaSource = item.content.source,
@@ -406,6 +412,7 @@ class TimelineItemContentMessageFactory(
                             }
                             is GalleryItemType.Image -> {
                                 AttachmentItem(
+                                    type = GalleryItem.Type.Image,
                                     filename = item.content.filename,
                                     mimeType = item.content.info?.mimetype ?: MimeTypes.OctetStream,
                                     mediaSource = item.content.source,
@@ -417,6 +424,7 @@ class TimelineItemContentMessageFactory(
                             }
                             is GalleryItemType.Video -> {
                                 AttachmentItem(
+                                    type = GalleryItem.Type.Video,
                                     filename = item.content.filename,
                                     mimeType = item.content.info?.mimetype ?: MimeTypes.OctetStream,
                                     mediaSource = item.content.source,
@@ -428,6 +436,7 @@ class TimelineItemContentMessageFactory(
                             }
                             is GalleryItemType.Audio -> {
                                 AttachmentItem(
+                                    type = GalleryItem.Type.Audio,
                                     filename = item.content.filename,
                                     mimeType = item.content.info?.mimetype ?: MimeTypes.OctetStream,
                                     mediaSource = item.content.source,
@@ -494,6 +503,9 @@ class TimelineItemContentMessageFactory(
             renderDocument(fragmentBody, sanitized, sanitized?.wholeText())?.let(::parseHtml) ?: ""
         }
     }
+
+    private fun galleryFileExtension(filename: String): String =
+        if (filename.substringAfterLast('.', "").isEmpty()) "" else fileExtensionExtractor.extractFromName(filename)
 
     private fun parseHtml(document: Document): CharSequence? {
         return mathsSpansConverter.convert(document) { htmlConverterProvider.provide().fromDocumentToSpans(it) }

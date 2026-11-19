@@ -67,6 +67,8 @@ class MediaViewerDataSource(
     // List of media files that are currently being loaded
     private val mediaFiles: ConcurrentHashMap<MediaSource, MediaFile> = ConcurrentHashMap()
 
+    private val isEventGallery = mode is MediaViewerMode.EventGallery
+
     private val galleryMode = when (mode) {
         is MediaViewerMode.TimelineImagesAndVideos -> MediaGalleryMode.Images
         is MediaViewerMode.TimelineFilesAndAudios -> MediaGalleryMode.Files
@@ -183,6 +185,7 @@ class MediaViewerDataSource(
                             downloadedMedia = localMedia,
                             pagerKey = pagerKeysHandler.getKey(mediaItem),
                             validationState = validationState,
+                            showFilename = isEventGallery && mediaItem is MediaItem.File,
                         )
                     )
                 }

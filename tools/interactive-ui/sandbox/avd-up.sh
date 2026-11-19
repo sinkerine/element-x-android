@@ -45,7 +45,7 @@ fi
 # Direct SwiftShader GLES crashes QEMU's host RenderThread on this host. ANGLE's
 # SwiftShader backend with Vulkan disabled survives the same authenticated journeys.
 nohup "$emulator" -avd "$name" -port 5584 -no-window -no-audio -no-boot-anim -no-snapshot-save \
-    -memory 2048 -cores 2 -gpu swangle -feature -Vulkan -camera-back none >build/e2e/interactive-ui/emulator.log 2>&1 </dev/null &
+    -memory 1536 -cores 2 -gpu swangle -feature -Vulkan -camera-back none >build/e2e/interactive-ui/emulator.log 2>&1 </dev/null &
 emulator_pid=$!
 printf '%s\n' "$emulator_pid" >build/e2e/interactive-ui/emulator.pid
 for ((i=0; i<120; i++)); do

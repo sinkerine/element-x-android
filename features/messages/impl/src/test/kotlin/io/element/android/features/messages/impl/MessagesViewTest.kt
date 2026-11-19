@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.AndroidComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -829,7 +830,7 @@ class MessagesViewTest : RobolectricTest() {
     }
 }
 
-private fun AndroidComposeUiTest<ComponentActivity>.setMessagesView(
+internal fun AndroidComposeUiTest<ComponentActivity>.setMessagesView(
     state: MessagesState,
     onBackClick: () -> Unit = EnsureNeverCalled(),
     onRoomDetailsClick: () -> Unit = EnsureNeverCalled(),
@@ -845,13 +846,16 @@ private fun AndroidComposeUiTest<ComponentActivity>.setMessagesView(
     isComposerHidden: () -> Boolean = { false },
     inspectionMode: Boolean = true,
     threadFloatingActions: @Composable ColumnScope.() -> Unit = {},
+    stateProvider: @Composable () -> MessagesState = { state },
+    modifierProvider: @Composable () -> Modifier = { Modifier },
 ) {
     val emojiPickerRenderer = DefaultEmojiPickerRenderer()
     setSafeContent {
         // Cannot use the RichTextEditor, so simulate a LocalInspectionMode
         CompositionLocalProvider(LocalInspectionMode provides inspectionMode) {
             MessagesView(
-                state = state,
+                modifier = modifierProvider(),
+                state = stateProvider(),
                 onBackClick = onBackClick,
                 onRoomDetailsClick = onRoomDetailsClick,
                 onEventContentClick = onEventClick,

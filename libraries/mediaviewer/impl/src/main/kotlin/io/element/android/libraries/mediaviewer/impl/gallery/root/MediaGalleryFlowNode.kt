@@ -70,7 +70,9 @@ class MediaGalleryFlowNode(
             val mediaSource: MediaSource,
             val thumbnailSource: MediaSource?,
             val blurHash: String?,
-        ) : NavTarget
+        ) : NavTarget {
+            override fun toString(): String = "MediaViewer(eventId=$eventId)"
+        }
     }
 
     private val callback: MediaGalleryEntryPoint.Callback = callback()

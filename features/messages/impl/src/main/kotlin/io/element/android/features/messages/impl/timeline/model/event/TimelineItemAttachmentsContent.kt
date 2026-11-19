@@ -33,4 +33,5 @@ data class AttachmentItem(
     val fileSize: Long?,
     val formattedFileSize: String,
     val fileExtension: String,
+    val type: GalleryItem.Type = GalleryItem.Type.File,
 )

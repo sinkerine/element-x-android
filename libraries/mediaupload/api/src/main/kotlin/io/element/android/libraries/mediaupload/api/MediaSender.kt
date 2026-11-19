@@ -128,3 +128,6 @@ interface MediaSender {
     /** Deletes the temporary files produced by pre-processing; must be called even when nothing was ultimately sent. */
     fun cleanUp()
 }
+
+/** MSC4274's recommended maximum number of items in one gallery message. */
+const val MAX_GALLERY_ITEMS = 60

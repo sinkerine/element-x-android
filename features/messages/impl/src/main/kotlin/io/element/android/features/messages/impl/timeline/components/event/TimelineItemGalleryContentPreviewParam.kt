@@ -90,6 +90,18 @@ class TimelineItemGalleryContentPreviewParam : PreviewParameterProvider<Timeline
                     )
                 },
             ),
+            aTimelineItemGalleryContent(
+                caption = "mixed 1 image + 4 files",
+                items = listOf(aGalleryItem(filename = "red.png")) + mixedFileItems(),
+            ),
+            aTimelineItemGalleryContent(
+                caption = "mixed 2 images + 2 files",
+                items = List(2) { aGalleryItem() } + mixedFileItems().take(2),
+            ),
+            aTimelineItemGalleryContent(
+                caption = "7 images + 2 files",
+                items = List(7) { aGalleryItem() } + mixedFileItems().take(2),
+            ),
         )
 }
 
@@ -137,3 +149,10 @@ fun aGalleryItem(
         duration = duration,
     )
 }
+
+private fun mixedFileItems() = listOf(
+    aGalleryItem(filename = "report.pdf", type = GalleryItem.Type.File).copy(fileExtension = "pdf", formattedFileSize = "123 KB"),
+    aGalleryItem(filename = "tone.wav", type = GalleryItem.Type.Audio).copy(fileExtension = "wav", formattedFileSize = "16 KB"),
+    aGalleryItem(filename = "notes.txt", type = GalleryItem.Type.File).copy(fileExtension = "txt", formattedFileSize = "25 Bytes"),
+    aGalleryItem(filename = "noext", type = GalleryItem.Type.File).copy(formattedFileSize = "5 Bytes"),
+)

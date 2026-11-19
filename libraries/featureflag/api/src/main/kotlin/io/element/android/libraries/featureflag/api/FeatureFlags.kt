@@ -144,14 +144,6 @@ enum class FeatureFlags(
         defaultValue = { false },
         isFinished = false,
     ),
-    SendGalleryMessages(
-        key = "feature.send_gallery_messages",
-        title = "Send gallery messages",
-        description = "Allow sending multiple media items in a single message.",
-        defaultValue = { false },
-        isFinished = false,
-        isInLabs = true,
-    ),
     Knock(
         key = "feature.knock",
         title = "Ask to join",

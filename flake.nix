@@ -38,15 +38,22 @@
           rustToolchain = pkgs.rust-bin.stable.latest.default.override {
             targets = [ "x86_64-linux-android" "aarch64-linux-android" ];
           };
+          # Match the exact SDK revision's formatting/lint CI without changing the native compiler.
+          sdkLintToolchain = pkgs.rust-bin.nightly."2026-09-28".default;
         in
         {
           default = pkgs.mkShell {
-            packages = [ androidSdk pkgs.jdk21 pkgs.git rustToolchain pkgs.cargo-ndk ];
+            packages = [ androidSdk pkgs.jdk21 pkgs.git rustToolchain pkgs.cargo-ndk pkgs.cmake pkgs.pkg-config pkgs.openssl pkgs.protobuf pkgs.sqlite ];
             ANDROID_HOME = "${androidSdk}/share/android-sdk";
             ANDROID_SDK_ROOT = "${androidSdk}/share/android-sdk";
             ANDROID_NDK_HOME = "${androidSdk}/share/android-sdk/ndk/27.2.12479018";
             JAVA_HOME = "${pkgs.jdk21}/lib/openjdk";
             NIXPKGS_ACCEPT_ANDROID_SDK_LICENSE = "1";
+          };
+          sdkLint = pkgs.mkShell {
+            packages = [ pkgs.git sdkLintToolchain pkgs.cmake pkgs.pkg-config pkgs.openssl pkgs.protobuf pkgs.sqlite ];
+            RUSTC = "${sdkLintToolchain}/bin/rustc";
+            RUSTFMT = "${sdkLintToolchain}/bin/rustfmt";
           };
         });
     };

@@ -19,13 +19,17 @@ sealed interface ShareIntentData : Parcelable {
      * A list of [Uri]s to share and their mime types, with an optional [text] to be used as caption.
      */
     @Parcelize
-    data class Uris(val text: String?, val uris: List<UriToShare>) : ShareIntentData
+    data class Uris(val text: String?, val uris: List<UriToShare>) : ShareIntentData {
+        override fun toString(): String = "ShareIntentData.Uris(uriCount=${uris.size})"
+    }
 
     /**
      * A plain text to share.
      */
     @Parcelize
-    data class PlainText(val content: String) : ShareIntentData
+    data class PlainText(val content: String) : ShareIntentData {
+        override fun toString(): String = "ShareIntentData.PlainText"
+    }
 }
 
 /**
@@ -35,4 +39,6 @@ sealed interface ShareIntentData : Parcelable {
 data class UriToShare(
     val uri: Uri,
     val mimeType: String,
-) : Parcelable
+) : Parcelable {
+    override fun toString(): String = "UriToShare"
+}

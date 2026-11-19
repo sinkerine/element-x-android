@@ -14,7 +14,8 @@ package io.element.android.libraries.mediaviewer.api.util
 interface FileExtensionExtractor {
     /**
      * @param name the file name to inspect.
-     * @return the extension without its dot, or an empty string when the name has none.
+     * @return the extension without its dot. Implementations may substitute a fallback (for example, `bin`)
+     * when the extension is absent or unrecognised.
      */
     fun extractFromName(name: String): String
 }

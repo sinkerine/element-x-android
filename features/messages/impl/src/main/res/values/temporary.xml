@@ -29,4 +29,5 @@
     <string name="screen_answer_navigation_sections">Sections</string>
     <string name="screen_answer_navigation_sources">Sources</string>
     <string name="screen_answer_navigation_current">Current</string>
+    <string name="screen_room_attachments_limit">You can send up to 60 items in one message.</string>
 </resources>

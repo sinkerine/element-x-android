@@ -1,5 +1,6 @@
 /*
- * Copyright 2026 Element Creations Ltd.
+ * Copyright (c) 2026 Element Creations Ltd.
+ *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial.
  * Please see LICENSE files in the repository root for full details.
  */
@@ -197,7 +198,7 @@ internal fun AnswerIndexContent(
     }
 }
 
-internal class AnswerNavigationPreviewProvider : PreviewParameterProvider<AnswerNavigation> {
+internal class AnswerNavigationPreviewParam : PreviewParameterProvider<AnswerNavigation> {
     private val navigation = AnswerNavigation(
         introduction = "A structured answer.",
         sections = persistentListOf(
@@ -212,12 +213,21 @@ internal class AnswerNavigationPreviewProvider : PreviewParameterProvider<Answer
 
 @PreviewsDayNight
 @Composable
-internal fun AnswerIndexPreview(@PreviewParameter(AnswerNavigationPreviewProvider::class) navigation: AnswerNavigation) = ElementPreview {
-    AnswerIndexContent(navigation, 2, {}, {})
+internal fun AnswerIndexPreview(@PreviewParameter(AnswerNavigationPreviewParam::class) navigation: AnswerNavigation) = ElementPreview {
+    ContentToPreview(navigation, showIndex = true)
 }
 
 @PreviewsDayNight
 @Composable
-internal fun AnswerNavigationPreview(@PreviewParameter(AnswerNavigationPreviewProvider::class) navigation: AnswerNavigation) = ElementPreview {
-    AnswerNavigationView(navigation, {}, {})
+internal fun AnswerNavigationPreview(@PreviewParameter(AnswerNavigationPreviewParam::class) navigation: AnswerNavigation) = ElementPreview {
+    ContentToPreview(navigation, showIndex = false)
+}
+
+@Composable
+private fun ContentToPreview(navigation: AnswerNavigation, showIndex: Boolean) {
+    if (showIndex) {
+        AnswerIndexContent(navigation, 2, {}, {})
+    } else {
+        AnswerNavigationView(navigation, {}, {})
+    }
 }

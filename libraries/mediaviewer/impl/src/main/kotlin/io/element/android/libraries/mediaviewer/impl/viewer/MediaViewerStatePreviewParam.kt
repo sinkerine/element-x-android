@@ -306,6 +306,10 @@ open class MediaViewerStatePreviewParam : PreviewParameterProvider<MediaViewerSt
                     )
                 )
             },
+            aMediaViewerState(listOf(aMediaViewerPageData(
+                mediaInfo = aPdfMediaInfo(filename = "report.pdf", senderName = USER_NAME_ALICE, dateSent = "26 NOV, 2024"),
+                showFilename = true,
+            ))),
         )
 }
 
@@ -325,6 +329,7 @@ fun aMediaViewerPageData(
     mediaInfo: MediaInfo = anImageMediaInfo(),
     mediaSource: MediaSource = MediaSource(""),
     validationState: ContentValidationState = NoopContentValidationState(),
+    showFilename: Boolean = false,
 ): MediaViewerPageData.MediaViewerData = MediaViewerPageData.MediaViewerData(
     eventId = null,
     mediaInfo = mediaInfo,
@@ -333,6 +338,7 @@ fun aMediaViewerPageData(
     downloadedMedia = mutableStateOf(downloadedMedia),
     pagerKey = 0L,
     validationState = validationState,
+    showFilename = showFilename,
 )
 
 fun aMediaViewerState(

@@ -1493,7 +1493,7 @@ class MessagesPresenterTest {
         canPinUnpin = canPinUnpin,
     )
 
-    private fun TestScope.createMessagesPresenter(
+    internal fun TestScope.createMessagesPresenter(
         coroutineDispatchers: CoroutineDispatchers = testCoroutineDispatchers(),
         timeline: Timeline = FakeTimeline(),
         joinedRoom: FakeJoinedRoom = FakeJoinedRoom(
@@ -1528,6 +1528,7 @@ class MessagesPresenterTest {
         encryptionService: FakeEncryptionService = FakeEncryptionService(),
         featureFlagService: FakeFeatureFlagService = FakeFeatureFlagService(),
         actionListEventSink: (ActionListEvent) -> Unit = {},
+        actionListPresenter: Presenter<ActionListState> = { anActionListState(eventSink = actionListEventSink) },
         addRecentEmoji: AddRecentEmoji = AddRecentEmoji { _ -> lambdaError() },
         markAsFullyRead: MarkAsFullyRead = FakeMarkAsFullyRead(),
         liveLocationShareManager: FakeActiveLiveLocationShareManager = FakeActiveLiveLocationShareManager(),
@@ -1541,7 +1542,7 @@ class MessagesPresenterTest {
             timelineProtectionPresenter = { aTimelineProtectionState() },
             identityChangeStatePresenter = { anIdentityChangeState() },
             linkPresenter = { aLinkState() },
-            actionListPresenter = { anActionListState(eventSink = actionListEventSink) },
+            actionListPresenter = actionListPresenter,
             customReactionPresenter = { aCustomReactionState() },
             reactionSummaryPresenter = { aReactionSummaryState() },
             readReceiptBottomSheetPresenter = { aReadReceiptBottomSheetState() },

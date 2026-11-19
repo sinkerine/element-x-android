@@ -179,6 +179,7 @@ fun MessagesView(
     val snackbarHostState = rememberSnackbarHostState(snackbarMessage = state.snackbarMessage)
 
     var maxComposerHeightPx by remember { mutableIntStateOf(120) }
+    var identityBannerHeightPx by remember { mutableIntStateOf(0) }
 
     // This is needed because the composer is inside an AndroidView that can't be affected by the FocusManager in Compose
     val localView = LocalView.current
@@ -362,12 +363,13 @@ fun MessagesView(
             triageBar()
             if (!isComposerHidden) {
                 MessagesViewComposerBottomSheetContents(
-                state = state,
-                onLinkClick = { url, customTab -> onLinkClick(url, customTab) },
-                onRoomSuccessorClick = { roomId ->
-                    state.timelineState.eventSink(TimelineEvent.NavigateToPredecessorOrSuccessorRoom(roomId = roomId))
-                },
-            )
+                    state = state,
+                    onLinkClick = { url, customTab -> onLinkClick(url, customTab) },
+                    onRoomSuccessorClick = { roomId ->
+                        state.timelineState.eventSink(TimelineEvent.NavigateToPredecessorOrSuccessorRoom(roomId = roomId))
+                    },
+                    onMeasureIdentityBanner = { identityBannerHeightPx = it },
+                )
             }
         },
         sheetDragHandle = @Composable { toggleAction ->
@@ -404,7 +406,8 @@ fun MessagesView(
         } else {
             RectangleShape
         },
-        maxBottomSheetContentHeight = maxComposerHeightPx.toDp(),
+        // The identity banner must not consume the composer's allowance, especially with the keyboard open.
+        maxBottomSheetContentHeight = (maxComposerHeightPx + identityBannerHeightPx).toDp(),
     )
 
     var endPollConfirmingEvent: TimelineItem.Event? by remember { mutableStateOf(null) }
@@ -655,36 +658,31 @@ private fun MessagesViewComposerBottomSheetContents(
     state: MessagesState,
     onRoomSuccessorClick: (RoomId) -> Unit,
     onLinkClick: (String, Boolean) -> Unit,
+    onMeasureIdentityBanner: (Int) -> Unit,
 ) {
     val contentPadding = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal).asPaddingValues()
-    when {
-        state.successorRoom != null -> {
-            SuccessorRoomBanner(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(contentPadding),
-                roomSuccessor = state.successorRoom,
-                onRoomSuccessorClick = onRoomSuccessorClick
-            )
+    val canCompose = state.successorRoom == null && state.userEventPermissions.canSendMessage
+    val showIdentityBanner = canCompose && state.composerState.suggestions.isEmpty() &&
+        state.composerState.textEditorState is TextEditorState.Markdown
+    Column(Modifier.fillMaxWidth().padding(contentPadding)) {
+        // Keep measuring the empty box so the banner's contribution resets to zero when it disappears.
+        Box(Modifier.fillMaxWidth().onSizeChanged { onMeasureIdentityBanner(it.height) }) {
+            if (showIdentityBanner) {
+                IdentityChangeStateView(state = state.identityChangeState, onLinkClick = onLinkClick)
+            }
         }
-        state.userEventPermissions.canSendMessage -> {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(contentPadding)
-            ) {
-                // Do not show the identity change if user is composing a Rich message or is seeing suggestion(s).
-                if (state.composerState.suggestions.isEmpty() &&
-                    state.composerState.textEditorState is TextEditorState.Markdown) {
-                    IdentityChangeStateView(
-                        state = state.identityChangeState,
-                        onLinkClick = onLinkClick,
-                    )
-                }
-                val verificationViolation = state.identityChangeState.roomMemberIdentityStateChanges.firstOrNull {
+        val successor = state.successorRoom
+        when {
+            successor != null -> SuccessorRoomBanner(
+                modifier = Modifier.fillMaxWidth(),
+                roomSuccessor = successor,
+                onRoomSuccessorClick = onRoomSuccessorClick,
+            )
+            canCompose -> {
+                val hasVerificationViolation = state.identityChangeState.roomMemberIdentityStateChanges.any {
                     it.identityState == IdentityState.VerificationViolation
                 }
-                if (verificationViolation != null) {
+                if (hasVerificationViolation) {
                     DisabledComposerView(modifier = Modifier.fillMaxWidth())
                 } else {
                     MessageComposerView(
@@ -694,9 +692,7 @@ private fun MessagesViewComposerBottomSheetContents(
                     )
                 }
             }
-        }
-        else -> {
-            CantSendMessageBanner(Modifier.padding(contentPadding))
+            else -> CantSendMessageBanner()
         }
     }
 }

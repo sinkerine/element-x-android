@@ -34,6 +34,7 @@ import im.vector.app.features.analytics.plan.Interaction
 import io.element.android.features.contentscanner.api.ContentScannerService
 import io.element.android.features.location.api.LocationService
 import io.element.android.features.messages.impl.MessagesNavigator
+import io.element.android.features.messages.impl.R
 import io.element.android.features.messages.impl.attachments.Attachment
 import io.element.android.features.messages.impl.attachments.preview.error.sendAttachmentError
 import io.element.android.features.messages.impl.draft.ComposerDraftService
@@ -48,8 +49,6 @@ import io.element.android.libraries.core.mimetype.MimeTypes
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarMessage
 import io.element.android.libraries.di.annotations.SessionCoroutineScope
-import io.element.android.libraries.featureflag.api.FeatureFlagService
-import io.element.android.libraries.featureflag.api.FeatureFlags
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UserId
@@ -70,6 +69,7 @@ import io.element.android.libraries.matrix.ui.messages.reply.content
 import io.element.android.libraries.matrix.ui.messages.reply.eventId
 import io.element.android.libraries.matrix.ui.messages.reply.map
 import io.element.android.libraries.mediapickers.api.PickerProvider
+import io.element.android.libraries.mediaupload.api.MAX_GALLERY_ITEMS
 import io.element.android.libraries.mediaupload.api.MediaOptimizationConfigProvider
 import io.element.android.libraries.mediaupload.api.MediaSenderFactory
 import io.element.android.libraries.mediaviewer.api.local.LocalMediaFactory
@@ -142,7 +142,6 @@ class MessageComposerPresenter(
     private val mediaOptimizationConfigProvider: MediaOptimizationConfigProvider,
     private val notificationConversationService: NotificationConversationService,
     private val slashCommandService: SlashCommandService,
-    private val featureFlagService: FeatureFlagService,
     private val contentScannerService: ContentScannerService,
     private val contentValidationCache: EventContentValidationCache,
 ) : Presenter<MessageComposerState> {
@@ -189,20 +188,11 @@ class MessageComposerPresenter(
             canShareLocation.value = locationService.isServiceAvailable()
         }
 
-        val isSendGalleryMessagesEnabled by featureFlagService.isFeatureEnabledFlow(FeatureFlags.SendGalleryMessages)
-            .collectAsState(initial = false)
-
-        val galleryMediaPicker = mediaPickerProvider.registerGalleryPicker { uri, mimeType ->
-            handlePickedMedia(uri, mimeType)
-        }
         val galleryMultiMediaPicker = mediaPickerProvider.registerGalleryMultiPicker { uris ->
             handlePickedMediaList(uris)
         }
         val filesPicker = mediaPickerProvider.registerFileMultiPicker(AnyMimeTypes) { uris ->
             handlePickedMediaList(uris, sendAsFile = true)
-        }
-        val fileSinglePicker = mediaPickerProvider.registerFilePicker(AnyMimeTypes) { uri, mimeType ->
-            handlePickedMedia(uri, mimeType ?: MimeTypes.OctetStream, sendAsFile = true)
         }
         val cameraPhotoPicker = mediaPickerProvider.registerCameraPhotoPicker { uri ->
             handlePickedMedia(uri, MimeTypes.Jpeg)
@@ -309,19 +299,11 @@ class MessageComposerPresenter(
                 MessageComposerEvent.DismissAttachmentMenu -> showAttachmentSourcePicker = false
                 MessageComposerEvent.PickAttachmentSource.FromGallery -> localCoroutineScope.launch {
                     showAttachmentSourcePicker = false
-                    if (isSendGalleryMessagesEnabled) {
-                        galleryMultiMediaPicker.launch()
-                    } else {
-                        galleryMediaPicker.launch()
-                    }
+                    galleryMultiMediaPicker.launch()
                 }
                 MessageComposerEvent.PickAttachmentSource.FromFiles -> localCoroutineScope.launch {
                     showAttachmentSourcePicker = false
-                    if (isSendGalleryMessagesEnabled) {
-                        filesPicker.launch()
-                    } else {
-                        fileSinglePicker.launch()
-                    }
+                    filesPicker.launch()
                 }
                 MessageComposerEvent.PickAttachmentSource.PhotoFromCamera -> localCoroutineScope.launch {
                     showAttachmentSourcePicker = false
@@ -687,6 +669,10 @@ class MessageComposerPresenter(
         sendAsFile: Boolean = false,
     ) {
         if (uris.isEmpty()) return
+        if (uris.size > MAX_GALLERY_ITEMS) {
+            snackbarDispatcher.post(SnackbarMessage(R.string.screen_room_attachments_limit))
+            return
+        }
         if (uris.size == 1) {
             handlePickedMedia(uris.first(), sendAsFile = sendAsFile)
             return

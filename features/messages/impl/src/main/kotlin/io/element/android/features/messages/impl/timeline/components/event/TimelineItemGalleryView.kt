@@ -46,6 +46,8 @@ import io.element.android.libraries.designsystem.preview.PreviewsDayNight
 import io.element.android.libraries.designsystem.theme.components.Icon
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.ui.media.contentvalidation.ContentValidationValue
+import io.element.android.libraries.matrix.ui.media.contentvalidation.InvalidContentView
+import io.element.android.libraries.matrix.ui.media.contentvalidation.NotFoundContentView
 import io.element.android.libraries.matrix.ui.media.contentvalidation.collectMediaState
 import io.element.android.libraries.matrix.ui.media.contentvalidation.rememberEventContentValidationState
 import io.element.android.libraries.ui.utils.time.formatShort
@@ -68,7 +70,7 @@ fun TimelineItemGalleryView(
     onLongClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val totalItems = content.items.size
+    val totalItems = content.visualItems.size
     val showOverflow = totalItems > MAX_TILES
     val overflowCount = totalItems - MAX_TILES
     Column(modifier = modifier) {
@@ -81,25 +83,25 @@ fun TimelineItemGalleryView(
                 0 -> Unit
                 1 -> SingleItemLayout(
                     eventId = eventId,
-                    item = content.items[0],
-                    onClick = { onGalleryItemClick(0) },
+                    item = content.visualItems[0].value,
+                    onClick = { onGalleryItemClick(content.visualItems[0].index) },
                     onLongClick = onLongClick,
                 )
                 2 -> TwoItemLayout(
                     eventId = eventId,
-                    items = content.items,
+                    items = content.visualItems,
                     onItemClick = onGalleryItemClick,
                     onLongClick = onLongClick,
                 )
                 3 -> ThreeItemLayout(
                     eventId = eventId,
-                    items = content.items,
+                    items = content.visualItems,
                     onItemClick = onGalleryItemClick,
                     onLongClick = onLongClick,
                 )
                 else -> FourPlusItemLayout(
                     eventId = eventId,
-                    items = content.items,
+                    items = content.visualItems,
                     showOverflow = showOverflow,
                     overflowCount = overflowCount,
                     onItemClick = onGalleryItemClick,
@@ -107,6 +109,34 @@ fun TimelineItemGalleryView(
                 )
             }
         }
+        if (content.fileItems.isNotEmpty()) {
+            Column(Modifier.width(GALLERY_WIDTH), verticalArrangement = Arrangement.spacedBy(GRID_SPACING)) {
+                content.fileItems.forEach { (index, item) ->
+                    GalleryFileRow(eventId, item, { onGalleryItemClick(index) }, onLongClick)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GalleryFileRow(eventId: EventId?, item: GalleryItem, onClick: () -> Unit, onLongClick: (() -> Unit)?) {
+    val validationState = rememberEventContentValidationState(eventId, needsValidation = true)
+    val thumbnail by validationState.collectMediaState(item.thumbnailSource?.safeUrl)
+    val media by validationState.collectMediaState(item.mediaSource.safeUrl)
+    when (validationStateForAttachment(thumbnail, media)) {
+        ContentValidationValue.Invalid -> InvalidContentView()
+        is ContentValidationValue.UnrecoverableError -> NotFoundContentView()
+        ContentValidationValue.Loading -> CircularProgressIndicator(modifier = Modifier.padding(8.dp))
+        ContentValidationValue.Valid -> AttachmentRow(
+            filename = item.filename,
+            mimeType = item.mimeType,
+            thumbnailSource = item.thumbnailSource,
+            subtitle = listOf(item.fileExtension, item.formattedFileSize).filter { it.isNotEmpty() }.joinToString(" • "),
+            onClick = onClick,
+            onLongClick = onLongClick,
+        )
+        else -> Unit
     }
 }
 
@@ -133,7 +163,7 @@ private fun SingleItemLayout(
 @Composable
 private fun TwoItemLayout(
     eventId: EventId?,
-    items: ImmutableList<GalleryItem>,
+    items: ImmutableList<IndexedValue<GalleryItem>>,
     onItemClick: (Int) -> Unit,
     onLongClick: (() -> Unit)?,
 ) {
@@ -141,7 +171,7 @@ private fun TwoItemLayout(
         modifier = Modifier.width(GALLERY_WIDTH),
         verticalArrangement = Arrangement.spacedBy(GRID_SPACING),
     ) {
-        items.forEachIndexed { index, item ->
+        items.forEach { (index, item) ->
             GalleryItemCell(
                 eventId = eventId,
                 item = item,
@@ -160,7 +190,7 @@ private fun TwoItemLayout(
 @Composable
 private fun ThreeItemLayout(
     eventId: EventId?,
-    items: ImmutableList<GalleryItem>,
+    items: ImmutableList<IndexedValue<GalleryItem>>,
     onItemClick: (Int) -> Unit,
     onLongClick: (() -> Unit)?,
 ) {
@@ -170,10 +200,10 @@ private fun ThreeItemLayout(
     ) {
         GalleryItemCell(
             eventId = eventId,
-            item = items[0],
+            item = items[0].value,
             isLast = false,
             remainingCount = 0,
-            onClick = { onItemClick(0) },
+            onClick = { onItemClick(items[0].index) },
             onLongClick = onLongClick,
             modifier = Modifier
                 .fillMaxWidth()
@@ -186,10 +216,10 @@ private fun ThreeItemLayout(
             for (it in 1..2) {
                 GalleryItemCell(
                     eventId = eventId,
-                    item = items[it],
+                    item = items[it].value,
                     isLast = false,
                     remainingCount = 0,
-                    onClick = { onItemClick(it) },
+                    onClick = { onItemClick(items[it].index) },
                     onLongClick = onLongClick,
                     modifier = Modifier
                         .weight(1f)
@@ -203,7 +233,7 @@ private fun ThreeItemLayout(
 @Composable
 private fun FourPlusItemLayout(
     eventId: EventId?,
-    items: ImmutableList<GalleryItem>,
+    items: ImmutableList<IndexedValue<GalleryItem>>,
     showOverflow: Boolean,
     overflowCount: Int,
     onItemClick: (Int) -> Unit,
@@ -220,10 +250,10 @@ private fun FourPlusItemLayout(
             for (it in 0..1) {
                 GalleryItemCell(
                     eventId = eventId,
-                    item = items[it],
+                    item = items[it].value,
                     isLast = false,
                     remainingCount = 0,
-                    onClick = { onItemClick(it) },
+                    onClick = { onItemClick(items[it].index) },
                     onLongClick = onLongClick,
                     modifier = Modifier
                         .weight(1f)
@@ -243,10 +273,10 @@ private fun FourPlusItemLayout(
                     val isOverflowItem = showOverflow && i == bottomRowItems - 1
                     GalleryItemCell(
                         eventId = eventId,
-                        item = items[itemIndex],
+                        item = items[itemIndex].value,
                         isLast = isOverflowItem,
                         remainingCount = if (isOverflowItem) overflowCount else 0,
-                        onClick = { onItemClick(itemIndex) },
+                        onClick = { onItemClick(items[itemIndex].index) },
                         onLongClick = onLongClick,
                         modifier = Modifier
                             .weight(1f)

@@ -156,6 +156,7 @@ test('gallery-last selects replacements, plaintext rooms, threads and marks thro
     h.observe('$plain', content, { room: '!plain', encrypted: false });
     const plain = await h.control(['gallery-last', '--room', 'plain', '--caption', '']);
     assert.equal(plain.event_id, '$plain'); assert.equal(plain.caption_length, 0); assert.equal(plain.caption_equals, true);
+    assert.equal(Object.hasOwn(plain, 'replacement_target_event_id'), false);
     assert.equal(plain.items[0].has_file, false);
     assert.equal(plain.items[0].has_url, true); assert.equal(plain.items[0].url_is_mxc, true); assert.equal(plain.items[0].plaintext_sha256, sha(bytes));
     const replacement = { ...content, body: 'new caption', formatted_body: '<b>new caption</b>', 'm.relates_to': { rel_type: 'm.thread', event_id: '$thread' } };
@@ -163,8 +164,11 @@ test('gallery-last selects replacements, plaintext rooms, threads and marks thro
     const edited = await h.control(['gallery-last', '--room', 'plain', '--replace', '--caption', 'new caption']);
     assert.equal(edited.event_id, '$edit'); assert.equal(edited.caption_equals, true); assert.equal(edited.has_formatted_body, true);
     assert.deepEqual(edited.relation, { rel_type: 'm.thread', event_id: '$thread' });
+    assert.equal(edited.replacement_target_event_id, '$original');
     assert.deepEqual(edited.mentions, { user_ids: ['@alice:test'] });
     assert.equal((await h.control(['gallery-last', '--room', 'plain'])).event_id, '$plain');
+    h.observe('$missing-target', { 'm.new_content': replacement, 'm.relates_to': { rel_type: 'm.replace' } }, { room: '!plain', encrypted: false, sequence: 4 });
+    await assert.rejects(h.control(['gallery-last', '--room', 'plain', '--replace']), /no valid target event ID/);
     h.media.set('mxc://test/plain', Buffer.from('changed'));
     h.observe('$bad', { ...content, itemtypes: [{ ...item, file: encryptAttachment(bytes).file, url: undefined }] });
     await assert.rejects(h.control(['gallery-last']));
@@ -339,4 +343,18 @@ test('gallery-last emits PNG observations from actual authenticated decrypted SD
     await h.control(['setup-room', '--plain']); h.media.set('mxc://test/plain-png', counterpart);
     h.observe('$plain-png', { ...content, itemtypes: [{ itemtype: 'm.image', body: 'arbitrary', info: { mimetype: 'image/png' }, url: 'mxc://test/plain-png' }] }, { room: '!plain', encrypted: false, sequence: 5 });
     assert.deepEqual((await h.control(['gallery-last', '--room', 'plain'])).items[0].png, expectedSolid([230, 35, 45]));
+});
+
+test('send-gallery encrypted images expose decryptable thumbnail_file through SDK original content', async () => {
+    const h = harness(await load());
+    await h.control(['send-gallery', 'mixed']);
+    const event = new MatrixEvent({ type: 'm.room.message', content: h.sends[0].content });
+    for (const item of event.getOriginalContent().itemtypes.filter(i => i.itemtype === 'm.image')) {
+        assert.ok(item.info.thumbnail_file, 'SDK image thumbnail contract requires info.thumbnail_file');
+        assert.equal(item.info.thumbnail_url, undefined);
+        assert.deepEqual(item.info.thumbnail_info, { mimetype: 'image/png', size: item.info.size, w: 96, h: 64 });
+        const encrypted = h.media.get(item.info.thumbnail_file.url);
+        assert.ok(encrypted);
+        assert.deepEqual(decryptAttachment(encrypted, item.info.thumbnail_file), (await load()).galleryFixtures().find(f => f.name === item.body).bytes);
+    }
 });

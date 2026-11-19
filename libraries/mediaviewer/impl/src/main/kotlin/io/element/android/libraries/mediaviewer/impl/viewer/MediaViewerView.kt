@@ -567,7 +567,16 @@ private fun MediaViewerTopBar(
     val dateSent = data.mediaInfo.dateSent
     TopAppBar(
         title = {
-            if (senderName != null && dateSent != null) {
+            if (data.showFilename) {
+                Text(
+                    modifier = Modifier.semantics { heading() },
+                    text = data.mediaInfo.filename,
+                    style = ElementTheme.typography.fontBodyMdMedium,
+                    color = ElementTheme.colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else if (senderName != null && dateSent != null) {
                 val description = stringResource(
                     CommonStrings.a11y_sent_by_sender_at_date,
                     senderName,

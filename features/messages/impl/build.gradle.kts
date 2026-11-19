@@ -93,6 +93,8 @@ dependencies {
     implementation(projects.features.knockrequests.api)
     implementation(projects.features.roommembermoderation.api)
 
+    testImplementation(libs.androidx.compose.ui.test.junit)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     testCommonDependencies(libs, true)
     testImplementation(projects.libraries.matrix.test)
     testImplementation(projects.libraries.dateformatter.test)
@@ -115,6 +117,7 @@ dependencies {
     testImplementation(projects.libraries.voicerecorder.test)
     testImplementation(projects.libraries.mediaplayer.test)
     testImplementation(projects.libraries.mediaviewer.test)
+    testImplementation(projects.libraries.mediaviewer.impl)
     testImplementation(projects.libraries.testtags)
     testImplementation(projects.features.poll.test)
     testImplementation(projects.libraries.eventformatter.test)

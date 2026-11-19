@@ -25,6 +25,7 @@ import io.element.android.features.messages.impl.timeline.model.event.GalleryIte
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemAttachmentsContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemAudioContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemEmoteContent
+import io.element.android.features.messages.impl.timeline.model.event.TimelineItemEventContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemFileContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemGalleryContent
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemImageContent
@@ -812,6 +813,63 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
         (result as TimelineItemTextContent).formattedBody.assertSpannedEquals(expectedSpanned)
     }
 
+    private suspend fun mixedGalleryContent(thumbnail: Boolean, image: Boolean = true): TimelineItemEventContent {
+        val items = buildList {
+            if (image) {
+                add(GalleryItemType.Image(ImageMessageType(
+                filename = "red.png",
+                    caption = null,
+                    formattedCaption = null,
+                    source = MediaSource("image"),
+                info = ImageInfo(64, 96, "image/png", 123, null, if (thumbnail) MediaSource("thumbnail") else null, null),
+            )))
+            }
+            add(GalleryItemType.File(FileMessageType(
+                filename = "report.pdf",
+                caption = null,
+                formattedCaption = null,
+                source = MediaSource("file"),
+                info = FileInfo("application/pdf", 123, null, null),
+            )))
+            add(GalleryItemType.Audio(AudioMessageType(
+                filename = "tone.wav",
+                caption = null,
+                formattedCaption = null,
+                source = MediaSource("audio"),
+                info = AudioInfo(null, 123, "audio/wav"),
+            )))
+        }
+        return createTimelineItemContentMessageFactory().create(
+            content = createMessageContent(type = GalleryMessageType("caption", null, items)),
+            senderId = A_USER_ID,
+            senderProfile = aProfileDetails(),
+            eventId = AN_EVENT_ID,
+        )
+    }
+
+    @Test
+    fun `test create GalleryMessageType with image, file and audio items returns TimelineItemGalleryContent with every item in order`() = runTest {
+        val result = mixedGalleryContent(thumbnail = true) as TimelineItemGalleryContent
+        assertThat(result.items.map { it.type }).containsExactly(GalleryItem.Type.Image, GalleryItem.Type.File, GalleryItem.Type.Audio).inOrder()
+        assertThat(result.items.map { it.filename }).containsExactly("red.png", "report.pdf", "tone.wav").inOrder()
+        assertThat(result.items.map { it.formattedFileSize }).containsExactly("123 Bytes", "123 Bytes", "123 Bytes")
+        assertThat(result.items.map { it.fileExtension }).containsExactly("png", "pdf", "wav").inOrder()
+        assertThat(result.visualItems.map { it.index }).containsExactly(0)
+        assertThat(result.fileItems.map { it.index }).containsExactly(1, 2).inOrder()
+    }
+
+    @Test
+    fun `test create GalleryMessageType mixed with visual items lacking thumbnails returns TimelineItemAttachmentsContent`() = runTest {
+        val result = mixedGalleryContent(thumbnail = false) as TimelineItemAttachmentsContent
+        assertThat(result.attachments.map { it.type }).containsExactly(GalleryItem.Type.Image, GalleryItem.Type.File, GalleryItem.Type.Audio).inOrder()
+    }
+
+    @Test
+    fun `test create GalleryMessageType with only file and audio items returns TimelineItemAttachmentsContent with item types`() = runTest {
+        val result = mixedGalleryContent(thumbnail = false, image = false) as TimelineItemAttachmentsContent
+        assertThat(result.attachments.map { it.type }).containsExactly(GalleryItem.Type.File, GalleryItem.Type.Audio).inOrder()
+    }
+
     @Test
     fun `test create GalleryMessageType with image items returns TimelineItemGalleryContent`() = runTest {
         val sut = createTimelineItemContentMessageFactory()
@@ -853,6 +911,8 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
             items = persistentListOf(
                 GalleryItem(
                     filename = "image.jpg",
+                    formattedFileSize = "888 Bytes",
+                    fileExtension = "jpg",
                     mimeType = MimeTypes.Jpeg,
                     mediaSource = MediaSource("image_url"),
                     type = GalleryItem.Type.Image,
@@ -910,6 +970,8 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
             items = persistentListOf(
                 GalleryItem(
                     filename = "video.mp4",
+                    formattedFileSize = "1234 Bytes",
+                    fileExtension = "mp4",
                     mimeType = MimeTypes.Mp4,
                     mediaSource = MediaSource("video_url"),
                     type = GalleryItem.Type.Video,
@@ -962,6 +1024,7 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
             isEdited = false,
             attachments = persistentListOf(
                 AttachmentItem(
+                    type = GalleryItem.Type.Audio,
                     filename = "audio.mp3",
                     mimeType = MimeTypes.Mp3,
                     mediaSource = MediaSource("audio_url"),
@@ -1065,6 +1128,7 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
             isEdited = false,
             attachments = persistentListOf(
                 AttachmentItem(
+                    type = GalleryItem.Type.Image,
                     filename = "image.jpg",
                     mimeType = MimeTypes.Jpeg,
                     mediaSource = MediaSource("image_url"),
@@ -1106,7 +1170,7 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
     }
 
     @Test
-    fun `test create GalleryMessageType with mixed image and file items returns TimelineItemAttachmentsContent`() = runTest {
+    fun `test create GalleryMessageType with mixed image and file items returns TimelineItemGalleryContent`() = runTest {
         val sut = createTimelineItemContentMessageFactory()
         val result = sut.create(
             content = createMessageContent(
@@ -1152,9 +1216,9 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
             senderProfile = aProfileDetails(),
             eventId = AN_EVENT_ID,
         )
-        assertThat(result).isInstanceOf(TimelineItemAttachmentsContent::class.java)
-        val attachmentsContent = result as TimelineItemAttachmentsContent
-        assertThat(attachmentsContent.attachments).hasSize(2)
+        assertThat(result).isInstanceOf(TimelineItemGalleryContent::class.java)
+        val galleryContent = result as TimelineItemGalleryContent
+        assertThat(galleryContent.items).hasSize(2)
     }
 
     @Test

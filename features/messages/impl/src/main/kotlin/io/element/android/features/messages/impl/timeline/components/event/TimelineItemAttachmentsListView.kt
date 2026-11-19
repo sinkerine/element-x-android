@@ -10,6 +10,7 @@ package io.element.android.features.messages.impl.timeline.components.event
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,7 @@ import io.element.android.libraries.designsystem.preview.PreviewsDayNight
 import io.element.android.libraries.designsystem.theme.components.HorizontalDivider
 import io.element.android.libraries.designsystem.theme.components.Icon
 import io.element.android.libraries.matrix.api.core.EventId
+import io.element.android.libraries.matrix.api.media.MediaSource
 import io.element.android.libraries.matrix.ui.media.MediaRequestData
 import io.element.android.libraries.matrix.ui.media.contentvalidation.ContentValidationState
 import io.element.android.libraries.matrix.ui.media.contentvalidation.ContentValidationValue
@@ -124,9 +126,13 @@ fun TimelineItemAttachmentsListView(
                         CircularProgressIndicator(modifier = Modifier.padding(8.dp).align(Alignment.CenterHorizontally))
                     }
                     ContentValidationValue.Valid -> {
-                        AttachmentListItem(
-                            attachment = attachment,
+                        AttachmentRow(
+                            filename = attachment.filename,
+                            mimeType = attachment.mimeType,
+                            thumbnailSource = attachment.thumbnailSource,
+                            subtitle = "${attachment.fileExtension} • ${attachment.formattedFileSize}",
                             onClick = { onGalleryItemClick(index) },
+                            onLongClick = null,
                         )
                     }
                     else -> {
@@ -153,7 +159,7 @@ private fun validationStateForAttachment(
     return validationStateForAttachment(thumbnailValue, mediaValue)
 }
 
-private fun validationStateForAttachment(
+internal fun validationStateForAttachment(
     thumbnailValue: ContentValidationValue,
     mediaValue: ContentValidationValue,
 ): ContentValidationValue {
@@ -169,9 +175,13 @@ private fun validationStateForAttachment(
 }
 
 @Composable
-private fun AttachmentListItem(
-    attachment: AttachmentItem,
+internal fun AttachmentRow(
+    filename: String,
+    mimeType: String,
+    thumbnailSource: MediaSource?,
+    subtitle: String,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val iconSize = 36.dp
@@ -179,7 +189,7 @@ private fun AttachmentListItem(
     val spacing = 8.dp
     Row(
         modifier = modifier
-            .clickable(onClick = onClick)
+            .then(if (onLongClick == null) Modifier.clickable(onClick = onClick) else Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick))
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing),
@@ -191,14 +201,14 @@ private fun AttachmentListItem(
                 .background(ElementTheme.colors.bgCanvasDefault),
             contentAlignment = Alignment.Center,
         ) {
-            if (attachment.thumbnailSource != null) {
-                val isVideo = attachment.mimeType.isMimeTypeVideo()
+            if (thumbnailSource != null) {
+                val isVideo = mimeType.isMimeTypeVideo()
                 AsyncImage(
                     model = MediaRequestData(
-                        source = attachment.thumbnailSource,
+                        source = thumbnailSource,
                         kind = MediaRequestData.Kind.Thumbnail(thumbnailSize),
                     ),
-                    contentDescription = attachment.filename,
+                    contentDescription = filename,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(iconSize)
@@ -223,9 +233,9 @@ private fun AttachmentListItem(
                     }
                 }
             } else {
-                val isImage = attachment.mimeType.isMimeTypeImage()
-                val isVideo = attachment.mimeType.isMimeTypeVideo()
-                val isAudio = attachment.mimeType.isMimeTypeAudio()
+                val isImage = mimeType.isMimeTypeImage()
+                val isVideo = mimeType.isMimeTypeVideo()
+                val isAudio = mimeType.isMimeTypeAudio()
                 val icon = when {
                     isImage -> CompoundIcons.Image()
                     isVideo -> CompoundIcons.VideoCall()
@@ -245,14 +255,14 @@ private fun AttachmentListItem(
             modifier = Modifier.weight(1f),
         ) {
             Text(
-                text = attachment.filename,
+                text = filename,
                 color = ElementTheme.colors.textPrimary,
                 style = ElementTheme.typography.fontBodyLgRegular,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${attachment.fileExtension} • ${attachment.formattedFileSize}",
+                text = subtitle,
                 color = ElementTheme.colors.textSecondary,
                 style = ElementTheme.typography.fontBodySmRegular,
                 maxLines = 1,

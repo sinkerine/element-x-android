@@ -10,12 +10,20 @@
 
 package io.element.android.libraries.textcomposer
 
+import android.widget.EditText
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.AndroidComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.v2.runAndroidComposeUiTest
+import androidx.compose.ui.unit.dp
+import com.google.common.truth.Truth.assertThat
+import io.element.android.libraries.testtags.TestTags
 import io.element.android.libraries.textcomposer.model.MessageComposerMode
 import io.element.android.libraries.textcomposer.model.VoiceMessageState
 import io.element.android.libraries.textcomposer.model.aTextEditorStateMarkdown
@@ -51,6 +59,50 @@ class TextComposerEndButtonTest : RobolectricTest() {
         onNodeWithContentDescription(getString(CommonStrings.a11y_voice_message_record)).assertIsDisplayed()
     }
 
+    @Test
+    fun `editing a caption keeps its native input visible in an intrinsically sized composer`() = runAndroidComposeUiTest {
+        setTextComposer(
+            text = "Q3 docs",
+            composerMode = aMessageComposerModeEditCaption(content = "Q3 docs"),
+            modifier = Modifier.width(360.dp).height(IntrinsicSize.Min),
+        )
+        runOnIdle {
+            val editor = activity!!.window.decorView.findViewWithTag<EditText>(TestTags.plainTextEditor.value)
+            assertThat(editor.text.toString()).isEqualTo("Q3 docs")
+            assertThat(editor.lineHeight).isGreaterThan(0)
+            assertThat(editor.height).isAtLeast(editor.lineHeight)
+        }
+    }
+
+    @Test
+    fun `an intrinsically sized caption editor shows every line`() = runAndroidComposeUiTest {
+        val caption = "First line\nSecond line\nThird line"
+        setTextComposer(
+            text = caption,
+            composerMode = aMessageComposerModeEditCaption(content = caption),
+            modifier = Modifier.width(360.dp).height(IntrinsicSize.Min),
+        )
+        runOnIdle {
+            val editor = activity!!.window.decorView.findViewWithTag<EditText>(TestTags.plainTextEditor.value)
+            assertThat(editor.layout.lineCount).isEqualTo(3)
+            assertThat(editor.height).isAtLeast(editor.layout.height + editor.compoundPaddingTop + editor.compoundPaddingBottom)
+        }
+    }
+
+    @Test
+    fun `an intrinsically sized normal composer shows every line`() = runAndroidComposeUiTest {
+        setTextComposer(
+            text = "First line\nSecond line\nThird line",
+            composerMode = MessageComposerMode.Normal,
+            modifier = Modifier.width(360.dp).height(IntrinsicSize.Min),
+        )
+        runOnIdle {
+            val editor = activity!!.window.decorView.findViewWithTag<EditText>(TestTags.plainTextEditor.value)
+            assertThat(editor.layout.lineCount).isEqualTo(3)
+            assertThat(editor.height).isAtLeast(editor.layout.height + editor.compoundPaddingTop + editor.compoundPaddingBottom)
+        }
+    }
+
     private fun AndroidComposeUiTest<ComponentActivity>.getString(resId: Int): String {
         return activity!!.getString(resId)
     }
@@ -58,9 +110,11 @@ class TextComposerEndButtonTest : RobolectricTest() {
     private fun AndroidComposeUiTest<ComponentActivity>.setTextComposer(
         text: String,
         composerMode: MessageComposerMode,
+        modifier: Modifier = Modifier,
     ) {
         setContent {
             TextComposer(
+                modifier = modifier,
                 state = aTextEditorStateMarkdown(initialText = text, initialFocus = true),
                 voiceMessageState = VoiceMessageState.Idle,
                 composerMode = composerMode,

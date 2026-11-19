@@ -16,6 +16,8 @@ import dev.zacsweers.metro.AssistedFactory
 import dev.zacsweers.metro.AssistedInject
 import io.element.android.features.share.api.OnSharedData
 import io.element.android.features.share.api.ShareIntentData
+import io.element.android.features.share.api.UriToShare
+import io.element.android.libraries.androidutils.file.safeDelete
 import io.element.android.libraries.architecture.AsyncAction
 import io.element.android.libraries.architecture.Presenter
 import io.element.android.libraries.architecture.runCatchingUpdatingState
@@ -24,8 +26,12 @@ import io.element.android.libraries.di.annotations.SessionCoroutineScope
 import io.element.android.libraries.matrix.api.MatrixClient
 import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.room.JoinedRoom
+import io.element.android.libraries.mediaupload.api.MAX_GALLERY_ITEMS
 import io.element.android.libraries.mediaupload.api.MediaOptimizationConfigProvider
+import io.element.android.libraries.mediaupload.api.MediaSender
 import io.element.android.libraries.mediaupload.api.MediaSenderRoomFactory
+import io.element.android.libraries.mediaupload.api.MediaUploadInfo
+import io.element.android.libraries.mediaupload.api.allFiles
 import io.element.android.services.appnavstate.api.ActiveRoomsHolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -73,6 +79,26 @@ class SharePresenter(
             ?: matrixClient.getJoinedRoom(roomId)
     }
 
+    /** Pre-process every file in order, then send them as one gallery; always cleans up. */
+    private suspend fun MediaSender.sendSharedGallery(files: List<UriToShare>, caption: String?): Result<Unit> {
+        val infos = mutableListOf<MediaUploadInfo>()
+        try {
+            for (file in files) {
+                val result = preProcessMedia(file.uri, file.mimeType, mediaOptimizationConfigProvider.get())
+                val error = result.exceptionOrNull()
+                if (error is CancellationException) throw error
+                if (error != null) return Result.failure(error)
+                infos.add(result.getOrThrow())
+            }
+            val result = sendGallery(infos, caption, formattedCaption = null, inReplyToEventId = null)
+            (result.exceptionOrNull() as? CancellationException)?.let { throw it }
+            return result
+        } finally {
+            infos.forEach { info -> info.allFiles().forEach { it.safeDelete() } }
+            cleanUp()
+        }
+    }
+
     private fun CoroutineScope.share(
         shareIntentData: ShareIntentData,
         roomIds: List<RoomId>,
@@ -99,7 +125,16 @@ class SharePresenter(
                             .map { roomId ->
                                 val room = getJoinedRoom(roomId) ?: return@map false
                                 val mediaSender = mediaSenderRoomFactory.create(room = room)
-                                filesToShare
+                                if (filesToShare.size in 2..MAX_GALLERY_ITEMS) {
+                                    try {
+                                        mediaSender.sendSharedGallery(filesToShare, shareIntentData.text).isSuccess
+                                    } finally {
+                                        if (activeRoomsHolder.getActiveRoomMatching(matrixClient.sessionId, roomId) == null) {
+                                            room.destroy()
+                                        }
+                                    }
+                                } else {
+                                    filesToShare
                                     .map { fileToShare ->
                                         val result = mediaSender.sendMedia(
                                             caption = shareIntentData.text,
@@ -123,6 +158,7 @@ class SharePresenter(
                                             room.destroy()
                                         }
                                     }
+                                }
                             }
                             .all { it }
                     }

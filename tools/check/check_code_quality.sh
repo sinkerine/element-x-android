@@ -20,20 +20,18 @@ else
   wget https://raw.githubusercontent.com/matrix-org/matrix-dev-tools/develop/bin/search_forbidden_strings.pl -O ${searchForbiddenStringsScript}
 fi
 
-if [[ -x ${searchForbiddenStringsScript} ]]; then
-  echo "${searchForbiddenStringsScript} is already executable"
-else
-  echo "Make the script executable"
-  chmod u+x ${searchForbiddenStringsScript}
+if ! command -v perl >/dev/null 2>&1; then
+  echo 'Perl is required to run the forbidden-pattern checks.' >&2
+  exit 1
 fi
 
 echo
 echo "Search for forbidden patterns in Kotlin source files..."
 
 # list all Kotlin folders of the project.
-allKotlinDirs=$(find . -type d |grep -v build |grep -v \.git |grep -v \.gradle |grep kotlin$)
+mapfile -d '' -t allKotlinDirs < <(find . -type d \( -name build -o -name .git -o -name .gradle \) -prune -o -type d -name kotlin -print0)
 
-${searchForbiddenStringsScript} ./tools/check/forbidden_strings_in_code.txt "$allKotlinDirs"
+perl "$searchForbiddenStringsScript" ./tools/check/forbidden_strings_in_code.txt "${allKotlinDirs[@]}"
 
 resultForbiddenStringInCode=$?
 
@@ -41,9 +39,9 @@ echo
 echo "Search for forbidden patterns in XML resource files..."
 
 # list all res folders of the project.
-allResDirs=$(find . -type d |grep -v build |grep -v \.git |grep -v \.gradle |grep /res$)
+mapfile -d '' -t allResDirs < <(find . -type d \( -name build -o -name .git -o -name .gradle \) -prune -o -type d -name res -print0)
 
-${searchForbiddenStringsScript} ./tools/check/forbidden_strings_in_xml.txt "$allResDirs"
+perl "$searchForbiddenStringsScript" ./tools/check/forbidden_strings_in_xml.txt "${allResDirs[@]}"
 
 resultForbiddenStringInXml=$?
 

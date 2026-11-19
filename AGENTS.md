@@ -73,6 +73,14 @@ Common Gradle tasks:
 - Format: `./gradlew ktlintFormat`
 - Update Docs TOC: `./gradlew generateDocsToc`
 
+### Qualified Foundation backport
+
+- Normal builds require `python3 tools/foundation/bootstrap` once before Gradle configuration. CI's local `setup-gradle-with-foundation` action runs `--ensure`.
+- The bootstrap reproduces the independently qualified, fixed SHA-256 AAR from pinned source/compiler inputs; it does not invent or rerun control test results. A different complete output fails closed.
+- Run bootstrap under the same shared/worktree build guards as other builds. Independent verification uses the existing `android-foundation-private` 4 CPU/12 GiB/four-hour declaration; its Gradle compiler workers and app/emulator phases remain serialized.
+- Rebuildable compiler/classes/local Maven outputs use `${XDG_CACHE_HOME:-$HOME/.cache}/dev-scratch/element-x-android/<workspace-name>/foundation-private/`. Provenance is in ignored `build/foundation-private/production-repository.json`; no binaries are committed or externally published.
+- See [the bootstrap and removal instructions](tools/foundation/README.md). Preserve useful evidence before cleanup and verify that no compiler, Gradle process or emulator owns scratch before removing it; setup and teardown use the same path.
+
 ### Sandbox End-to-End Testing
 
 The agent runs E2E tests when a feature is first added. Future pushes and deployments of the existing feature do not require rerunning E2E tests. Existing unit tests must still run.
@@ -112,6 +120,8 @@ The user approved all iterations of the `android-foundation-private` variant in 
   "timeout": "4h"
 }
 ```
+
+When a launcher retains an external build lock while waiting for Qex, keep the lock in the launcher and close its descriptor in the Qex client child (for example, `agent-job run ... 9>&-`, without replacing the lock-owning parent with `exec`). Otherwise an auto-started persistent coordinator can inherit the descriptor and keep the guard locked after the job ends. After launcher exit, verify release by acquiring a newly opened guard from an independent process; reacquiring an inherited descriptor does not prove release. Never stop a coordinator with active/queued jobs or peers to recover a leaked guard.
 
 SDK-private builds use `tools/sdk/build-gallery-private-sdk`; see `tools/sdk/threads-inbox-sdk.md` for the caller's lock contract, exact source/ABI/provenance checks and scratch setup/teardown. Rebuildable Rust, JNI and packaging caches stay under `${XDG_CACHE_HOME:-$HOME/.cache}/dev-scratch/element-x-android/<workspace-name>/sdk-gallery-private/`. Keep the source patch, useful logs/provenance and recovery AAR in their documented durable locations; retain reusable caches unless cleanup is explicitly requested and ownership/inactivity verified.
 

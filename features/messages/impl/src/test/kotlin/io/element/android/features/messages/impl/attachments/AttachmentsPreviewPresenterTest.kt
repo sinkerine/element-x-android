@@ -48,6 +48,7 @@ import io.element.android.libraries.mediaupload.api.MediaOptimizationConfig
 import io.element.android.libraries.mediaupload.api.MediaPreProcessor
 import io.element.android.libraries.mediaupload.api.MediaSenderFactory
 import io.element.android.libraries.mediaupload.api.MediaUploadInfo
+import io.element.android.libraries.mediaupload.api.allFiles
 import io.element.android.libraries.mediaupload.impl.DefaultMediaSender
 import io.element.android.libraries.mediaupload.test.FakeMediaOptimizationConfigProvider
 import io.element.android.libraries.mediaupload.test.FakeMediaPreProcessor
@@ -88,6 +89,128 @@ class AttachmentsPreviewPresenterTest : RobolectricTest() {
 
     private val mockMediaUrl: Uri = mockk("localMediaUri") {
         every { path } returns "/path/to/media"
+    }
+
+    private fun mixedPreProcessors(): List<FakeMediaPreProcessor> = listOf(
+        MediaUploadInfo.Image(
+            createTempFile(suffix = ".png").toFile(),
+            ImageInfo(64, 96, "image/png", 123, null, null, null),
+            null,
+        ),
+        MediaUploadInfo.AnyFile(createTempFile(suffix = ".pdf").toFile(), FileInfo("application/pdf", 123, null, null)),
+        MediaUploadInfo.Audio(createTempFile(suffix = ".wav").toFile(), AudioInfo(null, 123, "audio/wav")),
+    ).map { info -> FakeMediaPreProcessor().apply { givenResult(Result.success(info)) } }
+
+    private fun TestScope.createAttachmentsPreviewPresenter(
+        processors: List<FakeMediaPreProcessor>,
+        timeline: FakeTimeline,
+    ): AttachmentsPreviewPresenter {
+        val processor = object : MediaPreProcessor {
+            var next = 0
+            override suspend fun process(uri: Uri, mimeType: String, deleteOriginal: Boolean, mediaOptimizationConfig: MediaOptimizationConfig) =
+                processors[next++].process(uri, mimeType, deleteOriginal, mediaOptimizationConfig)
+            override fun cleanUp() = processors.forEach { it.cleanUp() }
+        }
+        return createAttachmentsPreviewPresenter(
+            attachments = List(3) { aMediaAttachment(aLocalMedia(uri = mockMediaUrl)) },
+            room = FakeJoinedRoom(liveTimeline = timeline),
+            mediaPreProcessor = processor,
+            onDoneListener = {},
+            temporaryUriDeleter = FakeTemporaryUriDeleter {},
+        )
+    }
+
+    @Test
+    fun `present - send mixed gallery sends one gallery with every item in order`() = runTest {
+        val processors = mixedPreProcessors()
+        var sends = 0
+        val timeline = FakeTimeline().apply {
+            sendGalleryLambda = { items, caption, _, _ ->
+                sends++
+                assertThat(items.map { it::class }).containsExactly(
+                    GalleryItemInfo.Image::class,
+                    GalleryItemInfo.MediaFile::class,
+                    GalleryItemInfo.Audio::class,
+                ).inOrder()
+                assertThat(caption).isEqualTo("Q3 docs")
+                Result.success(FakeMediaUploadHandler())
+            }
+        }
+        createAttachmentsPreviewPresenter(processors, timeline).test {
+            skipItems(1)
+            val state = awaitItem()
+            state.textEditorState.setMarkdown("Q3 docs")
+            state.eventSink(AttachmentsPreviewEvent.SendAttachment)
+            consumeItemsUntilPredicate { it.sendActionState == SendActionState.Done }
+            assertThat(sends).isEqualTo(1)
+            processors.forEach { assertThat(it.processCallCount).isEqualTo(1) }
+        }
+    }
+
+    @Test
+    fun `present - mixed gallery send failure then retry sends one gallery`() = runTest {
+        val processors = mixedPreProcessors()
+        var sends = 0
+        val retryStarted = CompletableDeferred<Unit>()
+        val releaseRetry = CompletableDeferred<Unit>()
+        val timeline = FakeTimeline().apply {
+            sendGalleryLambda = { _, _, _, _ ->
+                if (++sends == 1) {
+                    Result.failure(IllegalStateException("synthetic"))
+                } else {
+                    Result.success(
+                    object : io.element.android.libraries.matrix.api.media.MediaUploadHandler {
+                        override suspend fun await(): Result<Unit> {
+                            retryStarted.complete(Unit)
+                            releaseRetry.await()
+                            return Result.success(Unit)
+                        }
+                        override fun cancel() = Unit
+                    }
+                )
+                }
+            }
+        }
+        createAttachmentsPreviewPresenter(processors, timeline).test {
+            skipItems(1)
+            awaitItem().eventSink(AttachmentsPreviewEvent.SendAttachment)
+            val failed = consumeItemsUntilPredicate { it.sendActionState is SendActionState.Failure }.last()
+            assertThat(sends).isEqualTo(1)
+            failed.eventSink(AttachmentsPreviewEvent.CancelAndClearSendState)
+            val ready = awaitItem()
+            assertThat(ready.sendActionState).isInstanceOf(SendActionState.Sending.ReadyToUpload::class.java)
+            ready.eventSink(AttachmentsPreviewEvent.SendAttachment)
+            retryStarted.await()
+            assertThat(sends).isEqualTo(2)
+            expectNoEvents()
+            releaseRetry.complete(Unit)
+            assertThat(awaitItem().sendActionState).isEqualTo(SendActionState.Done)
+            assertThat(sends).isEqualTo(2)
+            processors.forEach { assertThat(it.processCallCount).isEqualTo(1) }
+        }
+    }
+
+    @Test
+    fun `present - mixed gallery cancel and dismiss sends nothing and cleans up`() = runTest {
+        val processors = mixedPreProcessors()
+        var sends = 0
+        val timeline = FakeTimeline().apply {
+            sendGalleryLambda = { _, _, _, _ ->
+            sends++
+            Result.success(FakeMediaUploadHandler())
+        }
+        }
+        createAttachmentsPreviewPresenter(processors, timeline).test {
+            skipItems(1)
+            val ready = consumeItemsUntilPredicate { it.sendActionState is SendActionState.Sending.ReadyToUpload }.last()
+            val files = (ready.sendActionState as SendActionState.Sending.ReadyToUpload).mediaInfos.flatMap { it.allFiles() }
+            assertThat(files.all { it.exists() }).isTrue()
+            ready.eventSink(AttachmentsPreviewEvent.CancelAndDismiss)
+            assertThat(awaitItem().sendActionState).isEqualTo(SendActionState.Done)
+            assertThat(files.none { it.exists() }).isTrue()
+            assertThat(sends).isEqualTo(0)
+            processors.forEach { assertThat(it.cleanUpCallCount).isEqualTo(1) }
+        }
     }
 
     @Test

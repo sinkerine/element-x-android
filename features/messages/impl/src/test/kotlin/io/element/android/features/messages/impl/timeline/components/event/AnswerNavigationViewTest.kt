@@ -1,5 +1,6 @@
 /*
- * Copyright 2026 Element Creations Ltd.
+ * Copyright (c) 2026 Element Creations Ltd.
+ *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial.
  * Please see LICENSE files in the repository root for full details.
  */
@@ -25,7 +26,7 @@ class AnswerNavigationViewTest : RobolectricTest() {
     @Test
     fun `duplicate labels select the numbered section and current marker is visible`() = runAndroidComposeUiTest {
         var selected: Int? = null
-        val navigation = AnswerNavigationPreviewProvider().values.first()
+        val navigation = AnswerNavigationPreviewParam().values.first()
         setSafeContent {
             ElementPreview { AnswerIndexContent(navigation, 2, { selected = it }, {}) }
         }
@@ -39,7 +40,7 @@ class AnswerNavigationViewTest : RobolectricTest() {
     @Test
     fun `source shows author label and host and forwards the original link`() = runAndroidComposeUiTest {
         var opened: Link? = null
-        val navigation = AnswerNavigationPreviewProvider().values.first()
+        val navigation = AnswerNavigationPreviewParam().values.first()
         setSafeContent {
             ElementPreview { AnswerIndexContent(navigation, null, {}, { opened = it }) }
         }
@@ -51,7 +52,7 @@ class AnswerNavigationViewTest : RobolectricTest() {
 
     @Test
     fun `source free answers omit sources area`() = runAndroidComposeUiTest {
-        val navigation = AnswerNavigationPreviewProvider().values.last()
+        val navigation = AnswerNavigationPreviewParam().values.last()
         setSafeContent {
             ElementPreview { AnswerIndexContent(navigation, null, {}, {}) }
         }
@@ -61,7 +62,7 @@ class AnswerNavigationViewTest : RobolectricTest() {
 
     @Test
     fun `heading action reopens index with the selected section marked`() = runAndroidComposeUiTest {
-        val navigation = AnswerNavigationPreviewProvider().values.first()
+        val navigation = AnswerNavigationPreviewParam().values.first()
         setSafeContent {
             ElementPreview { AnswerNavigationView(navigation, {}, {}) }
         }

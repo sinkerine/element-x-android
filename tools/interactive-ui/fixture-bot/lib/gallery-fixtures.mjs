@@ -152,7 +152,7 @@ export function createGalleryControl({ client, state, aliceId, since, sendConten
                 file.url = upload.content_uri;
                 const itemtype = mime.startsWith('image/') ? 'm.image' : mime.startsWith('audio/') ? 'm.audio' : 'm.file';
                 itemtypes.push({ itemtype, body: name, info: { mimetype: mime, size: bytes.length,
-                    ...(mime === 'image/png' ? { w: 96, h: 64 } : {}), ...(mime === 'audio/wav' ? { duration: 1000 } : {}) }, file });
+                    ...(mime === 'image/png' ? { w: 96, h: 64, thumbnail_file: { ...file }, thumbnail_info: { mimetype: mime, size: bytes.length, w: 96, h: 64 } } : {}), ...(mime === 'audio/wav' ? { duration: 1000 } : {}) }, file });
             }
             const thread = options['--thread'];
             return sendContent({ msgtype: 'dm.filament.gallery', body: 'from bot', itemtypes, 'm.mentions': {},
@@ -173,11 +173,19 @@ export function createGalleryControl({ client, state, aliceId, since, sendConten
                 await client.decryptEventIfNeeded(event);
                 if (event.isDecryptionFailure()) throw new Error('Gallery event decryption failed');
                 const original = event.getOriginalContent();
-                const replacement = original['m.relates_to']?.rel_type === 'm.replace';
+                const outerRelation = original['m.relates_to'];
+                const replacement = outerRelation?.rel_type === 'm.replace';
                 if (!!options['--replace'] !== replacement) continue;
                 const content = replacement ? original['m.new_content'] : original;
                 if (content?.msgtype !== 'dm.filament.gallery' || !Array.isArray(content.itemtypes)) continue;
-                return projectGallery(client, entry, content, options['--caption'], fetchMedia);
+                if (!replacement) return projectGallery(client, entry, content, options['--caption'], fetchMedia);
+                if (typeof outerRelation.event_id !== 'string' || !outerRelation.event_id.startsWith('$') || outerRelation.event_id.length < 2) {
+                    throw new Error('Gallery replacement has no valid target event ID');
+                }
+                return {
+                    ...await projectGallery(client, entry, content, options['--caption'], fetchMedia),
+                    replacement_target_event_id: outerRelation.event_id,
+                };
             }
             throw new Error('No matching gallery observed');
         }

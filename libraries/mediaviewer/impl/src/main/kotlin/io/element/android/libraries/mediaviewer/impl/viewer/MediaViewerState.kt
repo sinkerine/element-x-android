@@ -54,5 +54,6 @@ sealed interface MediaViewerPageData {
         val downloadedMedia: State<AsyncData<LocalMedia>>,
         val validationState: ContentValidationState,
         override val pagerKey: Long,
+        val showFilename: Boolean = false,
     ) : MediaViewerPageData
 }
