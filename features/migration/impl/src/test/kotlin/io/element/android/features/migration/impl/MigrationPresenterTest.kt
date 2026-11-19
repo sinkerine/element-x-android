@@ -20,6 +20,7 @@ import io.element.android.tests.testutils.WarmUpRule
 import io.element.android.tests.testutils.lambda.lambdaRecorder
 import io.element.android.tests.testutils.testCoroutineDispatchers
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
@@ -79,20 +80,22 @@ class MigrationPresenterTest {
         }
         val store = InMemoryMigrationStore(11)
         val presenter = createPresenter(DefaultAppMigrationRunner(store, setOf(migration), testCoroutineDispatchers()))
-        moleculeFlow(RecompositionMode.Immediate) { presenter.present() }.test {
-            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Uninitialized)
-            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Loading(Unit))
-            firstAttempt.completeExceptionally(IllegalStateException("temporary failure"))
-            val failedState = awaitItem()
-            assertThat(failedState.migrationAction).isInstanceOf(AsyncData.Failure::class.java)
-            assertThat(store.applicationMigrationVersion().first()).isEqualTo(11)
-            failedState.onRetry()
-            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Loading(Unit))
-            retryAttempt.complete(Unit)
-            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Success(Unit))
-            assertThat(attempts).isEqualTo(2)
-            assertThat(store.applicationMigrationVersion().first()).isEqualTo(12)
-        }
+        moleculeFlow(RecompositionMode.Immediate) { presenter.present() }
+            .distinctUntilChangedBy { it.migrationAction }
+            .test {
+                assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Uninitialized)
+                assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Loading(Unit))
+                firstAttempt.completeExceptionally(IllegalStateException("temporary failure"))
+                val failedState = awaitItem()
+                assertThat(failedState.migrationAction).isInstanceOf(AsyncData.Failure::class.java)
+                assertThat(store.applicationMigrationVersion().first()).isEqualTo(11)
+                failedState.onRetry()
+                assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Loading(Unit))
+                retryAttempt.complete(Unit)
+                assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Success(Unit))
+                assertThat(attempts).isEqualTo(2)
+                assertThat(store.applicationMigrationVersion().first()).isEqualTo(12)
+            }
     }
 
     private fun createPresenter(appMigrationRunner: AppMigrationRunner) = MigrationPresenter(
