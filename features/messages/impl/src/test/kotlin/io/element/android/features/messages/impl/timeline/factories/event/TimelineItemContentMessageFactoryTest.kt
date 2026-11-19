@@ -38,8 +38,9 @@ import io.element.android.features.messages.impl.timeline.model.event.TimelineIt
 import io.element.android.features.messages.impl.timeline.model.event.TimelineItemVoiceContent
 import io.element.android.features.messages.impl.timeline.model.event.captionOrNull
 import io.element.android.features.messages.impl.timeline.model.event.formattedCaptionOrNull
-import io.element.android.features.messages.impl.utils.FakeTextPillificationHelper
+import io.element.android.features.messages.impl.timeline.model.event.captionTreeOrNull
 import io.element.android.features.messages.test.timeline.FakeHtmlConverterProvider
+import io.element.android.features.messages.test.timeline.FakeTextPillificator
 import io.element.android.libraries.androidutils.filesize.FakeFileSizeFormatter
 import io.element.android.libraries.core.mimetype.MimeTypes
 import io.element.android.libraries.featureflag.api.FeatureFlags
@@ -1345,7 +1346,7 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
             val result = factory.create(createMessageContent(type = type), A_USER_ID, aProfileDetails(), AN_EVENT_ID) as TimelineItemTextBasedContent
             assertThat(result.answerNavigation!!.sections.map { it.title }).containsExactly("Summary", "Evidence", "Evidence", "Sources").inOrder()
             assertThat(result.answerNavigation!!.sources.single().label).isEqualTo("Author label")
-            assertThat(result.htmlDocument!!.select("h2")).isEmpty()
+            assertThat(result.htmlDocument!!.select("h2").eachText()).containsExactly("Summary", "Evidence", "Evidence", "Sources").inOrder()
             assertThat(result.body).isEqualTo("body")
         }
         val edited = factory.create(
@@ -1379,6 +1380,45 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
         ) as TimelineItemTextBasedContent
         val sectionBody = result.answerNavigation!!.sections[1].body as Spanned
         assertThat(sectionBody.getSpans<URLSpan>().map { it.url }).contains("https://example.org")
+    }
+
+    @Test
+    fun `test create will only parse the caption with the new parser if the feature flag is enabled`() = runTest {
+        val featureFlagService = FakeFeatureFlagService(
+            initialState = mapOf(
+                FeatureFlags.NewTimelineEventRenderer.key to true
+            )
+        )
+        val sut = createTimelineItemContentMessageFactory(
+            featureFlagService = featureFlagService
+        )
+        val messageType = ImageMessageType(
+            filename = "filename",
+            caption = "caption",
+            formattedCaption = FormattedBody(MessageFormat.HTML, "<b>caption</b>"),
+            source = MediaSource("url"),
+            info = null,
+        )
+        val resultWithFeatureFlag = sut.create(
+            content = createMessageContent(type = messageType),
+            senderId = A_USER_ID,
+            senderProfile = aProfileDetails(),
+            eventId = AN_EVENT_ID,
+        )
+
+        // The caption tree is present when the feature flag is enabled
+        assertThat(resultWithFeatureFlag.captionTreeOrNull()).isNotNull()
+
+        featureFlagService.setFeatureEnabled(FeatureFlags.NewTimelineEventRenderer, false)
+        val resultWithoutFeatureFlag = sut.create(
+            content = createMessageContent(type = messageType),
+            senderId = A_USER_ID,
+            senderProfile = aProfileDetails(),
+            eventId = AN_EVENT_ID,
+        )
+
+        // The caption tree is null when the feature flag is disabled
+        assertThat(resultWithoutFeatureFlag.captionTreeOrNull()).isNull()
     }
 
     private fun createMessageContent(
@@ -1589,7 +1629,7 @@ class TimelineItemContentMessageFactoryTest : RobolectricTest() {
         fileExtensionExtractor = FileExtensionExtractorWithoutValidation(),
         htmlConverterProvider = FakeHtmlConverterProvider(htmlConverterTransform, domConverterTransform),
         permalinkParser = permalinkParser,
-        textPillificationHelper = FakeTextPillificationHelper(),
+        textPillificator = FakeTextPillificator(),
         htmlMessageParser = htmlMessageParser,
         featureFlagService = featureFlagService,
     )

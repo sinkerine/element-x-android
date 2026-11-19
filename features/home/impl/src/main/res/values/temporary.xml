@@ -7,14 +7,6 @@
   -->
 
 <resources>
-    <string name="start_searching_title">Start searching…</string>
-    <string name="start_searching_subtitle">Search for chats and messages</string>
-    <string name="search_section_chats">Chats</string>
-    <string name="search_from_your_messages_header">From your messages</string>
-    <string name="search_section_messages">Messages</string>
-    <string name="search_no_results_title">No results</string>
-    <string name="search_no_results_subtitle">There are no results for “%1$s”. Try a new search term.</string>
-    <string name="screen_search_recent_searches_section_title">Recent searches</string>
     <string name="action_mark_all_as_read">Mark all as read</string>
     <string name="screen_roomlist_marking_all_as_read">Marking as read…</string>
     <string name="screen_roomlist_mark_all_as_read_success">All selected chats marked as read</string>

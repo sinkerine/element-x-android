@@ -55,7 +55,7 @@ class GlobalSearchStatePreviewParam : PreviewParameterProvider<GlobalSearchState
             return sequenceOf(
                 // Not enabled, no preview
                 aGlobalSearchState(isEnabled = false),
-                aGlobalSearchState(isSearchActive = true, queryState = TextFieldState("Query")),
+                aGlobalSearchState(isSearchActive = true, queryState = TextFieldState("")),
                 aGlobalSearchState(
                     isSearchActive = true,
                     currentTarget = GlobalSearchTarget.ROOMS,
@@ -79,13 +79,13 @@ class GlobalSearchStatePreviewParam : PreviewParameterProvider<GlobalSearchState
                     currentTarget = GlobalSearchTarget.MESSAGES,
                     queryState = TextFieldState("Query"),
                     results = AsyncData.Success(GlobalSearchResults.MessageSearchResults(persistentListOf(
-                        MessageSearchResultItem.Message(
+                        MessageSearchListItem.Message(
                             messageSearchResult = aMessageSearchResult(eventId = EventId("\$eventId1:server.org")),
                             body = "A message with Query",
                             roomInfo = aRoomInfo(),
                             formattedTimestamp = "12:00",
                         ),
-                        MessageSearchResultItem.Media(
+                        MessageSearchListItem.Media(
                             messageSearchResult = aMessageSearchResult(eventId = EventId("\$eventId2:server.org")),
                             mediaContent = MediaSearchResultContent(
                                 filename = "file.png",
@@ -114,9 +114,9 @@ class GlobalSearchStatePreviewParam : PreviewParameterProvider<GlobalSearchState
                     results = AsyncData.Uninitialized,
                     history = AsyncData.Success(
                         persistentListOf(
-                            SearchHistoryResultItem.Query("Query 1"),
-                            SearchHistoryResultItem.Query("Query 2"),
-                            SearchHistoryResultItem.Room(
+                            SearchHistoryListItem.Query("Query 1"),
+                            SearchHistoryListItem.Query("Query 2"),
+                            SearchHistoryListItem.Room(
                                 roomId = roomId1,
                                 roomInfo = aRoomInfo(
                                     id = roomId1,
@@ -125,7 +125,7 @@ class GlobalSearchStatePreviewParam : PreviewParameterProvider<GlobalSearchState
                                     canonicalAlias = aCanonicalAlias,
                                 )
                             ),
-                            SearchHistoryResultItem.Room(
+                            SearchHistoryListItem.Room(
                                 roomId = roomId2,
                                 roomInfo = aRoomInfo(
                                     id = roomId2,
@@ -133,7 +133,7 @@ class GlobalSearchStatePreviewParam : PreviewParameterProvider<GlobalSearchState
                                     avatarUrl = AN_AVATAR_URL,
                                 )
                             ),
-                            SearchHistoryResultItem.Room(
+                            SearchHistoryListItem.Room(
                                 roomId = dmRoomId,
                                 roomInfo = aRoomInfo(
                                     id = dmRoomId,
@@ -144,7 +144,7 @@ class GlobalSearchStatePreviewParam : PreviewParameterProvider<GlobalSearchState
                                     canonicalAlias = aCanonicalAlias,
                                 )
                             ),
-                            SearchHistoryResultItem.Room(
+                            SearchHistoryListItem.Room(
                                 roomId = tombstonedRoomId,
                                 roomInfo = aRoomInfo(
                                     id = tombstonedRoomId,
@@ -158,6 +158,19 @@ class GlobalSearchStatePreviewParam : PreviewParameterProvider<GlobalSearchState
                             ),
                         )
                     )
+                ),
+                aGlobalSearchState(
+                    isSearchActive = true,
+                    currentTarget = GlobalSearchTarget.ROOMS,
+                    queryState = TextFieldState("Query"),
+                    results = AsyncData.Success(GlobalSearchResults.RoomListResults(persistentListOf())),
+                    showLearnMoreBottomSheet = true,
+                ),
+                aGlobalSearchState(
+                    isSearchActive = true,
+                    currentTarget = GlobalSearchTarget.ROOMS,
+                    queryState = TextFieldState("Query"),
+                    results = AsyncData.Success(GlobalSearchResults.RoomListResults(persistentListOf())),
                 ),
             )
         }
@@ -300,7 +313,8 @@ internal fun aGlobalSearchState(
     queryState: TextFieldState = TextFieldState(),
     currentTarget: GlobalSearchTarget = GlobalSearchTarget.ROOMS,
     results: AsyncData<GlobalSearchResults> = AsyncData.Uninitialized,
-    history: AsyncData<ImmutableList<SearchHistoryResultItem>> = AsyncData.Uninitialized,
+    history: AsyncData<ImmutableList<SearchHistoryListItem>> = AsyncData.Uninitialized,
+    showLearnMoreBottomSheet: Boolean = false,
     eventSink: (GlobalSearchEvent) -> Unit = {},
 ) = GlobalSearchState(
     isEnabled = isEnabled,
@@ -309,5 +323,6 @@ internal fun aGlobalSearchState(
     currentTarget = currentTarget,
     results = results,
     history = history,
+    showLearnMoreBottomSheet = showLearnMoreBottomSheet,
     eventSink = eventSink
 )

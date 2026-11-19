@@ -7,6 +7,7 @@
 
 package io.element.android.libraries.htmlrenderer.impl
 
+import android.net.Uri
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -14,6 +15,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import com.google.common.truth.Truth.assertThat
 import io.element.android.libraries.htmlrenderer.api.CodeBlockNode
+import io.element.android.libraries.htmlrenderer.api.HeaderNode
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser
 import io.element.android.libraries.htmlrenderer.api.ListNode
 import io.element.android.libraries.htmlrenderer.api.MathsBlockNode
@@ -31,6 +33,7 @@ import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.matrix.api.core.toRoomIdOrAlias
 import io.element.android.libraries.matrix.api.permalink.PermalinkData
+import io.element.android.libraries.matrix.test.permalink.FakePermalinkBuilder
 import io.element.android.libraries.matrix.test.permalink.FakePermalinkParser
 import io.element.android.tests.testutils.robolectric.RobolectricTest
 import org.jsoup.Jsoup
@@ -139,7 +142,7 @@ class DefaultHtmlMessageParserTest : RobolectricTest() {
 
     @Test
     fun `a regular link is styled and annotated with its url`() {
-        val permalinkParser = FakePermalinkParser { PermalinkData.FallbackLink(android.net.Uri.parse(it)) }
+        val permalinkParser = FakePermalinkParser { PermalinkData.FallbackLink(Uri.parse(it)) }
         val document = parse("""Visit <a href="https://element.io">the site</a>""", permalinkParser)
         val paragraph = document.children.single() as ParagraphNode
         assertThat(paragraph.inlineContent).isEmpty()
@@ -161,7 +164,7 @@ class DefaultHtmlMessageParserTest : RobolectricTest() {
         val paragraph = document.children.single() as ParagraphNode
 
         val mention = paragraph.inlineContent.values.single()
-        assertThat(mention).isEqualTo(MentionNodeContent.User(displayText = "Alice", userId = userId))
+        assertThat(mention).isEqualTo(MentionNodeContent.User(displayText = "Alice", userId = userId, permalinkUrl = "https://matrix.to/#/@alice:example.org"))
         // The placeholder id in the text matches the map key.
         val placeholderId = paragraph.inlineContent.keys.single()
         val annotations = paragraph.text.getStringAnnotations(0, paragraph.text.length)
@@ -178,7 +181,7 @@ class DefaultHtmlMessageParserTest : RobolectricTest() {
         val paragraph = document.children.single() as ParagraphNode
         val mention = paragraph.inlineContent.values.single()
         assertThat(mention).isEqualTo(
-            MentionNodeContent.Room(displayText = "the room", roomIdOrAlias = roomIdOrAlias)
+            MentionNodeContent.Room(displayText = "the room", roomIdOrAlias = roomIdOrAlias, permalinkUrl = "https://matrix.to/#/#room:example.org")
         )
     }
 
@@ -196,10 +199,59 @@ class DefaultHtmlMessageParserTest : RobolectricTest() {
     }
 
     @Test
+    fun `raw mentions in the text become mention pills next to the existing ones`() {
+        val alice = UserId("@alice:example.org")
+        val permalinkParser = FakePermalinkParser { url ->
+            if (url == "https://matrix.to/#/@alice:example.org") PermalinkData.UserLink(alice) else PermalinkData.FallbackLink(Uri.parse(url))
+        }
+        val document = parse(
+            """<p><a href="https://matrix.to/#/@alice:example.org">Alice</a>, @bob:example.org and @room</p><h2>Join #room:example.org</h2>""",
+            permalinkParser,
+        )
+        val paragraph = document.children[0] as ParagraphNode
+        assertThat(paragraph.text.text).isEqualTo("Alice, @bob:example.org and @room")
+        assertThat(paragraph.inlineContent.values).containsExactly(
+            MentionNodeContent.User(displayText = "Alice", userId = alice, permalinkUrl = "https://matrix.to/#/@alice:example.org"),
+            MentionNodeContent.User(
+                displayText = "@bob:example.org",
+                userId = UserId("@bob:example.org"),
+                permalinkUrl = "https://matrix.to/#/@bob:example.org"
+            ),
+            MentionNodeContent.Everyone(displayText = "@room"),
+        )
+        val header = document.children[1] as HeaderNode
+        assertThat(header.inlineContent.values.single()).isEqualTo(
+            MentionNodeContent.Room(
+                displayText = "#room:example.org",
+                roomIdOrAlias = RoomAlias("#room:example.org").toRoomIdOrAlias(),
+                permalinkUrl = "https://matrix.to/#/#room:example.org"
+            )
+        )
+    }
+
+    @Test
     fun `mx-reply content is stripped`() {
         val document = parse("<mx-reply>In reply to something</mx-reply>Actual message")
         val paragraph = document.children.single() as ParagraphNode
         assertThat(paragraph.text.text).isEqualTo("Actual message")
+    }
+
+    @Test
+    fun `headers become HeaderNodes with their level and inline content`() {
+        val document = parse("<h1>Title</h1><h3>Subtitle with <strong>bold</strong></h3><h6>Small</h6>")
+        assertThat(document.children).hasSize(3)
+
+        val h1 = document.children[0] as HeaderNode
+        assertThat(h1.level).isEqualTo(1)
+        assertThat(h1.text.text).isEqualTo("Title")
+
+        val h3 = document.children[1] as HeaderNode
+        assertThat(h3.level).isEqualTo(3)
+        assertThat(h3.text.text).isEqualTo("Subtitle with bold")
+
+        val h6 = document.children[2] as HeaderNode
+        assertThat(h6.level).isEqualTo(6)
+        assertThat(h6.text.text).isEqualTo("Small")
     }
 
     @Test
@@ -286,7 +338,7 @@ class DefaultHtmlMessageParserTest : RobolectricTest() {
     @Test
     fun `the maths cap spans paragraphs display blocks and failed layouts and resets per parse`() {
         val engine = FakeMathsLayoutEngine { tex, _ -> if (tex == "bad") null else FakeMathsLayout() }
-        val parser = DefaultHtmlMessageParser(FakePermalinkParser(), engine)
+        val parser = DefaultHtmlMessageParser(FakePermalinkParser(), engine, FakePermalinkBuilder())
         val html = "<span data-mx-maths='bad'><code>bad</code></span>" +
             "<div data-mx-maths='x'>x</div>".repeat(MAX_MATHS_ELEMENTS_PER_MESSAGE - 1) +
             "<p><span data-mx-maths='later'><code>later</code></span></p>"
@@ -310,7 +362,7 @@ class DefaultHtmlMessageParserTest : RobolectricTest() {
                 barrier.await(10, TimeUnit.SECONDS)
             }
         }
-        val parser = DefaultHtmlMessageParser(FakePermalinkParser(), engine)
+        val parser = DefaultHtmlMessageParser(FakePermalinkParser(), engine, FakePermalinkBuilder())
         val html = "<span data-mx-maths='x'>x</span>".repeat(MAX_MATHS_ELEMENTS_PER_MESSAGE + 1)
         val executor = Executors.newFixedThreadPool(2)
         try {
@@ -339,7 +391,7 @@ class DefaultHtmlMessageParserTest : RobolectricTest() {
     @Test
     fun `ordinary messages never invoke the maths engine and input is never mutated`() {
         val engine = FakeMathsLayoutEngine()
-        val parser = DefaultHtmlMessageParser(FakePermalinkParser(), engine)
+        val parser = DefaultHtmlMessageParser(FakePermalinkParser(), engine, FakePermalinkBuilder())
         parser.parse(Jsoup.parse("<p>Ordinary <b>text</b></p>"))
         assertThat(engine.calls).isEmpty()
         val document = Jsoup.parse("<span data-mx-maths='x'><code>x</code></span>")
@@ -352,5 +404,9 @@ class DefaultHtmlMessageParserTest : RobolectricTest() {
         html: String,
         permalinkParser: FakePermalinkParser = FakePermalinkParser(),
         mathsLayoutEngine: MathsLayoutEngine = FakeMathsLayoutEngine(),
-    ) = DefaultHtmlMessageParser(permalinkParser, mathsLayoutEngine).parse(Jsoup.parse(html))
+        permalinkBuilder: FakePermalinkBuilder = FakePermalinkBuilder(
+            permalinkForUserLambda = { Result.success("https://matrix.to/#/${it.value}") },
+            permalinkForRoomAliasLambda = { Result.success("https://matrix.to/#/${it.value}") },
+        ),
+    ) = DefaultHtmlMessageParser(permalinkParser, mathsLayoutEngine, permalinkBuilder).parse(Jsoup.parse(html))
 }

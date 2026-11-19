@@ -41,6 +41,8 @@ class PlatformInitializer : Initializer<Unit> {
             sdkSentryDsn = appBindings.sentrySdkDsn()?.value?.takeIf { it.isNotBlank() },
         )
         bugReporter.setCurrentTracingLogLevel(logLevel.name)
+
+        // Init the tracing service with the configuration so we have logging enabled as soon as possible
         platformService.init(tracingConfiguration)
         // Also set env variable for rust back trace
         Os.setenv("RUST_BACKTRACE", "1", true)

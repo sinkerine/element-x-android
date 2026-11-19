@@ -55,7 +55,7 @@ class RustLinkMobileHandler(
                     task.cancel()
                 }
             }
-            // We emit Done in case the progress listener was deallocated before generate() sent the Done
+            // We emit Done in case the progress listener was deallocated before the task sent the Done
             _linkMobileStep.emit(LinkMobileStep.Done)
         } catch (e: HumanQrGrantLoginException.Expired) {
             // Note: the SDK does not return this error, but is returning `.NotFound` instead when the QR code expires. We catch both just in case.

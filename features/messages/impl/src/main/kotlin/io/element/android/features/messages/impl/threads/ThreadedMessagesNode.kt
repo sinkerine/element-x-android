@@ -39,6 +39,7 @@ import io.element.android.features.messages.impl.actionlist.model.TimelineItemAc
 import io.element.android.features.messages.impl.attachments.Attachment
 import io.element.android.features.messages.impl.messagecomposer.MessageComposerEvent
 import io.element.android.features.messages.impl.messagecomposer.MessageComposerPresenter
+import io.element.android.features.messages.impl.messagecomposer.composerEmojiPickerContent
 import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagePeek
 import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesButton
 import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMessagesEvent
@@ -47,6 +48,7 @@ import io.element.android.features.messages.impl.threads.mymessages.ThreadMyMess
 import io.element.android.features.messages.impl.timeline.TimelineController
 import io.element.android.features.messages.impl.timeline.TimelineEvent
 import io.element.android.features.messages.impl.timeline.TimelinePresenter
+import io.element.android.features.messages.impl.timeline.TimelineSelectionOwner
 import io.element.android.features.messages.impl.timeline.components.customreaction.CustomReactionBottomSheet
 import io.element.android.features.messages.impl.timeline.di.LocalTimelineItemPresenterFactories
 import io.element.android.features.messages.impl.timeline.di.TimelineItemPresenterFactories
@@ -76,7 +78,6 @@ import io.element.android.libraries.matrix.api.room.CreateTimelineParams
 import io.element.android.libraries.matrix.api.room.JoinedRoom
 import io.element.android.libraries.matrix.api.room.alias.matches
 import io.element.android.libraries.matrix.api.timeline.Timeline
-import io.element.android.libraries.matrix.api.timeline.TimelineProvider
 import io.element.android.libraries.matrix.api.timeline.item.TimelineItemDebugInfo
 import io.element.android.libraries.matrix.ui.model.getBestName
 import io.element.android.libraries.ui.utils.a11y.hasExternalKeyboard
@@ -109,7 +110,7 @@ class ThreadedMessagesNode(
     private val triageQueue: io.element.android.features.threads.api.ThreadsTriageQueue,
     private val snackbar: io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher,
     private val previewFormatter: io.element.android.libraries.eventformatter.api.RoomLatestEventFormatter,
-) : Node(buildContext, plugins = plugins), MessagesNavigator {
+) : Node(buildContext, plugins = plugins), MessagesNavigator, TimelineSelectionOwner {
     data class Inputs(
         val threadRootEventId: ThreadId,
         val focusedEventId: EventId?,
@@ -123,6 +124,7 @@ class ThreadedMessagesNode(
     private var timelineController: TimelineController? by mutableStateOf(null)
     private var ownedThreadTimeline: Timeline? = null
     private var presenter: Presenter<MessagesState>? by mutableStateOf(null)
+    private var timelinePresenter: TimelinePresenter? = null
     private var myMessagesPresenter: ThreadMyMessagesPresenter? by mutableStateOf(null)
     private var loadFailed by mutableStateOf(false)
     private val openedAtNanos = System.nanoTime()
@@ -150,38 +152,40 @@ class ThreadedMessagesNode(
         val threadedTimeline = room.createTimeline(CreateTimelineParams.Threaded(threadRootEventId = inputs.threadRootEventId)).getOrThrow()
         timber.log.Timber.d("Thread timeline created after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
         try {
-        if (inputs.focusedEventId == null) {
-            val status = threadedTimeline.backwardPaginationStatus.first { !it.isPaginating }
-            if (status.hasMoreToLoad) threadedTimeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
-        }
-        val focused = inputs.focusedEventId
-        if (focused != null && !loadThreadFocus(threadedTimeline, focused)) {
-            effectiveFocus = null
-            focusUnavailable = true
-            // Render feedback with the fallback timeline. A shared host on an
-            // underlying room can consume a posted snackbar before this view exists.
-        }
-        timber.log.Timber.d("Thread history prepared after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
-        val timelineController = TimelineController(
-            room,
-            liveTimeline = threadedTimeline,
-            roomCoroutineScope = room.roomCoroutineScope,
-            dispatchers = dispatchers,
-        )
-        this.timelineController = timelineController
-        ownedThreadTimeline = threadedTimeline
-        myMessagesPresenter = myMessagesPresenterFactory.create(threadedTimeline, inputs.threadRootEventId, inputs.triage)
-        return presenterFactory.create(
-            navigator = this,
-            composerPresenter = messageComposerPresenterFactory.create(timelineController, this, threadRoot = inputs.threadRootEventId),
-            timelinePresenter = timelinePresenterFactory.create(timelineController = timelineController, this),
-            // TODO add special processor for threaded timeline
-            actionListPresenter = actionListPresenterFactory.create(
-                postProcessor = TimelineItemActionPostProcessor.Default,
-                timelineMode = timelineController.mainTimelineMode(),
-            ),
-            timelineController = timelineController,
-        )
+            if (inputs.focusedEventId == null) {
+                val status = threadedTimeline.backwardPaginationStatus.first { !it.isPaginating }
+                if (status.hasMoreToLoad) threadedTimeline.paginate(Timeline.PaginationDirection.BACKWARDS).getOrThrow()
+            }
+            val focused = inputs.focusedEventId
+            if (focused != null && !loadThreadFocus(threadedTimeline, focused)) {
+                effectiveFocus = null
+                focusUnavailable = true
+                // Render feedback with the fallback timeline. A shared host on an
+                // underlying room can consume a posted snackbar before this view exists.
+            }
+            timber.log.Timber.d("Thread history prepared after %d ms", (System.nanoTime() - openedAtNanos) / 1_000_000)
+            val timelineController = TimelineController(
+                room,
+                liveTimeline = threadedTimeline,
+                roomCoroutineScope = room.roomCoroutineScope,
+                dispatchers = dispatchers,
+            )
+            this.timelineController = timelineController
+            ownedThreadTimeline = threadedTimeline
+            myMessagesPresenter = myMessagesPresenterFactory.create(threadedTimeline, inputs.threadRootEventId, inputs.triage)
+            val timelinePresenter = timelinePresenterFactory.create(timelineController = timelineController, this)
+            this.timelinePresenter = timelinePresenter
+            return presenterFactory.create(
+                navigator = this,
+                composerPresenter = messageComposerPresenterFactory.create(timelineController, this, threadRoot = inputs.threadRootEventId),
+                timelinePresenter = timelinePresenter,
+                // TODO add special processor for threaded timeline
+                actionListPresenter = actionListPresenterFactory.create(
+                    postProcessor = TimelineItemActionPostProcessor.Default,
+                    timelineMode = timelineController.mainTimelineMode(),
+                ),
+                timelineController = timelineController,
+            )
         } catch (error: Throwable) {
             threadedTimeline.close()
             throw error
@@ -190,12 +194,12 @@ class ThreadedMessagesNode(
 
     interface Callback : Plugin {
         fun handleEventClick(timelineMode: Timeline.Mode, event: TimelineItem.Event, canUseOverlay: Boolean): Boolean
-        fun handleGalleryItemClick(timelineMode: Timeline.Mode, event: TimelineItem.Event, galleryItemIndex: Int, canUseOverlay: Boolean): Boolean
+        fun handleGalleryItemClick(event: TimelineItem.Event, galleryItemIndex: Int, canUseOverlay: Boolean): Boolean
         fun navigateToPreviewAttachments(attachments: ImmutableList<Attachment>, inReplyToEventId: EventId?)
         fun navigateToRoomMemberDetails(userId: UserId)
         fun handlePermalinkClick(data: PermalinkData)
         fun navigateToEventDebugInfo(eventId: EventId?, debugInfo: TimelineItemDebugInfo)
-        fun handleForwardEventClick(eventId: EventId, timelineProvider: TimelineProvider)
+        fun handleForwardEventClick(eventIds: List<EventId>)
         fun navigateToReportMessage(eventId: EventId, senderId: UserId)
         fun navigateToSendLocation()
         fun navigateToCreatePoll()
@@ -245,7 +249,7 @@ class ThreadedMessagesNode(
                 }
                 timelineController?.close()
                 ownedThreadTimeline?.close()
-            },
+            }
         )
     }
 
@@ -302,8 +306,12 @@ class ThreadedMessagesNode(
         callback.navigateToEventDebugInfo(eventId, debugInfo)
     }
 
-    override fun forwardEvent(eventId: EventId, timelineProvider: TimelineProvider) {
-        callback.handleForwardEventClick(eventId, timelineProvider)
+    override fun forwardEvents(eventIds: List<EventId>) {
+        callback.handleForwardEventClick(eventIds)
+    }
+
+    override fun exitTimelineSelection() {
+        timelinePresenter?.exitSelectionMode()
     }
 
     override fun navigateToReportMessage(eventId: EventId, senderId: UserId) {
@@ -413,11 +421,11 @@ class ThreadedMessagesNode(
                         onGalleryEventItemClick = { isLive, event, index ->
                             timelineController?.let { controller ->
                                 if (isLive) {
-                                    callback.handleGalleryItemClick(controller.mainTimelineMode(), event, index, canUseOverlay)
+                                    callback.handleGalleryItemClick(event, index, canUseOverlay)
                                 } else {
                                     val detachedTimelineMode = controller.detachedTimelineMode()
                                     if (detachedTimelineMode != null) {
-                                        callback.handleGalleryItemClick(detachedTimelineMode, event, index, canUseOverlay)
+                                        callback.handleGalleryItemClick(event, index, canUseOverlay)
                                     } else {
                                         false
                                     }
@@ -510,6 +518,7 @@ class ThreadedMessagesNode(
                                 }
                             }
                         },
+                        composerEmojiPicker = composerEmojiPickerContent(state.composerState, emojiPickerRenderer),
                     )
                 }
 

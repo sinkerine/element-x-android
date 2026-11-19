@@ -9,7 +9,7 @@ package org.matrix.rustsdk
 
 import android.content.Context
 
-/** JNI entry point required by the Rust SDK to initialize Android TLS certificate verification. */
+/** JNI entry point that gives the Rust SDK an Android [Context], including for TLS verification. */
 object Android {
     init {
         System.loadLibrary("matrix_sdk_ffi")

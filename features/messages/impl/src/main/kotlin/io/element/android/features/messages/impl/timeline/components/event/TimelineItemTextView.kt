@@ -38,11 +38,13 @@ import io.element.android.libraries.androidutils.text.LinkifyHelper
 import io.element.android.libraries.designsystem.preview.ElementPreview
 import io.element.android.libraries.designsystem.preview.PreviewsDayNight
 import io.element.android.libraries.designsystem.utils.LocalUiTestMode
+import io.element.android.libraries.htmlrenderer.api.MentionNodeContent
 import io.element.android.libraries.htmlrenderer.api.ui.HtmlMessageContent
 import io.element.android.libraries.maths.api.containsMathsSpans
 import io.element.android.libraries.maths.api.withMathsMaxWidth
 import io.element.android.libraries.textcomposer.ElementRichTextEditorStyle
 import io.element.android.libraries.textcomposer.mentions.LocalMentionSpanUpdater
+import io.element.android.libraries.textcomposer.mentions.limitMentionPillWidth
 import io.element.android.libraries.ui.common.layout.ContentAvoidingLayout
 import io.element.android.libraries.ui.common.layout.ContentAvoidingLayoutData
 import io.element.android.wysiwyg.compose.EditorStyledText
@@ -78,6 +80,13 @@ fun TimelineItemTextView(
                 currentUserId = LocalTimelineEventRendererConfig.current.currentUserId,
                 onLinkClick = { url, text -> onLinkClick(Link(url = url, text = text)) },
                 onLinkLongClick = { url, text -> onLinkLongClick(Link(url = url, text = text)) },
+                onMentionClick = { mention ->
+                    when (mention) {
+                        is MentionNodeContent.Room -> onLinkClick(Link(url = mention.permalinkUrl, text = mention.displayText))
+                        is MentionNodeContent.User -> onLinkClick(Link(url = mention.permalinkUrl, text = mention.displayText))
+                        is MentionNodeContent.Everyone -> { /* No action for @room mentions */ }
+                    }
+                },
                 onContentLayoutChange = { data ->
                     onContentLayoutChange(
                         ContentAvoidingLayoutData(
@@ -118,7 +127,7 @@ fun TimelineItemTextView(
             measureLastLine(it)
         }
         if (hasMaths) {
-            BoxWithConstraints(modifier.semantics { contentDescription = content.plainText }) {
+            BoxWithConstraints(modifier.semantics { contentDescription = content.plainText }.limitMentionPillWidth(text)) {
                 EditorStyledText(
                     text = remember(text, constraints.maxWidth) { text.withMathsMaxWidth(constraints.maxWidth) },
                     modifier = readingModifier,
@@ -130,7 +139,7 @@ fun TimelineItemTextView(
                 )
             }
         } else {
-            Box(modifier.semantics { contentDescription = content.plainText }) {
+            Box(modifier.semantics { contentDescription = content.plainText }.limitMentionPillWidth(text)) {
                 EditorStyledText(
                     text = text,
                     modifier = readingModifier,

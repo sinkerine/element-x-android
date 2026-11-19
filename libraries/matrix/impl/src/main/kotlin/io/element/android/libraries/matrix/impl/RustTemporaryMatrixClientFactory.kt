@@ -9,29 +9,34 @@ package io.element.android.libraries.matrix.impl
 
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
+import io.element.android.libraries.core.coroutine.CoroutineDispatchers
 import io.element.android.libraries.core.extensions.runCatchingExceptions
 import io.element.android.libraries.core.uri.ensureProtocol
 import io.element.android.libraries.matrix.api.TemporaryMatrixClient
 import io.element.android.libraries.matrix.api.TemporaryMatrixClientFactory
 import io.element.android.libraries.matrix.impl.paths.SessionPathsFactory
+import kotlinx.coroutines.withContext
 
 @ContributesBinding(AppScope::class)
 class RustTemporaryMatrixClientFactory(
     private val sessionPathsFactory: SessionPathsFactory,
     private val rustMatrixClientFactory: RustMatrixClientFactory,
+    private val coroutineDispatchers: CoroutineDispatchers,
 ) : TemporaryMatrixClientFactory {
-    override suspend fun create(serverName: String): Result<TemporaryMatrixClient> {
-        return runCatchingExceptions {
+    override suspend fun create(serverName: String): Result<TemporaryMatrixClient> = withContext(coroutineDispatchers.io) {
+        runCatchingExceptions {
             val sessionPaths = sessionPathsFactory.create()
             val client = rustMatrixClientFactory.getBaseClientBuilder(
                 sessionPaths = sessionPaths,
                 clientSecret = null,
                 slidingSyncType = ClientBuilderSlidingSync.Native,
                 isMessageSearchAvailable = false,
+                sessionDelegate = NoOpClientSessionDelegate,
+                autoEnableEncryption = false,
             )
                 .serverNameOrHomeserverUrl(serverName.ensureProtocol())
                 .build()
-            RustTemporaryMatrixClient(client, sessionPaths)
+            RustTemporaryMatrixClient(client, sessionPaths, coroutineDispatchers.io)
         }
     }
 }

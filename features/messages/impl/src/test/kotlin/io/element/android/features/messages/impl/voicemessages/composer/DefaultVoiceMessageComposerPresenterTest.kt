@@ -21,6 +21,7 @@ import io.element.android.features.messages.impl.messagecomposer.aReplyMode
 import io.element.android.features.messages.test.FakeMessageComposerContext
 import io.element.android.libraries.audio.api.AudioFocus
 import io.element.android.libraries.audio.api.AudioFocusRequester
+import io.element.android.libraries.audio.test.FakeAudioFocus
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.media.AudioInfo
 import io.element.android.libraries.matrix.api.timeline.Timeline
@@ -28,7 +29,7 @@ import io.element.android.libraries.matrix.test.AN_EVENT_ID
 import io.element.android.libraries.matrix.test.media.FakeMediaUploadHandler
 import io.element.android.libraries.matrix.test.room.FakeJoinedRoom
 import io.element.android.libraries.matrix.test.timeline.FakeTimeline
-import io.element.android.libraries.mediaplayer.test.FakeAudioFocus
+import io.element.android.libraries.mediaplayer.api.MediaPlayer
 import io.element.android.libraries.mediaplayer.test.FakeMediaPlayer
 import io.element.android.libraries.mediaupload.api.MediaOptimizationConfig
 import io.element.android.libraries.mediaupload.impl.DefaultMediaSender
@@ -199,6 +200,23 @@ class DefaultVoiceMessageComposerPresenterTest {
             recordingState.eventSink(VoiceMessageComposerEvent.RecorderEvent(VoiceMessageRecorderEvent.Stop))
             awaitItem()
             releaseAudioFocusResult.assertions().isCalledOnce()
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `present - start recording pauses any voice message being played`() = runTest {
+        val mediaPlayer = FakeMediaPlayer()
+        mediaPlayer.setMedia(uri = "uri", mediaId = "anEventId", mimeType = "audio/ogg")
+        mediaPlayer.play()
+        assertThat(mediaPlayer.state.value.isPlaying).isTrue()
+        val presenter = createDefaultVoiceMessageComposerPresenter(mediaPlayer = mediaPlayer)
+        presenter.test {
+            awaitItem().eventSink(VoiceMessageComposerEvent.RecorderEvent(VoiceMessageRecorderEvent.Start))
+            awaitItem()
+            assertThat(mediaPlayer.state.value.isPlaying).isFalse()
+            startRecordResult.assertions().isCalledOnce()
 
             cancelAndIgnoreRemainingEvents()
         }
@@ -810,6 +828,7 @@ class DefaultVoiceMessageComposerPresenterTest {
         permissionsPresenter: PermissionsPresenter = createFakePermissionsPresenter(),
         voiceRecorder: VoiceRecorder = this@DefaultVoiceMessageComposerPresenterTest.voiceRecorder,
         audioFocus: AudioFocus = this@DefaultVoiceMessageComposerPresenterTest.audioFocus,
+        mediaPlayer: MediaPlayer = FakeMediaPlayer(),
     ): DefaultVoiceMessageComposerPresenter {
         return DefaultVoiceMessageComposerPresenter(
             sessionCoroutineScope = backgroundScope,
@@ -818,7 +837,7 @@ class DefaultVoiceMessageComposerPresenterTest {
             analyticsService = analyticsService,
             audioFocus = audioFocus,
             mediaSenderFactory = { mediaSender },
-            player = VoiceMessageComposerPlayer(FakeMediaPlayer(), this),
+            player = VoiceMessageComposerPlayer(mediaPlayer, this),
             messageComposerContext = messageComposerContext,
             permissionsPresenterFactory = FakePermissionsPresenterFactory(permissionsPresenter),
         )

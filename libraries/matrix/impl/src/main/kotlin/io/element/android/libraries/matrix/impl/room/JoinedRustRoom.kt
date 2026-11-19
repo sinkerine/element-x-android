@@ -160,7 +160,7 @@ class JoinedRustRoom(
     override val knockRequestsFlow: Flow<List<KnockRequest>> = mxCallbackFlow {
         innerRoom.subscribeToKnockRequests(object : KnockRequestsListener {
             override fun call(joinRequests: List<InnerKnockRequest>) {
-                val knockRequests = joinRequests.map { RustKnockRequest(it) }
+                val knockRequests = joinRequests.map { RustKnockRequest(it, roomDispatcher) }
                 channel.trySend(knockRequests)
             }
         })
@@ -174,6 +174,7 @@ class JoinedRustRoom(
         inner = innerRoom.threadListService(),
         contentMapper = TimelineEventContentMapper(),
         roomCoroutineScope = roomCoroutineScope,
+        roomDispatcher = roomDispatcher,
     )
 
     override val syncUpdateFlow = flow {
@@ -430,8 +431,8 @@ class JoinedRustRoom(
         }
     }
 
-    override suspend fun updateUsersRoles(changes: List<UserRoleChange>): Result<Unit> {
-        return runCatchingExceptions {
+    override suspend fun updateUsersRoles(changes: List<UserRoleChange>): Result<Unit> = withContext(roomDispatcher) {
+        runCatchingExceptions {
             val powerLevelChanges = changes.map { UserPowerLevelUpdate(it.userId.value, it.powerLevel) }
             innerRoom.updatePowerLevelsForUsers(powerLevelChanges)
         }

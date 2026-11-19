@@ -10,12 +10,14 @@ package io.element.android.features.home.impl.search
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import dev.zacsweers.metro.Inject
 import io.element.android.features.home.impl.search.history.SearchHistoryResult
@@ -38,6 +40,7 @@ import io.element.android.libraries.matrix.api.search.MessageSearch
 import io.element.android.libraries.matrix.api.search.MessageSearchPaginationState
 import io.element.android.libraries.matrix.api.search.MessageSearchResult
 import io.element.android.libraries.matrix.api.search.MessageSearchService
+import io.element.android.libraries.matrix.api.search.SearchBackfillStrategy
 import io.element.android.libraries.matrix.api.timeline.item.event.AudioMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.FileMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.ImageMessageType
@@ -57,6 +60,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import kotlin.time.Duration.Companion.milliseconds
@@ -80,21 +84,25 @@ class GlobalSearchPresenter(
         val isEnabled by produceState(false) {
             featureFlagService.isFeatureEnabledFlow(FeatureFlags.MessageSearch).collectLatest { value = it }
         }
+
         val roomListSearchDataSource = remember { roomListSearchDataSourceFactory.create(coroutineScope = coroutineScope) }
         val queryState = rememberTextFieldState()
         var isSearchActive by remember { mutableStateOf(false) }
         var searchResults: AsyncData<GlobalSearchResults> by remember { mutableStateOf(AsyncData.Uninitialized) }
         var currentTarget: GlobalSearchTarget by remember { mutableStateOf(GlobalSearchTarget.ROOMS) }
         val currentMessageSearch: MessageSearch = remember { messageSearchService.createMessageSearch(scope = coroutineScope) }
+        var showLearnMoreBottomSheet by rememberSaveable { mutableStateOf(false) }
 
-        val searchHistory by produceState<AsyncData<ImmutableList<SearchHistoryResultItem>>>(initialValue = AsyncData.Uninitialized) {
+        StartSearchBackfillWhenVisible(isEnabled = isEnabled, isSearchActive = isSearchActive)
+
+        val searchHistory by produceState<AsyncData<ImmutableList<SearchHistoryListItem>>>(initialValue = AsyncData.Uninitialized) {
             searchHistoryStore.history.collectLatest { history ->
                 val mappedHistoryItems = history.mapNotNull { result ->
                     when (result) {
-                        is SearchHistoryResult.Query -> SearchHistoryResultItem.Query(term = result.term)
+                        is SearchHistoryResult.Query -> SearchHistoryListItem.Query(term = result.term)
                         is SearchHistoryResult.Room -> {
                             val roomInfo = matrixClient.getRoomInfo(result.roomId).getOrNull() ?: return@mapNotNull null
-                            SearchHistoryResultItem.Room(roomId = result.roomId, roomInfo = roomInfo)
+                            SearchHistoryListItem.Room(roomId = result.roomId, roomInfo = roomInfo)
                         }
                     }
                 }
@@ -153,6 +161,12 @@ class GlobalSearchPresenter(
                         Pair(results, paginationState)
                     }.collectLatest { (results, paginationState) ->
                         Timber.d("Message search found ${results.size} items, pagination state: $paginationState")
+
+                        // This is an intermediate state, where we received a signal that the current search finished, but the results have not been
+                        // received yet.
+                        if (paginationState is MessageSearchPaginationState.Idle && !paginationState.endReached && results.isEmpty()) {
+                            return@collectLatest
+                        }
 
                         // Try processing the results in parallel to speed up the processing time, since we have to wait until we get the room info for each
                         // result, which can be slow if we have a lot of results. The original order is kept by using `awaitAll()`.
@@ -236,7 +250,7 @@ class GlobalSearchPresenter(
                 }
                 is GlobalSearchEvent.SearchHistoryResultSelected -> {
                     when (event.resultItem) {
-                        is SearchHistoryResultItem.Query -> coroutineScope.launch {
+                        is SearchHistoryListItem.Query -> coroutineScope.launch {
                             delay(300.milliseconds)
                             queryState.edit {
                                 replace(0, length, event.resultItem.term)
@@ -244,8 +258,23 @@ class GlobalSearchPresenter(
                             searchResults = AsyncData.Loading()
                             currentTarget = GlobalSearchTarget.ROOMS
                         }
-                        is SearchHistoryResultItem.Room -> Unit
+                        is SearchHistoryListItem.Room -> Unit
                     }
+                }
+                is GlobalSearchEvent.RemoveSearchHistoryResult -> coroutineScope.launch {
+                    val currentHistory = searchHistoryStore.history.first()
+                    val id = when (event.result) {
+                        is SearchHistoryListItem.Query -> event.result.term
+                        is SearchHistoryListItem.Room -> event.result.roomId.value
+                    }
+                    val result = currentHistory.find { it.id == id } ?: return@launch
+                    searchHistoryStore.remove(result)
+                }
+                GlobalSearchEvent.ClearSearchHistory -> coroutineScope.launch {
+                    searchHistoryStore.clear()
+                }
+                is GlobalSearchEvent.ToggleLearnMoreBottomSheet -> {
+                    showLearnMoreBottomSheet = event.show
                 }
             }
         }
@@ -257,6 +286,7 @@ class GlobalSearchPresenter(
             currentTarget = currentTarget,
             results = searchResults,
             history = searchHistory,
+            showLearnMoreBottomSheet = showLearnMoreBottomSheet,
             eventSink = ::handleEvent,
         )
     }
@@ -265,7 +295,7 @@ class GlobalSearchPresenter(
         result: MessageSearchResult,
         roomInfo: RoomInfo,
         formattedTimestamp: String,
-    ): MessageSearchResultItem.Message? {
+    ): MessageSearchListItem.Message? {
         val body = latestEventFormatter.format(
             latestEvent = LatestEventValue.Remote(
                 timestamp = result.timestamp,
@@ -276,7 +306,7 @@ class GlobalSearchPresenter(
             ),
             isDmRoom = false,
         )
-        return MessageSearchResultItem.Message(
+        return MessageSearchListItem.Message(
             messageSearchResult = result,
             body = body?.toString() ?: "",
             formattedTimestamp = formattedTimestamp,
@@ -284,11 +314,40 @@ class GlobalSearchPresenter(
         )
     }
 
+    @Composable
+    private fun StartSearchBackfillWhenVisible(
+        isEnabled: Boolean,
+        isSearchActive: Boolean,
+    ) {
+        val coroutineScope = rememberCoroutineScope()
+        var hasBackfillRun by rememberSaveable { mutableStateOf(false) }
+        if (isEnabled && isSearchActive && !hasBackfillRun) {
+            DisposableEffect(Unit) {
+                // When we open the message search, we want to backfill the search results so that we can show the user more results if they scroll down.
+                val handle = matrixClient.searchBackfillService.startSearchBackfill(SearchBackfillStrategy.FOREGROUND).getOrNull()
+                    ?: return@DisposableEffect onDispose {
+                        Timber.w("Could not start search backfill, it may already be running.")
+                    }
+
+                val job = coroutineScope.launch(coroutineDispatchers.io) {
+                    while (handle.isRunning()) {
+                        delay(100.milliseconds)
+                    }
+                    hasBackfillRun = true
+                }
+                onDispose {
+                    job.cancel()
+                    handle.close()
+                }
+            }
+        }
+    }
+
     private fun mapMediaContent(
         result: MessageSearchResult,
         roomInfo: RoomInfo,
         formattedTimestamp: String,
-    ): MessageSearchResultItem.Media? {
+    ): MessageSearchListItem.Media? {
         val messageType = when (val content = result.content) {
             is MessageContent if content.type is MessageTypeWithAttachment -> content.type as MessageTypeWithAttachment
             else -> return null
@@ -342,7 +401,7 @@ class GlobalSearchPresenter(
             blurhash = blurhash
         )
 
-        return MessageSearchResultItem.Media(
+        return MessageSearchListItem.Media(
             messageSearchResult = result,
             mediaContent = mediaContent,
             formattedTimestamp = formattedTimestamp,

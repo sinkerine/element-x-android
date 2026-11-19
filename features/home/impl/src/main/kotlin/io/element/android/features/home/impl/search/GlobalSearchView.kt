@@ -9,15 +9,21 @@ package io.element.android.features.home.impl.search
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,22 +37,34 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,15 +85,21 @@ import io.element.android.libraries.designsystem.modifiers.niceClickable
 import io.element.android.libraries.designsystem.preview.ElementPreview
 import io.element.android.libraries.designsystem.preview.PreviewsDayNight
 import io.element.android.libraries.designsystem.text.roundToPx
+import io.element.android.libraries.designsystem.text.toDp
+import io.element.android.libraries.designsystem.theme.components.Button
+import io.element.android.libraries.designsystem.theme.components.ButtonSize
 import io.element.android.libraries.designsystem.theme.components.FilledTextField
 import io.element.android.libraries.designsystem.theme.components.HorizontalDivider
 import io.element.android.libraries.designsystem.theme.components.Icon
 import io.element.android.libraries.designsystem.theme.components.IconButton
 import io.element.android.libraries.designsystem.theme.components.LinearProgressIndicator
+import io.element.android.libraries.designsystem.theme.components.ModalBottomSheet
 import io.element.android.libraries.designsystem.theme.components.Scaffold
 import io.element.android.libraries.designsystem.theme.components.SegmentedButton
 import io.element.android.libraries.designsystem.theme.components.Text
+import io.element.android.libraries.designsystem.theme.components.TextButton
 import io.element.android.libraries.designsystem.theme.components.TopAppBar
+import io.element.android.libraries.designsystem.theme.components.hide
 import io.element.android.libraries.designsystem.utils.OnVisibleRangeChangeEffect
 import io.element.android.libraries.designsystem.utils.lazyColumnContentPadding
 import io.element.android.libraries.designsystem.utils.scaffoldScrollableContentInsets
@@ -88,7 +112,11 @@ import io.element.android.libraries.ui.strings.CommonStrings
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.flow.first
 
+/**
+ * Ref: https://www.figma.com/design/jFIZitqmUlE7P2tUIwXphe/Global-Search?node-id=1007-21507
+ */
 @Composable
 fun GlobalSearchView(
     state: GlobalSearchState,
@@ -114,15 +142,18 @@ fun GlobalSearchView(
                     onSelectSearchResult(roomId, eventId)
                     state.eventSink(GlobalSearchEvent.SaveRoomToHistory(roomId))
                 },
+                onClickLearnMore = { state.eventSink(GlobalSearchEvent.ToggleLearnMoreBottomSheet(true)) },
             )
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GlobalSearchContent(
     state: GlobalSearchState,
     onBackButtonClick: () -> Unit,
+    onClickLearnMore: () -> Unit,
     onSelectSearchResult: (RoomId, EventId?) -> Unit,
 ) {
     Scaffold(
@@ -146,6 +177,8 @@ private fun GlobalSearchContent(
                 state.eventSink(GlobalSearchEvent.UpdateVisibleRange(visibleRange))
             }
 
+            val isLoadingAlpha by animateFloatAsState(if (state.results.isLoading()) 1f else 0f)
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = lazyColumnContentPadding,
@@ -153,12 +186,21 @@ private fun GlobalSearchContent(
             ) {
                 val results = state.results.dataOrNull()
                 val historyResults = state.history.dataOrNull()?.toImmutableList() ?: persistentListOf()
+
+                item {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().alpha(isLoadingAlpha))
+                }
+
                 when {
-                    state.results.isUninitialized() -> if (state.queryState.text.isBlank() && historyResults.isNotEmpty()) {
-                        searchHistory(historyResults) { result ->
+                    state.queryState.text.isBlank() -> if (historyResults.isNotEmpty()) {
+                        searchHistory(
+                            historyResults = historyResults,
+                            onRemoveResult = { item -> state.eventSink(GlobalSearchEvent.RemoveSearchHistoryResult(item)) },
+                            onClearAllResults = { state.eventSink(GlobalSearchEvent.ClearSearchHistory) },
+                        ) { result ->
                             when (result) {
-                                is SearchHistoryResultItem.Query -> Unit
-                                is SearchHistoryResultItem.Room -> onSelectSearchResult(result.roomInfo.id, null)
+                                is SearchHistoryListItem.Query -> Unit
+                                is SearchHistoryListItem.Room -> onSelectSearchResult(result.roomInfo.id, null)
                             }
 
                             state.eventSink(GlobalSearchEvent.SearchHistoryResultSelected(result))
@@ -166,18 +208,94 @@ private fun GlobalSearchContent(
                     } else {
                         startSearching()
                     }
-                    state.results.isLoading() -> loadingResults()
-                    results?.isEmpty() == true -> emptySearchResults(query = state.queryState.text.toString())
-                    results is GlobalSearchResults.RoomListResults -> roomListResults(
-                        results = results.results,
-                        onRoomClick = { roomId -> onSelectSearchResult(roomId, null) },
-                    )
-                    results is GlobalSearchResults.MessageSearchResults -> messageSearchResults(
-                        results = results.results,
+                    results?.isEmpty() == true -> {
+                        val query = state.queryState.text.toString()
+                        when (state.currentTarget) {
+                            GlobalSearchTarget.ROOMS -> emptyRoomsSearchResults(query)
+                            GlobalSearchTarget.MESSAGES -> emptyMessagesSearchResults(
+                                query = query,
+                                onClickLearnMore = onClickLearnMore,
+                            )
+                        }
+                    }
+                    else -> searchResultItems(
+                        results = results,
                         onSearchResultSelected = onSelectSearchResult,
                     )
                 }
             }
+        }
+
+        LearnMoreBottomSheet(
+            showLearnMoreBottomSheet = state.showLearnMoreBottomSheet,
+            onDismiss = {
+                state.eventSink(GlobalSearchEvent.ToggleLearnMoreBottomSheet(false))
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun LearnMoreBottomSheet(
+    showLearnMoreBottomSheet: Boolean,
+    onDismiss: () -> Unit,
+) {
+    val coroutineScope = rememberCoroutineScope()
+
+    val bottomSheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
+
+    val focusManager = LocalFocusManager.current
+    val isImeVisible = WindowInsets.isImeVisible
+    val isImeVisibleAsState by rememberUpdatedState(isImeVisible)
+
+    LaunchedEffect(showLearnMoreBottomSheet) {
+        if (showLearnMoreBottomSheet) {
+            // Hide the keyboard before expanding the bottom sheet to avoid the bottom sheet being pushed up by the keyboard.
+            focusManager.clearFocus(force = true)
+            // Wait until the keyboard is hidden.
+            snapshotFlow { isImeVisibleAsState }.first { !it }
+
+            bottomSheetState.expand()
+        }
+    }
+
+    if (!showLearnMoreBottomSheet) return
+
+    ModalBottomSheet(
+        onDismissRequest = {
+            bottomSheetState.hide(coroutineScope) {
+                onDismiss()
+            }
+        },
+        sheetState = bottomSheetState,
+        scrollable = false,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+        ) {
+            IconTitleSubtitleMolecule(
+                title = stringResource(R.string.screen_search_history_limit_title),
+                subTitle = stringResource(R.string.screen_search_history_limit_message),
+                iconStyle = BigIcon.Style.Default(CompoundIcons.Info()),
+            )
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                text = stringResource(CommonStrings.action_got_it),
+                onClick = {
+                    bottomSheetState.hide(coroutineScope) {
+                        onDismiss()
+                    }
+                },
+            )
         }
     }
 }
@@ -211,10 +329,12 @@ private fun SearchTopAppBarContent(state: GlobalSearchState) {
         trailingIcon = if (state.queryState.text.isNotEmpty()) {
             @Composable {
                 IconButton(
-                    modifier = Modifier.clip(CircleShape).size(20.dp),
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .size(20.dp),
                     onClick = { state.eventSink(GlobalSearchEvent.ClearQuery) },
                     colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = ElementTheme.colors.borderInteractivePrimary,
+                        containerColor = ElementTheme.colors.iconSecondary,
                         contentColor = ElementTheme.colors.iconOnSolidPrimary
                     )
                 ) {
@@ -252,7 +372,7 @@ private fun SearchTargetSelector(state: GlobalSearchState) {
             count = 2,
             selected = state.currentTarget == GlobalSearchTarget.ROOMS,
             onClick = { state.eventSink(GlobalSearchEvent.UpdateTarget(GlobalSearchTarget.ROOMS)) },
-            text = stringResource(R.string.search_section_chats),
+            text = stringResource(R.string.screen_search_tab_chats),
         )
 
         SegmentedButton(
@@ -260,7 +380,7 @@ private fun SearchTargetSelector(state: GlobalSearchState) {
             count = 2,
             selected = state.currentTarget == GlobalSearchTarget.MESSAGES,
             onClick = { state.eventSink(GlobalSearchEvent.UpdateTarget(GlobalSearchTarget.MESSAGES)) },
-            text = stringResource(R.string.search_section_messages),
+            text = stringResource(R.string.screen_search_tab_messages),
         )
     }
 }
@@ -271,41 +391,68 @@ private fun LazyListScope.startSearching() {
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(40.dp),
-            title = stringResource(R.string.start_searching_title),
-            subTitle = stringResource(R.string.start_searching_subtitle),
+            title = stringResource(R.string.screen_search_empty_state_title),
+            subTitle = stringResource(R.string.screen_search_empty_state_message),
             iconStyle = BigIcon.Style.Default(CompoundIcons.Search()),
         )
     }
 }
 
 private fun LazyListScope.searchHistory(
-    historyResults: ImmutableList<SearchHistoryResultItem>,
-    onSelectSearchHistoryResult: (SearchHistoryResultItem) -> Unit,
+    historyResults: ImmutableList<SearchHistoryListItem>,
+    onRemoveResult: (SearchHistoryListItem) -> Unit,
+    onClearAllResults: () -> Unit,
+    onSelectSearchHistoryResult: (SearchHistoryListItem) -> Unit,
 ) {
     item {
-        Text(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-            text = stringResource(R.string.screen_search_recent_searches_section_title),
-            style = ElementTheme.typography.fontBodyLgMedium,
-            color = ElementTheme.colors.textPrimary,
-        )
+        Row(
+            modifier = Modifier.padding(top = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                modifier = Modifier
+                    .padding(start = 16.dp)
+                    .weight(1f)
+                    .semantics {
+                        heading()
+                    },
+                text = stringResource(R.string.screen_search_recent_searches),
+                style = ElementTheme.typography.fontBodyLgMedium,
+                color = ElementTheme.colors.textPrimary,
+            )
+
+            TextButton(
+                text = stringResource(CommonStrings.action_clear_all),
+                size = ButtonSize.Small,
+                colors = ButtonDefaults.textButtonColors(contentColor = ElementTheme.colors.textActionAccent),
+                onClick = onClearAllResults,
+            )
+        }
     }
     items(
         items = historyResults,
         key = { it.id },
     ) { result ->
+        val twoLineHeight =
+            // Vertical padding
+            12.dp * 2 +
+                // Text line heights
+                ElementTheme.typography.fontBodyMdRegular.lineHeight.toDp() +
+                ElementTheme.typography.fontBodyLgRegular.lineHeight.toDp()
         Row(
             modifier = Modifier
-                .niceClickable(onClick = { onSelectSearchHistoryResult(result) })
+                .clickable(onClick = { onSelectSearchHistoryResult(result) })
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(start = 16.dp, end = 2.dp)
+                .height(twoLineHeight),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             when (result) {
-                is SearchHistoryResultItem.Query -> {
+                is SearchHistoryListItem.Query -> {
                     Icon(
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier
+                            .size(32.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(ElementTheme.colors.bgSubtleSecondary)
                             .padding(6.dp),
@@ -315,13 +462,14 @@ private fun LazyListScope.searchHistory(
                     )
 
                     Text(
+                        modifier = Modifier.weight(1f, fill = true),
                         text = result.term,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = ElementTheme.typography.fontBodyLgRegular,
                     )
                 }
-                is SearchHistoryResultItem.Room -> {
+                is SearchHistoryListItem.Room -> {
                     val heroAvatars = remember(result.roomInfo.heroes) {
                         result.roomInfo.heroes.map { it.getAvatarData(AvatarSize.SearchRoomListItem) }.toImmutableList()
                     }
@@ -333,7 +481,7 @@ private fun LazyListScope.searchHistory(
                         ),
                     )
 
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f, fill = true)) {
                         Text(
                             text = result.roomInfo.name.orEmpty(),
                             maxLines = 1,
@@ -365,26 +513,73 @@ private fun LazyListScope.searchHistory(
                     }
                 }
             }
+
+            Icon(
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .niceClickable {
+                        onRemoveResult(result)
+                    },
+                imageVector = CompoundIcons.Close(),
+                contentDescription = stringResource(CommonStrings.action_remove),
+                tint = ElementTheme.colors.iconSecondary,
+            )
         }
     }
 }
 
-private fun LazyListScope.loadingResults() {
-    item {
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+private fun LazyListScope.searchResultItems(
+    results: GlobalSearchResults?,
+    onSearchResultSelected: (RoomId, EventId?) -> Unit,
+) {
+    when (results) {
+        null -> Unit
+        is GlobalSearchResults.RoomListResults -> roomListResults(
+            results = results.results,
+            onRoomClick = { roomId -> onSearchResultSelected(roomId, null) },
+        )
+        is GlobalSearchResults.MessageSearchResults -> messageSearchResults(
+            results = results.results,
+            onSearchResultSelected = onSearchResultSelected,
+        )
     }
 }
 
-private fun LazyListScope.emptySearchResults(query: String) {
+private fun LazyListScope.emptyRoomsSearchResults(query: String) {
     item {
         IconTitleSubtitleMolecule(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(40.dp),
-            title = stringResource(R.string.search_no_results_title),
-            subTitle = stringResource(R.string.search_no_results_subtitle, query),
+            title = stringResource(CommonStrings.common_no_results),
+            subTitle = stringResource(R.string.screen_search_no_results_message, query),
             iconStyle = BigIcon.Style.Default(CompoundIcons.Search()),
         )
+    }
+}
+
+private fun LazyListScope.emptyMessagesSearchResults(
+    query: String,
+    onClickLearnMore: () -> Unit,
+) {
+    item {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            IconTitleSubtitleMolecule(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(40.dp),
+                title = stringResource(R.string.screen_search_messages_no_results_title),
+                subTitle = stringResource(R.string.screen_search_messages_no_results_message, query),
+                iconStyle = BigIcon.Style.Default(CompoundIcons.Search()),
+            )
+            TextButton(
+                text = stringResource(CommonStrings.action_learn_more),
+                colors = ButtonDefaults.textButtonColors(contentColor = ElementTheme.colors.textActionAccent),
+                onClick = onClickLearnMore,
+            )
+        }
     }
 }
 
@@ -451,14 +646,18 @@ private fun LazyListScope.roomListResults(
 }
 
 private fun LazyListScope.messageSearchResults(
-    results: ImmutableList<MessageSearchResultItem>,
+    results: ImmutableList<MessageSearchListItem>,
     onSearchResultSelected: (RoomId, EventId?) -> Unit,
 ) {
     if (results.isNotEmpty()) {
         item {
             Text(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                text = stringResource(R.string.search_from_your_messages_header),
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .semantics {
+                        heading()
+                    },
+                text = stringResource(R.string.screen_search_from_your_messages_header),
                 style = ElementTheme.typography.fontBodyMdMedium,
                 color = ElementTheme.colors.textSecondary,
             )
@@ -471,7 +670,7 @@ private fun LazyListScope.messageSearchResults(
     ) { index, result ->
         val clickableModifier = Modifier.niceClickable(onClick = { onSearchResultSelected(result.roomId, result.eventId) })
         when (result) {
-            is MessageSearchResultItem.Message -> TextMessageSearchResultItemView(
+            is MessageSearchListItem.Message -> TextMessageSearchResultItemView(
                 modifier = clickableModifier.addSeparatorLine(color = ElementTheme.colors.separatorSecondary, isLastItem = index == results.lastIndex),
                 avatarData = result.roomInfo.getAvatarData(AvatarSize.RoomListItem),
                 avatarType = AvatarType.Room(
@@ -482,7 +681,7 @@ private fun LazyListScope.messageSearchResults(
                 body = result.body,
                 formattedTimestamp = result.formattedTimestamp,
             )
-            is MessageSearchResultItem.Media -> {
+            is MessageSearchListItem.Media -> {
                 MediaMessageSearchResultItemView(
                     modifier = clickableModifier.addSeparatorLine(color = ElementTheme.colors.separatorSecondary, isLastItem = index == results.lastIndex),
                     avatarData = result.roomInfo.getAvatarData(AvatarSize.RoomListItem),

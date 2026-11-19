@@ -18,6 +18,7 @@ import dev.zacsweers.metro.ContributesBinding
 import io.element.android.libraries.htmlrenderer.api.BlockNode
 import io.element.android.libraries.htmlrenderer.api.CodeBlockNode
 import io.element.android.libraries.htmlrenderer.api.DocumentNode
+import io.element.android.libraries.htmlrenderer.api.HeaderNode
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion.INLINE_CODE_ANNOTATION_TAG
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion.LINK_ANNOTATION_TAG
@@ -35,11 +36,12 @@ import io.element.android.libraries.maths.api.MathsLayoutEngine
 import io.element.android.libraries.maths.api.isDisplayMaths
 import io.element.android.libraries.maths.api.isMathsElement
 import io.element.android.libraries.maths.api.mathsTex
+import io.element.android.libraries.matrix.api.permalink.PermalinkBuilder
 import io.element.android.libraries.matrix.api.permalink.PermalinkData
 import io.element.android.libraries.matrix.api.permalink.PermalinkParser
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.toImmutableList
-import kotlinx.collections.immutable.toImmutableMap
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
@@ -55,6 +57,7 @@ import org.jsoup.nodes.TextNode
 class DefaultHtmlMessageParser(
     private val permalinkParser: PermalinkParser,
     private val mathsLayoutEngine: MathsLayoutEngine,
+    private val permalinkBuilder: PermalinkBuilder,
 ) : HtmlMessageParser {
     override fun parse(document: Document): DocumentNode {
         return DocumentNode(children = ParseSession().parseBlocks(document.body()))
@@ -102,12 +105,13 @@ class DefaultHtmlMessageParser(
         private fun parseBlock(element: Element): BlockNode? = when {
             element.isDisplayMaths() -> layoutMaths(element, displayMode = true)?.let { MathsBlockNode(element.mathsTex(), it) }
                 ?: buildParagraph(element.childNodes())
-            else -> when (element.tagName()) {
+            else -> when (val tag = element.tagName()) {
                 TAG_P -> buildParagraph(element.childNodes())
                 TAG_PRE -> CodeBlockNode(code = element.wholeText().trimEnd('\n'))
                 TAG_BLOCKQUOTE -> QuoteNode(children = parseBlocks(element))
                 TAG_UL -> buildList(element, ordered = false)
                 TAG_OL -> buildList(element, ordered = true)
+                in HEADER_TAGS -> buildHeader(element, tag.removePrefix("h").toInt())
                 else -> null
             }
         }
@@ -124,6 +128,14 @@ class DefaultHtmlMessageParser(
 
         /** Builds a [ParagraphNode] from a run of inline [nodes], or `null` if it holds no content. */
         private fun buildParagraph(nodes: List<Node>): ParagraphNode? {
+            return buildInlineContent(nodes)?.let { ParagraphNode(it.text, it.inlineContent, it.inlineMaths) }
+        }
+
+        private fun buildHeader(element: Element, level: Int): HeaderNode? {
+            return buildInlineContent(element.childNodes())?.let { HeaderNode(level, it.text, it.inlineContent, it.inlineMaths) }
+        }
+
+        private fun buildInlineContent(nodes: List<Node>): InlineContentBuilder.Result? {
             val builder = InlineContentBuilder()
             nodes.forEach { builder.append(it) }
             return builder.build()
@@ -217,11 +229,13 @@ class DefaultHtmlMessageParser(
                     is PermalinkData.UserLink -> MentionNodeContent.User(
                         displayText = element.text(),
                         userId = permalink.userId,
+                        permalinkUrl = href,
                     )
                     is PermalinkData.RoomLink -> if (permalink.eventId == null) {
                         MentionNodeContent.Room(
                             displayText = element.text(),
                             roomIdOrAlias = permalink.roomIdOrAlias,
+                            permalinkUrl = href,
                         )
                     } else {
                         // A link to a specific event is a regular link, not a mention pill.
@@ -231,15 +245,18 @@ class DefaultHtmlMessageParser(
                 }
             }
 
-            fun build(): ParagraphNode? {
+            fun build(): Result? {
                 val text = builder.toAnnotatedString()
                 if (text.isBlank() && mentions.isEmpty() && maths.isEmpty()) return null
-                return ParagraphNode(
-                    text = text,
-                    inlineContent = mentions.toImmutableMap(),
-                    inlineMaths = maths.toImmutableMap(),
-                )
+                val pillified = text.pillify(mentions, permalinkParser, permalinkBuilder, maths.keys)
+                return Result(pillified.text, pillified.inlineContent, maths.toImmutableMap())
             }
+
+            inner class Result(
+                val text: AnnotatedString,
+                val inlineContent: ImmutableMap<String, MentionNodeContent>,
+                val inlineMaths: ImmutableMap<String, MathsInlineContent>,
+            )
         }
     }
 }
@@ -248,7 +265,9 @@ class DefaultHtmlMessageParser(
 private fun Element.isBlockLevel(): Boolean =
     tagName() in BLOCK_TAGS || isDisplayMaths() && parent()?.tagName() in setOf("body", TAG_BLOCKQUOTE, TAG_LI)
 
-private val BLOCK_TAGS = setOf(TAG_P, TAG_PRE, TAG_BLOCKQUOTE, TAG_UL, TAG_OL)
+private val HEADER_TAGS = setOf("h1", "h2", "h3", "h4", "h5", "h6")
+
+private val BLOCK_TAGS = setOf(TAG_P, TAG_PRE, TAG_BLOCKQUOTE, TAG_UL, TAG_OL) + HEADER_TAGS
 
 private const val TAG_P = "p"
 private const val TAG_PRE = "pre"

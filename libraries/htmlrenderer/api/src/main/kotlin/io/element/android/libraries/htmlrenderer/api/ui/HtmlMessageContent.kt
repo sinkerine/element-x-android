@@ -14,7 +14,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +33,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.SideEffect
@@ -55,21 +60,25 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -85,9 +94,11 @@ import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.htmlrenderer.api.BlockNode
 import io.element.android.libraries.htmlrenderer.api.CodeBlockNode
 import io.element.android.libraries.htmlrenderer.api.DocumentNode
+import io.element.android.libraries.htmlrenderer.api.HeaderNode
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion.INLINE_CODE_ANNOTATION_TAG
 import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion.LINK_ANNOTATION_TAG
 import io.element.android.libraries.htmlrenderer.api.ListNode
+import io.element.android.libraries.htmlrenderer.api.LocalMentionDisplayNames
 import io.element.android.libraries.htmlrenderer.api.MathsBlockNode
 import io.element.android.libraries.htmlrenderer.api.MathsInlineContent
 import io.element.android.libraries.htmlrenderer.api.MentionNodeContent
@@ -170,6 +181,7 @@ internal fun BlockNode.lastBlockNode(): BlockNode? = when (this) {
     is QuoteNode -> this
     is CodeBlockNode -> this
     is MathsBlockNode -> this
+    is HeaderNode -> this
 }
 
 @Composable
@@ -192,7 +204,7 @@ private fun BlockNodeView(
     context: RenderContext,
     modifier: Modifier = Modifier,
 ) {
-    if (node === context.lastBlockNode && node !is ParagraphNode) {
+    if (node === context.lastBlockNode && node !is ParagraphNode && node !is HeaderNode) {
         SideEffect { context.onContentLayoutChange(ContentAvoidingLayoutData.NotOverlapping) }
     }
 
@@ -202,6 +214,7 @@ private fun BlockNodeView(
             ParagraphView(node = node, context = context, modifier = modifier)
         }
         is MathsBlockNode -> MathsBlockView(node = node, modifier = modifier)
+        is HeaderNode -> HeaderView(node = node, context = context, modifier = modifier)
         is CodeBlockNode -> CodeBlockView(node = node, modifier = modifier)
         is QuoteNode -> QuoteView(node = node, context = context, modifier = modifier)
         is ListNode -> ListView(node = node, context = context, modifier = modifier)
@@ -230,18 +243,6 @@ private fun ParagraphText(
     modifier: Modifier = Modifier,
     maxWidthPx: Float = Float.POSITIVE_INFINITY,
 ) {
-    val linkColor = ElementTheme.colors.textLinkExternal
-    val codeBackgroundColor = ElementTheme.colors.bgSubtleSecondary
-    val codeBorderColor = ElementTheme.colors.borderInteractiveSecondary
-    val styledText = remember(node.text, linkColor) {
-        node.text
-            .linkify(SpanStyle(color = linkColor))
-            .applyLinkStyles(linkColor = linkColor)
-    }
-    val style = ElementTheme.typography.fontBodyMdRegular
-    val inlineContent = (rememberMentionInlineContent(node.inlineContent, context) +
-        rememberMathsInlineContent(node.inlineMaths, style, maxWidthPx)).toImmutableMap()
-    val layoutResult = remember { mutableStateOf<TextLayoutResult?>(null) }
     // Only the last rendered paragraph (and only when not inside a code block / quote) reports its
     // measured last line to the timeline.
     val measureLastLine = if (node === context.lastBlockNode) {
@@ -249,19 +250,91 @@ private fun ParagraphText(
     } else {
         null
     }
+    TextBlock(
+        text = node.text,
+        inlineContent = node.inlineContent,
+        textStyle = LocalTextStyle.current,
+        context = context,
+        modifier = modifier,
+        maths = node.inlineMaths,
+        maxWidthPx = maxWidthPx,
+        onTextLayout = { measureLastLine?.invoke(it) },
+    )
+}
+
+@Composable
+private fun HeaderView(
+    node: HeaderNode,
+    context: RenderContext,
+    modifier: Modifier = Modifier,
+) {
+    // Only the last rendered paragraph (and only when not inside a code block / quote) reports its
+    // measured last line to the timeline.
+    val measureLastLine = if (node === context.lastBlockNode) {
+        ContentAvoidingLayout.measureLastTextLine(onContentLayoutChange = context.onContentLayoutChange)
+    } else {
+        null
+    }
+    TextBlock(
+        text = node.text,
+        inlineContent = node.inlineContent,
+        textStyle = headerTextStyle(node.level),
+        context = context,
+        modifier = modifier,
+        maths = node.inlineMaths,
+        onTextLayout = { measureLastLine?.invoke(it) }
+    )
+}
+
+/**
+ * Renders an inline-content block (a paragraph or a header) as a [Text] with [textStyle], applying
+ * link styling, the inline-code background boxes, mention/image inline content and link taps.
+ */
+@Composable
+private fun TextBlock(
+    text: AnnotatedString,
+    inlineContent: ImmutableMap<String, MentionNodeContent>,
+    textStyle: TextStyle,
+    context: RenderContext,
+    modifier: Modifier = Modifier,
+    maths: ImmutableMap<String, MathsInlineContent> = persistentMapOf(),
+    maxWidthPx: Float = Float.POSITIVE_INFINITY,
+    onTextLayout: (TextLayoutResult) -> Unit = {},
+) {
+    val linkColor = ElementTheme.colors.textLinkExternal
+    val codeBackgroundColor = ElementTheme.colors.bgSubtleSecondary
+    val codeBorderColor = ElementTheme.colors.borderInteractiveSecondary
+    val styledText = remember(text, linkColor) {
+        text.linkify(SpanStyle(color = linkColor))
+            .applyLinkStyles(linkColor = linkColor)
+    }
+    val resolvedInlineContent = (rememberMentionInlineContent(inlineContent, context) +
+        rememberMathsInlineContent(maths, textStyle, maxWidthPx)).toImmutableMap()
+    val layoutResult = remember { mutableStateOf<TextLayoutResult?>(null) }
     Text(
         text = styledText,
         modifier = modifier
             .drawInlineCodeBackgrounds(styledText, layoutResult, codeBackgroundColor, codeBorderColor, LocalDensity.current)
             .linkTapHandler(styledText, layoutResult, context),
-        style = ElementTheme.typography.fontBodyMdRegular,
+        style = textStyle,
         color = ElementTheme.colors.textPrimary,
-        inlineContent = inlineContent,
+        inlineContent = resolvedInlineContent,
         onTextLayout = { result ->
             layoutResult.value = result
-            measureLastLine?.invoke(result)
+            onTextLayout(result)
         },
     )
+}
+
+/** Maps an `<h1>`–`<h6>` [level] to a Compound typography style, largest first. */
+@Composable
+private fun headerTextStyle(level: Int): TextStyle = when (level) {
+    // For safety reasons, use the same style for H1 and H2, to avoid people using H1 for 'shouting' spam that fills the timeline with huge text
+    1, 2 -> ElementTheme.typography.fontHeadingLgBold
+    3 -> ElementTheme.typography.fontHeadingMdBold
+    4 -> ElementTheme.typography.fontHeadingSmMedium
+    5 -> ElementTheme.typography.fontBodyLgMedium
+    else -> ElementTheme.typography.fontBodyMdMedium
 }
 
 @Composable
@@ -332,6 +405,8 @@ private fun CodeBlockView(
             .background(ElementTheme.colors.bgSubtleSecondary)
             .height(IntrinsicSize.Min)
             .combinedClickable(
+                interactionSource = null,
+                indication = ripple(focusRingShape = RoundedCornerShape(8.dp)),
                 onClick = {},
                 onLongClick = {
                     coroutineScope.launch {
@@ -350,10 +425,10 @@ private fun CodeBlockView(
         )
 
         // Previews and screenshots can't render the fading edge gradients properly, everything is obscured by them, so we skip them in the preview mode.
-        if (LocalInspectionMode.current.not()) {
+        if (LocalInspectionMode.current.not() && (scrollState.canScrollForward || scrollState.canScrollBackward)) {
             val progress by remember {
                 derivedStateOf {
-                    scrollState.value.toFloat() / scrollState.maxValue.coerceAtLeast(1)
+                    scrollState.value.toFloat() / scrollState.maxValue
                 }
             }
 
@@ -438,7 +513,7 @@ private fun ListView(
 
 @Composable
 private fun MentionPill(
-    mention: MentionNodeContent,
+    displayText: String,
     isCurrentUser: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -450,12 +525,16 @@ private fun MentionPill(
             .fillMaxSize()
             .clip(RoundedCornerShape(percent = 50))
             .background(backgroundColor)
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = null,
+                indication = ripple(focusRingShape = RoundedCornerShape(percent = 50)),
+                onClick = onClick,
+            )
             .padding(horizontal = PillPaddingHorizontal, vertical = PillPaddingVertical),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = mention.displayText,
+            text = displayText,
             style = ElementTheme.typography.fontBodyLgMedium,
             color = textColor,
             maxLines = 1,
@@ -466,6 +545,10 @@ private fun MentionPill(
 /**
  * Builds an [InlineTextContent] entry for each mention placeholder. Each pill is measured so
  * the placeholder reserves exactly the space the pill needs.
+ *
+ * The pill text (display name and user status) is resolved using [LocalMentionDisplayNames], so the pills are measured again
+ * whenever the display name or status of one of the mentioned users or rooms changes. The text sizes are
+ * cached in [PillTextSizeCache], so the same pill text is only measured once for all messages.
  */
 @Composable
 private fun rememberMentionInlineContent(
@@ -476,10 +559,32 @@ private fun rememberMentionInlineContent(
     val textMeasurer = rememberTextMeasurer()
     val pillTextStyle = ElementTheme.typography.fontBodyLgMedium
     val density = LocalDensity.current
-    return mentions.mapValues { (_, mention) ->
-        val measured = textMeasurer.measure(mention.displayText, pillTextStyle)
-        val width = with(density) { measured.size.width.toDp() + PillPaddingHorizontal * 2 }
-        val height = with(density) { measured.size.height.toDp() + PillPaddingVertical * 2 }
+    val layoutDirection = LocalLayoutDirection.current
+    val mentionDisplayNames = LocalMentionDisplayNames.current
+    // Only the display texts of these mentions matter: since `derivedStateOf` only notifies its readers when its value changes,
+    // unrelated display name changes won't recompose this text nor trigger a new measure pass
+    val displayTexts by remember(mentions, mentionDisplayNames) {
+        derivedStateOf { mentions.mapValues { (_, mention) -> mentionDisplayNames.pillTextFor(mention) } }
+    }
+    return remember(mentions, displayTexts, context, textMeasurer, pillTextStyle, density, layoutDirection) {
+        buildMentionInlineContent(mentions, displayTexts, context, textMeasurer, pillTextStyle, density, layoutDirection)
+    }
+}
+
+private fun buildMentionInlineContent(
+    mentions: ImmutableMap<String, MentionNodeContent>,
+    displayTexts: Map<String, String>,
+    context: RenderContext,
+    textMeasurer: TextMeasurer,
+    pillTextStyle: TextStyle,
+    density: Density,
+    layoutDirection: LayoutDirection,
+): ImmutableMap<String, InlineTextContent> {
+    return mentions.mapValues { (id, mention) ->
+        val displayText = displayTexts[id] ?: mention.displayText
+        val textSize = PillTextSizeCache.getOrMeasure(displayText, pillTextStyle, density, layoutDirection, textMeasurer)
+        val width = with(density) { textSize.width.toDp() + PillPaddingHorizontal * 2 }
+        val height = with(density) { textSize.height.toDp() + PillPaddingVertical * 2 }
         InlineTextContent(
             placeholder = Placeholder(
                 width = with(density) { width.toSp() },
@@ -488,7 +593,7 @@ private fun rememberMentionInlineContent(
             ),
         ) {
             MentionPill(
-                mention = mention,
+                displayText = displayText,
                 isCurrentUser = mention is MentionNodeContent.User && mention.userId == context.currentUserId,
                 onClick = { context.onMentionClick(mention) },
             )
@@ -537,7 +642,7 @@ private fun Modifier.drawInlineCodeBackgrounds(
             val lineEnd = minOf(range.end, layout.getLineEnd(line, visibleEnd = true))
             if (lineEnd <= lineStart) continue
             val startX = layout.getHorizontalPosition(lineStart, usePrimaryDirection = true)
-            val endX = layout.getHorizontalPosition(lineEnd, usePrimaryDirection = true)
+            val endX = layout.getHorizontalPosition(lineEnd, usePrimaryDirection = true).takeUnless { it == 0f } ?: layout.getLineEndPosition(line)
             val left = minOf(startX, endX) - horizontalPadding
             val right = maxOf(startX, endX) + horizontalPadding
             val topLeft = Offset(left, layout.getLineTop(line))
@@ -564,21 +669,44 @@ private fun Modifier.drawInlineCodeBackgrounds(
     }
 }
 
+private fun TextLayoutResult.getLineEndPosition(line: Int): Float {
+    val lineEnd = getLineEnd(line, visibleEnd = true)
+    val direction = getParagraphDirection(lineEnd)
+    return if (direction == ResolvedTextDirection.Ltr) {
+        getLineRight(line)
+    } else {
+        getLineLeft(line)
+    }
+}
+
+/**
+ * Detects taps and long presses on link-annotated ranges ([LINK_ANNOTATION_TAG]) without consuming the touch events if none are detected, and invokes the
+ * appropriate callbacks in [context].
+ */
 private fun Modifier.linkTapHandler(
     text: AnnotatedString,
     layoutResult: State<TextLayoutResult?>,
     context: RenderContext,
 ): Modifier = pointerInput(text) {
-    detectTapGestures(
-        onTap = { offset ->
-            val (url, urlText) = layoutResult.value?.urlAt(offset, text) ?: return@detectTapGestures
-            context.onLinkClick(url, urlText)
-        },
-        onLongPress = { offset ->
-            val (url, urlText) = layoutResult.value?.urlAt(offset, text) ?: return@detectTapGestures
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = true)
+        val (url, urlText) = layoutResult.value?.urlAt(down.position, text) ?: return@awaitEachGesture
+        down.consume()
+
+        // Returns a non-null change if the long press timeout elapsed, or null if the gesture was canceled by movement beyond touch slop or by an up event.
+        if (awaitLongPressOrCancellation(down.id) != null) {
             context.onLinkLongClick(url, urlText)
-        },
-    )
+            // Swallow the rest of the gesture so parents don't react to the eventual release.
+            waitForUpOrCancellation()?.consume()
+        } else {
+            // Either a tap (the pointer was released) or a drag (the user probably wanted to scroll).
+            val up = currentEvent.changes.firstOrNull { it.id == down.id && it.changedToUpIgnoreConsumed() }
+            if (up != null) {
+                up.consume()
+                context.onLinkClick(url, urlText)
+            }
+        }
+    }
 }
 
 private fun TextLayoutResult.urlAt(offset: Offset, text: AnnotatedString): Pair<String, String>? {
@@ -591,7 +719,7 @@ private val BlockSpacing: Dp = 8.dp
 private val ListItemSpacing: Dp = 4.dp
 private val ListMarkerWidth: Dp = 24.dp
 private val PillPaddingHorizontal: Dp = 6.dp
-private val PillPaddingVertical: Dp = 2.dp
+private val PillPaddingVertical: Dp = 0.dp
 
 /** Rounded, bordered box drawn behind inline code. */
 private val InlineCodeCornerRadius: Dp = 6.dp

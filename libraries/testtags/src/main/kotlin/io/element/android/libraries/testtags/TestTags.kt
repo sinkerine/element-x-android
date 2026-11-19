@@ -51,6 +51,11 @@ object TestTags {
     val homeMarkAllAsRead = TestTag("home-mark_all_as_read")
 
     /**
+     * Settings screen.
+     */
+    val settingsUserProfile = TestTag("settings-user_profile")
+
+    /**
      * Room detail screen.
      */
     val roomDetailAvatar = TestTag("room_detail-avatar")

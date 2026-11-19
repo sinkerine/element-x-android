@@ -6,10 +6,6 @@
   -->
 
 <resources>
-    <string name="a11y_state_expanded">"Expanded"</string>
-    <string name="a11y_state_collapsed">"Collapsed"</string>
-    <string name="a11y_active">Active</string>
-    <string name="a11y_inactive">Inactive</string>
     <string name="common_switch_account">Switch accounts</string>
     <string name="screen_home_tab_threads">Threads</string>
     <string name="screen_threads_inbox_mark_all_read">Mark all as read</string>

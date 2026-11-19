@@ -12,14 +12,14 @@ import app.cash.molecule.RecompositionMode
 import app.cash.molecule.moleculeFlow
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
+import io.element.android.features.migration.api.AppMigrationRunner
 import io.element.android.features.migration.impl.migrations.AppMigration
+import io.element.android.features.migration.test.FakeAppMigrationRunner
 import io.element.android.libraries.architecture.AsyncData
 import io.element.android.tests.testutils.WarmUpRule
-import io.element.android.tests.testutils.consumeItemsUntilPredicate
-import io.element.android.tests.testutils.lambda.LambdaOneParamRecorder
-import io.element.android.tests.testutils.lambda.lambdaError
 import io.element.android.tests.testutils.lambda.lambdaRecorder
-import io.element.android.tests.testutils.lambda.value
+import io.element.android.tests.testutils.testCoroutineDispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
@@ -30,126 +30,72 @@ class MigrationPresenterTest {
     val warmUpRule = WarmUpRule()
 
     @Test
-    fun `present - run all migrations on fresh installation, and last version should be stored`() = runTest {
-        val migrations = (1..11).map { order ->
-            FakeAppMigration(order = order)
-        }
-        val store = InMemoryMigrationStore(initialApplicationMigrationVersion = -1)
+    fun `present - no pending migration`() = runTest {
+        val runLambda = lambdaRecorder<Unit> { }
         val presenter = createPresenter(
-            migrationStore = store,
-            migrations = migrations.toSet(),
-        )
-        moleculeFlow(RecompositionMode.Immediate) {
-            presenter.present()
-        }.test {
-            val initialState = awaitItem()
-            assertThat(initialState.migrationAction).isEqualTo(AsyncData.Uninitialized)
-            skipItems(migrations.size)
-            awaitItem().also { state ->
-                assertThat(state.migrationAction).isEqualTo(AsyncData.Success(Unit))
-            }
-            assertThat(store.applicationMigrationVersion().first()).isEqualTo(migrations.maxOf { it.order })
-        }
-        for (migration in migrations) {
-            migration.migrateLambda.assertions().isCalledOnce().with(value(true))
-        }
-    }
-
-    @Test
-    fun `present - no migration should occurs if ApplicationMigrationVersion is the last one`() = runTest {
-        val migrations = (1..11).map {
-            FakeAppMigration(
-                order = it,
-                migrateLambda = lambdaRecorder<Boolean, Unit> { lambdaError() },
+            FakeAppMigrationRunner(
+                hasPendingMigrationsResult = { false },
+                runPendingMigrationsResult = { runLambda() },
             )
-        }
-        val store = InMemoryMigrationStore(migrations.maxOf { it.order })
-        val presenter = createPresenter(
-            migrationStore = store,
-            migrations = migrations.toSet(),
         )
         moleculeFlow(RecompositionMode.Immediate) {
             presenter.present()
         }.test {
-            val initialState = awaitItem()
-            assertThat(initialState.migrationAction).isEqualTo(AsyncData.Uninitialized)
-            awaitItem().also { state ->
-                assertThat(state.migrationAction).isEqualTo(AsyncData.Success(Unit))
-            }
+            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Uninitialized)
+            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Success(Unit))
         }
+        runLambda.assertions().isCalledOnce()
     }
 
     @Test
-    fun `present - testing all migrations`() = runTest {
-        val store = InMemoryMigrationStore(0)
-        val migrations = (1..11).map { FakeAppMigration(it) }
+    fun `present - pending migrations`() = runTest {
+        val migrationsDone = CompletableDeferred<Unit>()
         val presenter = createPresenter(
-            migrationStore = store,
-            migrations = migrations.toSet(),
+            FakeAppMigrationRunner(
+                hasPendingMigrationsResult = { true },
+                runPendingMigrationsResult = { migrationsDone.await() },
+            )
         )
         moleculeFlow(RecompositionMode.Immediate) {
             presenter.present()
         }.test {
-            val initialState = awaitItem()
-            assertThat(initialState.migrationAction).isEqualTo(AsyncData.Uninitialized)
-            awaitItem().also { state ->
-                assertThat(state.migrationAction).isEqualTo(AsyncData.Loading(Unit))
-            }
-            consumeItemsUntilPredicate { it.migrationAction is AsyncData.Success }
-            assertThat(store.applicationMigrationVersion().first()).isEqualTo(migrations.maxOf { it.order })
-            for (migration in migrations) {
-                migration.migrateLambda.assertions().isCalledOnce().with(value(false))
-            }
+            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Uninitialized)
+            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Loading(Unit))
+            migrationsDone.complete(Unit)
+            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Success(Unit))
         }
     }
 
     @Test
     fun `present - failed migration can be retried without advancing version`() = runTest {
         var attempts = 0
-        var allowSuccess = false
+        val firstAttempt = CompletableDeferred<Unit>()
+        val retryAttempt = CompletableDeferred<Unit>()
         val migration = object : AppMigration {
-            override val order = 1
+            override val order = 12
             override suspend fun migrate(isFreshInstall: Boolean) {
-                attempts++
-                if (!allowSuccess) error("temporary failure")
+                if (++attempts == 1) firstAttempt.await() else retryAttempt.await()
             }
         }
-        val store = InMemoryMigrationStore(0)
-        val presenter = createPresenter(migrationStore = store, migrations = setOf(migration))
+        val store = InMemoryMigrationStore(11)
+        val presenter = createPresenter(DefaultAppMigrationRunner(store, setOf(migration), testCoroutineDispatchers()))
         moleculeFlow(RecompositionMode.Immediate) { presenter.present() }.test {
-            awaitItem()
-            var failedState: io.element.android.features.api.MigrationState? = null
-            while (failedState == null) {
-                val state = awaitItem()
-                if (state.migrationAction is AsyncData.Failure) failedState = state
-            }
-            assertThat(attempts).isEqualTo(1)
-            assertThat(store.applicationMigrationVersion().first()).isEqualTo(0)
-            allowSuccess = true
+            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Uninitialized)
+            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Loading(Unit))
+            firstAttempt.completeExceptionally(IllegalStateException("temporary failure"))
+            val failedState = awaitItem()
+            assertThat(failedState.migrationAction).isInstanceOf(AsyncData.Failure::class.java)
+            assertThat(store.applicationMigrationVersion().first()).isEqualTo(11)
             failedState.onRetry()
-            var succeeded = false
-            while (!succeeded) {
-                succeeded = awaitItem().migrationAction is AsyncData.Success
-            }
+            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Loading(Unit))
+            retryAttempt.complete(Unit)
+            assertThat(awaitItem().migrationAction).isEqualTo(AsyncData.Success(Unit))
             assertThat(attempts).isEqualTo(2)
-            assertThat(store.applicationMigrationVersion().first()).isEqualTo(1)
+            assertThat(store.applicationMigrationVersion().first()).isEqualTo(12)
         }
     }
-}
 
-private fun createPresenter(
-    migrationStore: MigrationStore = InMemoryMigrationStore(0),
-    migrations: Set<AppMigration> = setOf(FakeAppMigration(1)),
-) = MigrationPresenter(
-    migrationStore = migrationStore,
-    migrations = migrations,
-)
-
-private class FakeAppMigration(
-    override val order: Int,
-    val migrateLambda: LambdaOneParamRecorder<Boolean, Unit> = lambdaRecorder<Boolean, Unit> { },
-) : AppMigration {
-    override suspend fun migrate(isFreshInstall: Boolean) {
-        migrateLambda(isFreshInstall)
-    }
+    private fun createPresenter(appMigrationRunner: AppMigrationRunner) = MigrationPresenter(
+        appMigrationRunner = appMigrationRunner,
+    )
 }
