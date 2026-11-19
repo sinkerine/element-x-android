@@ -20,7 +20,7 @@ class MediaGalleryNavigationPrivacyTest {
         val eventId = EventId("\$event")
         val source = MediaSource("mxc://example.org/private-source", "private-encrypted-descriptor")
         val target = MediaGalleryFlowNode.NavTarget.MediaViewer(
-            mode = MediaViewerEntryPoint.MediaViewerMode.EventGallery(false),
+            mode = MediaViewerEntryPoint.MediaViewerMode.EventGallery,
             eventId = eventId,
             mediaInfo = anImageMediaInfo(caption = "private-caption"),
             mediaSource = source,
