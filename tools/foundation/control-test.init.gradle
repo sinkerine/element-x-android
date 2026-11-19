@@ -1,0 +1,149 @@
+// Copyright 2026 Element Creations Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+// Explicit invocation only; never changes the repository's normal dependency resolution.
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+import java.util.zip.ZipFile
+import org.gradle.api.tasks.testing.Test
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.type.ArtifactTypeDefinition
+import java.util.zip.ZipInputStream
+
+def manifestFile = System.getenv('FOUNDATION_CONTROL_MANIFEST')
+if (!manifestFile) throw new GradleException('FOUNDATION_CONTROL_MANIFEST is required')
+def control = new JsonSlurper().parse(new File(manifestFile))
+if (!(control.kind in ['unmodified-control-only', 'patched-candidate-for-tests'])) throw new GradleException('Unexpected qualification artifact kind')
+def expectedFamily = control.source_family_classes ?: control.replaced_classes
+def digest = { byte[] bytes -> MessageDigest.getInstance('SHA-256').digest(bytes).encodeHex().toString() }
+if (digest(new File(control.output).bytes) != control.output_sha256) throw new GradleException('Control AAR identity differs')
+gradle.settingsEvaluated { settings ->
+    def repositories = settings.dependencyResolutionManagement.repositories
+    def controlRepository = repositories.maven { url = new File(control.repository).toURI() }
+    repositories.exclusiveContent {
+        forRepositories(controlRepository)
+        filter { includeGroup(control.group) }
+    }
+}
+gradle.beforeProject { project ->
+    project.configurations.configureEach {
+        resolutionStrategy.dependencySubstitution {
+            ['foundation', 'foundation-android'].each { name ->
+                // Canonical Android component for both MPP-root and direct-Android requests.
+                substitute(module("androidx.compose.foundation:${name}")).using(module("${control.group}:foundation-android:${control.version}"))
+            }
+        }
+    }
+    if (project.path == ':app') {
+        project.tasks.register('verifyFoundationQualificationVariants') {
+            doLast {
+                def variants = [:]
+                ['gplayDebugRuntimeClasspath', 'fdroidDebugRuntimeClasspath'].each { name ->
+                    def configuration = project.configurations.getByName(name)
+                    def selected = configuration.incoming.resolutionResult.allComponents.findAll { component ->
+                        component.moduleVersion?.group == control.group && (component.moduleVersion?.name in ['foundation', 'foundation-android'])
+                    }
+                    if (selected.size() != 1 || selected.first().moduleVersion.name != 'foundation-android' || selected.first().moduleVersion.version != control.version)
+                        throw new GradleException("Unexpected Foundation component in ${name}")
+                    def artifacts = configuration.incoming.artifactView {
+                        componentFilter { id ->
+                            id instanceof ModuleComponentIdentifier && id.group == control.group && id.module == 'foundation-android' && id.version == control.version
+                        }
+                        attributes { attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, 'aar') }
+                    }.artifacts.artifacts
+                    if (artifacts.size() != 1 || digest(artifacts.first().file.bytes) != control.output_sha256)
+                        throw new GradleException("Foundation AAR identity differs in ${name}")
+                    variants[name] = [component: selected.first().id.displayName, path: artifacts.first().file.absolutePath, sha256: control.output_sha256]
+                }
+                def output = new File(project.rootDir, 'build/foundation-private/app-qualification-variants.json')
+                output.text = JsonOutput.prettyPrint(JsonOutput.toJson(variants)) + '\n'
+            }
+        }
+    }
+    project.tasks.withType(Test).configureEach { task ->
+        task.outputs.upToDateWhen { false }
+        task.outputs.cacheIf { false }
+        // Bind the actual Test JVM classpath to ALL qualified family bytes, not a requested version.
+        task.doFirst {
+            def marker = 'androidx/compose/foundation/gestures/AnchoredDraggableState.class'
+            def carriers = task.classpath.files.findAll { file ->
+                if (!file.isFile() || !file.name.endsWith('.jar')) return false
+                new ZipFile(file).withCloseable { jar -> jar.getEntry(marker) != null }
+            }
+            def carrierEvidence = carriers.collect { file ->
+                new ZipFile(file).withCloseable { jar ->
+                    [path: file.absolutePath, sha256: digest(file.bytes),
+                     markerSha256: digest(jar.getInputStream(jar.getEntry(marker)).withCloseable { it.bytes })]
+                }
+            }
+            def evidence = new File(project.rootDir, "build/foundation-private/test-classpaths/${project.path.replace(':', '_')}-${task.name}.json")
+            evidence.parentFile.mkdirs()
+            evidence.text = JsonOutput.prettyPrint(JsonOutput.toJson([task: task.path, carriers: carrierEvidence])) + '\n'
+            // Read selected component identities, without requesting ambiguous Android project artifacts.
+            def resolved = project.configurations.findAll { configuration ->
+                configuration.canBeResolved && configuration.name == (task.name.substring(4).uncapitalize() + 'RuntimeClasspath')
+            }.collectEntries { configuration ->
+                [(configuration.name): configuration.incoming.resolutionResult.allComponents.findAll { component ->
+                    component.moduleVersion != null && (component.moduleVersion.group.contains('foundation') || component.moduleVersion.name.startsWith('foundation'))
+                }.collect { component -> [coordinate: component.moduleVersion.toString(), id: component.id.displayName] }]
+            }
+            evidence.text = JsonOutput.prettyPrint(JsonOutput.toJson([task: task.path, carriers: carrierEvidence, resolved: resolved])) + '\n'
+            def runtime = project.configurations.getByName(task.name.substring(4).uncapitalize() + 'RuntimeClasspath')
+            def implementations = runtime.incoming.resolutionResult.allComponents.findAll { component ->
+                component.moduleVersion?.group == control.group && component.moduleVersion?.name == 'foundation-android'
+            }
+            if (implementations.size() != 1 || implementations.first().moduleVersion.version != control.version)
+                throw new GradleException('Expected one qualified Foundation component')
+            // AGP computeClasspath adds CLASSES_JAR and JAVA_RES separately. Trace BOTH forms
+            // to this exact component instead of assuming physical JAR count equals implementation count.
+            def views = ['android-classes-jar', 'android-java-res'].collectEntries { type ->
+                def artifacts = runtime.incoming.artifactView {
+                    componentFilter { id ->
+                        id instanceof ModuleComponentIdentifier && id.group == control.group && id.module == 'foundation-android' && id.version == control.version
+                    }
+                    attributes { attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, type) }
+                }.artifacts.artifacts
+                [(type): artifacts.collect { artifact ->
+                    [component: artifact.id.componentIdentifier.displayName, path: artifact.file.absolutePath, sha256: digest(artifact.file.bytes)]
+                }]
+            }
+            evidence.text = JsonOutput.prettyPrint(JsonOutput.toJson([task: task.path, carriers: carrierEvidence, resolved: resolved, artifactViews: views])) + '\n'
+            if (views['android-classes-jar'].size() != 1 || views['android-java-res'].size() != 1 || carriers.isEmpty())
+                throw new GradleException('Unexpected qualified component artifact forms')
+            def attributedPaths = views.values().flatten().collect { it.path }.toSet()
+            if (carriers.any { !attributedPaths.contains(it.absolutePath) } || task.classpath.files.any { it.isDirectory() && new File(it, marker).isFile() })
+                throw new GradleException('Unattributed additional Foundation implementation on Test classpath')
+            def expectedClasses = [:]
+            new ZipFile(new File(control.output)).withCloseable { aar ->
+                new ZipInputStream(aar.getInputStream(aar.getEntry('classes.jar'))).withCloseable { nested ->
+                    def entry
+                    while ((entry = nested.nextEntry) != null) {
+                        if (entry.name.endsWith('.class')) {
+                            if (expectedClasses.containsKey(entry.name)) throw new GradleException('Duplicate control class')
+                            expectedClasses[entry.name] = digest(nested.readAllBytes())
+                        }
+                    }
+                }
+            }
+            expectedFamily.each { name, expected ->
+                if (expectedClasses[name] != expected) throw new GradleException("Control family manifest differs: ${name}")
+            }
+            carriers.each { file ->
+                new ZipFile(file).withCloseable { jar ->
+                    def actualClasses = [:]
+                    jar.entries().each { entry ->
+                        if (entry.name.endsWith('.class')) {
+                            if (actualClasses.containsKey(entry.name)) throw new GradleException('Duplicate runtime class')
+                            actualClasses[entry.name] = digest(jar.getInputStream(entry).withCloseable { it.bytes })
+                        }
+                    }
+                    if (actualClasses != expectedClasses) throw new GradleException("Test JVM Foundation class definitions differ: ${file}")
+                }
+            }
+            evidence.text = JsonOutput.prettyPrint(JsonOutput.toJson([task: task.path, carriers: carrierEvidence, resolved: resolved,
+                artifactViews: views, verifiedClassCount: expectedClasses.size(), verifiedFamilyCount: expectedFamily.size(), implementationCount: 1])) + '\n'
+            def prefix = control.kind == 'unmodified-control-only' ? 'Qualified unmodified Foundation control:' : 'Qualified patched Foundation candidate:'
+            logger.lifecycle("${prefix} ${control.output_sha256}; one component; all ${expectedClasses.size()} classes and ${expectedFamily.size()} family classes verified in every attributed AGP form")
+        }
+    }
+}

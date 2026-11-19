@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Repack the qualified UNMODIFIED class family; no dependency installation/substitution."""
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import zipfile
+
+AAR_SHA = "657c05465eddae8ff7a1e55a4a615bc26da9012834a44e1e4282deeb54ae8ea7"
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def repack(original, replacements):
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(original)) as source, zipfile.ZipFile(output, "w") as target:
+        names = source.namelist()
+        if len(names) != len(set(names)):
+            raise RuntimeError("Duplicate archive entries")
+        if not set(replacements).issubset(names):
+            raise RuntimeError("Replacement entries absent from original")
+        for entry in source.infolist():
+            target.writestr(entry, replacements.get(entry.filename, source.read(entry.filename)))
+    return output.getvalue()
+
+
+def main():
+    root = Path(__file__).resolve().parents[2]
+    scratch = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "dev-scratch/element-x-android" / root.name / "foundation-private"
+    work = root / "build/foundation-private"
+    comparison = json.loads((work / "control-comparison.json").read_text())
+    if any(comparison.values()):
+        raise RuntimeError("Strict control qualification has not passed")
+    paths = json.loads((work / "control-output-paths.json").read_text())
+    if sha(Path(paths["classes"]).read_bytes()) != paths["classes_sha256"] or paths["original_aar_sha256"] != AAR_SHA:
+        raise RuntimeError("Qualified control output identity changed")
+    for manifest_name in ("control-inputs.json", "control-source-inputs.json"):
+        for name, identity in json.loads((work / manifest_name).read_text()).items():
+            expected = identity["sha256"] if isinstance(identity, dict) else identity
+            if sha(Path(name).read_bytes()) != expected:
+                raise RuntimeError("Qualified input identity changed: " + name)
+    family = (Path(paths["published"]) / "classes.txt").read_text().splitlines()
+    if family != (Path(paths["control"]) / "classes.txt").read_text().splitlines() or len(family) != 34:
+        raise RuntimeError("Unexpected control class family")
+    for name in family:
+        if (Path(paths["published"]) / (name + ".txt")).read_bytes() != (Path(paths["control"]) / (name + ".txt")).read_bytes():
+            raise RuntimeError("Control normalized bytes changed")
+    inputs = json.loads((scratch / "resolved-inputs.json").read_text())
+    aar = Path(inputs["baseAar"][0]["file"]).read_bytes()
+    if sha(aar) != AAR_SHA:
+        raise RuntimeError("Original AAR identity changed")
+    with zipfile.ZipFile(paths["classes"]) as compiled:
+        replacement = {name: compiled.read(name) for name in family}
+        excluded = sorted(set(compiled.namelist()) - set(family))
+    with zipfile.ZipFile(io.BytesIO(aar)) as original:
+        classes = original.read("classes.jar")
+    control_classes = repack(classes, replacement)
+    with zipfile.ZipFile(io.BytesIO(classes)) as before, zipfile.ZipFile(io.BytesIO(control_classes)) as after:
+        if before.namelist() != after.namelist():
+            raise RuntimeError("Class archive entry set/order changed")
+        for name in before.namelist():
+            if name not in replacement and before.read(name) != after.read(name):
+                raise RuntimeError("Untouched class/module bytes changed: " + name)
+    result = repack(aar, {"classes.jar": control_classes})
+    with zipfile.ZipFile(io.BytesIO(aar)) as before, zipfile.ZipFile(io.BytesIO(result)) as after:
+        for name in before.namelist():
+            if name != "classes.jar" and before.read(name) != after.read(name):
+                raise RuntimeError("Untouched AAR entry changed: " + name)
+    destination = scratch / "foundation-android-1.12.0-element-control.1.aar"
+    destination.write_bytes(result)
+    manifest = {"kind": "unmodified-control-only", "input_aar_sha256": sha(aar), "compiler_output_sha256": sha(Path(paths["classes"]).read_bytes()),
+                "output": str(destination), "output_sha256": sha(result), "replaced_classes": {name: sha(data) for name, data in replacement.items()},
+                "excluded_compiler_outputs": excluded, "original_complete_module_preserved": True, "all_unrelated_entry_bytes_preserved": True}
+    (work / "repacked-control.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    print("Unmodified control AAR created; no patched source, installation or substitution", flush=True)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Prepare an isolated, explicitly named unpatched control repository for regression qualification."""
+import copy
+import hashlib
+import json
+import sys
+import urllib.request
+from pathlib import Path
+import xml.etree.ElementTree as ET
+
+GROUP = "io.element.android.foundation.control"
+VERSION = "1.12.0-element-control.1"
+METADATA = {
+    "foundation": "63f156471b1f93e817437965064ad8814c5afe0ae72849bd8439f0e87c285c9d",
+    "foundation-android": "0ad286ab51599e038e3ba8b8feb5467f9296d79032b9b2fffd2a95c6cba1beca",
+}
+POMS = {
+    "foundation": "113b660bc2f2bdac98e0e84b700381d10713439b0e670923d5af6309e48f1f29",
+    "foundation-android": "bf8f258f0657eea224a663dc463f43ca6f7c61897342fb07066a98c121e141da",
+}
+
+
+def main():
+    production = sys.argv[1:] == ["--production"]
+    candidate = production or sys.argv[1:] == ["--candidate"]
+    if sys.argv[1:] and not candidate:
+        raise RuntimeError("Only --candidate or --production is supported")
+    group = "androidx.compose.foundation" if production else "io.element.android.foundation.candidate" if candidate else GROUP
+    version = "1.12.0-element-anchor.1" if candidate else VERSION
+    root = Path(__file__).resolve().parents[2]
+    work = root / "build/foundation-private"
+    manifest = json.loads((work / ("assembled-candidate.json" if candidate else "repacked-control.json")).read_text())
+    if manifest["kind"] != ("patched-candidate-for-tests" if candidate else "unmodified-control-only"):
+        raise RuntimeError("Unexpected artifact kind")
+    aar = Path(manifest["output"])
+    data = aar.read_bytes()
+    if hashlib.sha256(data).hexdigest() != manifest["output_sha256"]:
+        raise RuntimeError("Control AAR identity changed")
+    scratch = aar.parent
+    inputs = json.loads((scratch / "resolved-inputs.json").read_text())
+    cache = Path(inputs["baseAar"][0]["file"]).parents[3]
+    repository = scratch / ("foundation-m2" if production else "candidate-m2" if candidate else "control-m2")
+    if production and (manifest["output_sha256"] != "6845962e3b95e1919b94f8f0a0cb8eb5acc18df3817fd9c24aaa72c19d5b15d8"
+                       or not manifest["repeat_assembly_equal"] or not manifest["repeat_compiler_outputs_equal"]):
+        raise RuntimeError("Production must reproduce the independently qualified complete AAR exactly")
+    source_hashes = {}
+
+    def original_input(module, suffix, expected):
+        candidates = list((cache / module / "1.12.0").glob("*/*." + suffix))
+        if len(candidates) == 1 and hashlib.sha256(candidates[0].read_bytes()).hexdigest() == expected:
+            return candidates[0]
+        # Download immutable, hash-pinned upstream metadata into owned scratch, never edit Gradle caches.
+        target = scratch / "original-metadata" / f"{module}-1.12.0.{suffix}"
+        target.parent.mkdir(exist_ok=True)
+        if not target.exists():
+            url = f"https://dl.google.com/dl/android/maven2/androidx/compose/foundation/{module}/1.12.0/{target.name}"
+            with urllib.request.urlopen(url, timeout=60) as response:
+                payload = response.read()
+            if hashlib.sha256(payload).hexdigest() != expected:
+                raise RuntimeError("Unqualified upstream metadata: " + module)
+            target.write_bytes(payload)
+        if hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+            raise RuntimeError("Original metadata changed: " + module)
+        return target
+    for module, expected in METADATA.items():
+        metadata = original_input(module, "module", expected)
+        original = json.loads(metadata.read_text())
+        source_hashes[str(metadata)] = expected
+        modified = copy.deepcopy(original)
+        component = modified["component"]
+        component["group"], component["version"] = group, version
+        if "url" in component:
+            component["url"] = f"../../foundation/{version}/foundation-{version}.module"
+        for variant in modified["variants"]:
+            redirect = variant.get("available-at")
+            if redirect and redirect["module"] == "foundation-android":
+                redirect.update(group=group, version=version,
+                                url=f"../../foundation-android/{version}/foundation-android-{version}.module")
+            elif redirect:
+                redirect["url"] = ("https://dl.google.com/dl/android/maven2/" + redirect["group"].replace(".", "/")
+                                   + f"/{redirect['module']}/{redirect['version']}/{redirect['module']}-{redirect['version']}.module")
+            for entry in variant.get("files", []):
+                if module == "foundation-android" and entry["name"].endswith(".aar"):
+                    entry.update(name=f"foundation-android-{version}.aar", url=f"foundation-android-{version}.aar", size=len(data))
+                    for algorithm in ("sha512", "sha256", "sha1", "md5"):
+                        entry[algorithm] = hashlib.new(algorithm, data).hexdigest()
+                else:
+                    entry["url"] = f"https://dl.google.com/dl/android/maven2/androidx/compose/foundation/{module}/1.12.0/{entry['url']}"
+        directory = repository / group.replace(".", "/") / module / version
+        directory.mkdir(parents=True, exist_ok=True)
+        # Gradle's streaming parser requires formatVersion to be the first JSON member.
+        ordered = {"formatVersion": modified["formatVersion"], **{key: value for key, value in modified.items() if key != "formatVersion"}}
+        (directory / f"{module}-{version}.module").write_text(json.dumps(ordered, indent=2) + "\n")
+        # Preserve original licensing/attribution/SCM/developer/dependency metadata, not just the Gradle marker.
+        pom_input = original_input(module, "pom", POMS[module])
+        source_hashes[str(pom_input)] = POMS[module]
+        parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
+        pom = ET.fromstring(pom_input.read_bytes(), parser=parser)
+        namespace = "http://maven.apache.org/POM/4.0.0"
+        ET.register_namespace("", namespace)
+        ET.register_namespace("xsi", "http://www.w3.org/2001/XMLSchema-instance")
+        prefix = "{" + namespace + "}"
+        if pom.find(prefix + "licenses") is None:
+            raise RuntimeError("Original POM has no licence declarations")
+        pom.find(prefix + "groupId").text = group
+        pom.find(prefix + "version").text = version
+        for dependency in pom.findall(".//" + prefix + "dependency"):
+            if dependency.findtext(prefix + "groupId") == "androidx.compose.foundation" and dependency.findtext(prefix + "artifactId") == "foundation-android":
+                dependency.find(prefix + "groupId").text = group
+                dependency.find(prefix + "version").text = version
+        (directory / f"{module}-{version}.pom").write_bytes(ET.tostring(pom, encoding="UTF-8", xml_declaration=True))
+        if module == "foundation-android":
+            (directory / f"foundation-android-{version}.aar").write_bytes(data)
+    manifest.update(repository=str(repository), group=group, version=version, original_module_hashes=source_hashes)
+    if production:
+        manifest.update(kind="qualified-foundation-backport", base_version="1.12.0", compose_bom="2026.08.00",
+                        output=str(repository / group.replace(".", "/") / "foundation-android" / version / f"foundation-android-{version}.aar"))
+        manifest["publication_inputs"] = {str(path): hashlib.sha256(path.read_bytes()).hexdigest()
+                                          for path in sorted(repository.rglob("*")) if path.is_file()}
+        recipes = [path for path in (root / "tools/foundation").rglob("*") if path.is_file()
+                   and not {"build", ".gradle"}.intersection(path.relative_to(root / "tools/foundation").parts)
+                   and path.name != "README.md"]
+        recipes.append(root / "gradle/foundation.settings.gradle")
+        manifest["recipe_inputs"] = {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in recipes}
+    (work / ("production-repository.json" if production else "candidate-repository.json" if candidate else "control-repository.json")).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    print("Qualified production repository prepared" if production else "Isolated test repository prepared; normal dependency resolution unchanged")
+
+
+if __name__ == "__main__":
+    main()

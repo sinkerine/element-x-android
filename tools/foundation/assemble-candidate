@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Assemble a hash-bound, scope-checked candidate for isolated tests; no normal dependency changes."""
+import hashlib
+import io
+import json
+from pathlib import Path
+import zipfile
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def repack(data, replacement, remove=()):
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as source, zipfile.ZipFile(output, "w") as target:
+        names = source.namelist()
+        if len(names) != len(set(names)) or not (set(replacement) | set(remove)).issubset(names):
+            raise RuntimeError("Unexpected archive replacement/removal set")
+        for entry in source.infolist():
+            if entry.filename not in remove:
+                target.writestr(entry, replacement.get(entry.filename, source.read(entry.filename)))
+    return output.getvalue()
+
+
+def main():
+    root = Path(__file__).resolve().parents[2]
+    work = root / "build/foundation-private"
+    contract = json.loads((work / "candidate-contract.json").read_text())
+    if contract["status"] != "lifecycle-scope-and-linkage-check-PASS-not-installed":
+        raise RuntimeError("Lifecycle contract prerequisite missing")
+    for path, expected in contract["inputs"].items():
+        if sha(Path(path).read_bytes()) != expected:
+            raise RuntimeError("Contract input changed: " + path)
+    candidate = json.loads((work / "candidate-result.json").read_text())
+    if sha(Path(candidate["jar"]).read_bytes()) != contract["candidate_jar_sha256"]:
+        raise RuntimeError("Candidate changed")
+    scratch = Path(candidate["candidate"]).parent
+    snapshots = {}
+    snapshot_root = scratch / "accepted-control-prerequisites" / contract["candidate_jar_sha256"]
+    for path, expected in contract["inputs"].items():
+        source = Path(path)
+        if source.is_relative_to(root) and "build" in source.relative_to(root).parts:
+            target = snapshot_root / expected / source.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists() and sha(target.read_bytes()) != expected:
+                raise RuntimeError("Existing control snapshot differs")
+            target.write_bytes(source.read_bytes())
+            snapshots[path] = {"path": str(target), "sha256": expected}
+    resolved = json.loads((scratch / "resolved-inputs.json").read_text())
+    original_aar = Path(resolved["baseAar"][0]["file"]).read_bytes()
+    if sha(original_aar) != "657c05465eddae8ff7a1e55a4a615bc26da9012834a44e1e4282deeb54ae8ea7":
+        raise RuntimeError("Original AAR changed")
+    with zipfile.ZipFile(io.BytesIO(original_aar)) as archive:
+        original_classes = archive.read("classes.jar")
+    results = []
+    replacements = None
+    for iteration in (1, 2):
+        compiled = Path(candidate["candidate"]) / ("classes-" + str(iteration))
+        if {str(p.relative_to(compiled)): sha(p.read_bytes()) for p in compiled.rglob("*") if p.is_file()} != candidate["all_compiler_outputs"]:
+            raise RuntimeError("Repeated compiler outputs changed")
+        replacements = {name: (compiled / name).read_bytes() for name in contract["payload"]}
+        classes = repack(original_classes, replacements, contract["remove"])
+        aar = repack(original_aar, {"classes.jar": classes})
+        results.append((classes, aar))
+    if results[0] != results[1]:
+        raise RuntimeError("Complete candidate assembly is not repeatable")
+    classes, aar = results[0]
+    with zipfile.ZipFile(io.BytesIO(original_classes)) as before, zipfile.ZipFile(io.BytesIO(classes)) as after:
+        if after.namelist() != [name for name in before.namelist() if name not in contract["remove"]]:
+            raise RuntimeError("Unexpected class archive contents/order")
+        for name in after.namelist():
+            expected = replacements[name] if name in replacements else before.read(name)
+            if after.read(name) != expected:
+                raise RuntimeError("Unrelated class/module entry changed: " + name)
+        for removed in contract["remove"]:
+            needle = removed[:-6].encode()
+            if any(needle in after.read(name) for name in after.namelist()):
+                raise RuntimeError("Assembled archive has dangling obsolete class reference")
+        mapping_sha = sha(after.read("META-INF/foundation.kotlin_module"))
+        expected_family = json.loads((work / "control-output-paths.json").read_text())["published"]
+        names = (Path(expected_family) / "classes.txt").read_text().splitlines()
+        family = {name: sha(after.read(name)) for name in names if name not in contract["remove"]}
+        class_count = sum(name.endswith('.class') for name in after.namelist())
+    with zipfile.ZipFile(io.BytesIO(original_aar)) as before, zipfile.ZipFile(io.BytesIO(aar)) as after:
+        if before.namelist() != after.namelist() or any(before.read(name) != after.read(name) for name in before.namelist() if name != 'classes.jar'):
+            raise RuntimeError("Unrelated AAR entries changed")
+    destination = scratch / "foundation-android-1.12.0-element-anchor.1-candidate.aar"
+    destination.write_bytes(aar)
+    manifest = {"kind": "patched-candidate-for-tests", "output": str(destination), "output_sha256": sha(aar),
+                "input_aar_sha256": sha(original_aar), "classes_jar_sha256": sha(classes), "class_count": class_count,
+                "patch_sha256": candidate["patch_sha256"], "candidate_jar_sha256": contract["candidate_jar_sha256"],
+                "contract_sha256": sha((work / 'candidate-contract.json').read_bytes()), "replaced_classes": {name: sha(data) for name, data in replacements.items()},
+                "removed_classes": contract["remove"], "source_family_classes": family, "original_module_sha256": mapping_sha,
+                "all_other_original_entry_bytes_preserved": True, "repeat_assembly_equal": True,
+                "repeat_compiler_outputs_equal": candidate["repeat_compile_equal"], "accepted_control_snapshots": snapshots}
+    if class_count != 1981 or len(family) != 33:
+        raise RuntimeError("Unexpected assembled class/family count")
+    (work / "assembled-candidate.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    print("Candidate assembled twice identically:3 replacements/1 obsolete removal, all other original entries preserved; tests pending")
+
+
+if __name__ == "__main__":
+    main()

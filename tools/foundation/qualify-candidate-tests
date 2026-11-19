@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Assemble a scope-checked candidate and require original regressions green in isolation.
+Caller retains external guards/admission. No persistent project dependency change or emulator.
+"""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+
+def main():
+    root = Path(__file__).resolve().parents[2]
+    work = root / "build/foundation-private"
+    logs = work / "candidate-test-logs"
+    logs.mkdir(exist_ok=True)
+    env = dict(os.environ)
+    stages = {}
+    (work / "candidate-tests-result.json").unlink(missing_ok=True)
+
+    def run(label, command):
+        with (logs / (label + ".log")).open("w") as stream:
+            result = subprocess.run(command, cwd=root, env=env, stdout=stream, stderr=subprocess.STDOUT)
+        stages[label] = {"command": command, "exit_code": result.returncode}
+        (work / "candidate-test-stages.json").write_text(json.dumps(stages, indent=2) + "\n")
+        if result.returncode:
+            raise RuntimeError(f"Candidate {label} failed with exit {result.returncode}; inspect {logs}")
+
+    run("assemble", [sys.executable, str(root / "tools/foundation/assemble-candidate")])
+    run("publish-for-tests", [sys.executable, str(root / "tools/foundation/publish-control"), "--candidate"])
+    manifest = work / "candidate-repository.json"
+    env["FOUNDATION_CONTROL_MANIFEST"] = str(manifest)
+    cases = []
+    for module, name, count in (
+        ("libraries/designsystem", "io.element.android.libraries.designsystem.theme.components.AnchoredDraggableStateTest", 3),
+        ("features/messages/impl", "io.element.android.features.messages.impl.actionlist.ActionListSheetInsetsTest", 2),
+    ):
+        label = name.rsplit(".", 1)[-1]
+        xml = root / module / "build/test-results/testDebugUnitTest" / ("TEST-" + name + ".xml")
+        xml.unlink(missing_ok=True)
+        command = [str(root / "gradlew"), "--no-daemon", "--no-configuration-cache", "--no-parallel", "--max-workers=2",
+                   "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8 -XX:+UseG1GC", "-Pkotlin.daemon.jvmargs=-Xmx1g",
+                   "-I", str(root / "tools/foundation/control-test.init.gradle"),
+                   ":" + module.replace("/", ":") + ":testDebugUnitTest", "--tests", name]
+        run(label, command)
+        if "Qualified patched Foundation candidate:" not in (logs / (label + ".log")).read_text():
+            raise RuntimeError("Actual patched Test JVM artifact identity not proven")
+        suite = ET.parse(xml).getroot()
+        if any(int(suite.attrib[key]) != value for key, value in {"tests": count, "failures": 0, "errors": 0, "skipped": 0}.items()):
+            raise RuntimeError("Original regression case set did not pass completely")
+        (logs / xml.name).write_bytes(xml.read_bytes())
+        cases.extend(case.attrib["name"] for case in suite.findall("testcase"))
+    artifact = json.loads(manifest.read_text())
+    (work / "candidate-tests-result.json").write_text(json.dumps({"status": "isolated-original-regressions-GREEN",
+        "artifact_sha256": artifact["output_sha256"], "manifest": str(manifest), "cases": cases,
+        "production_dependency_changed": False, "native_verification": "pending"}, sort_keys=True, indent=2) + "\n")
+    print("Original3state+2wrapper regressions GREEN on hash-verified isolated patched artifact; normal project dependencies unchanged")
+
+
+if __name__ == "__main__":
+    main()

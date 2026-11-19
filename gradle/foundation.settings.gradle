@@ -1,0 +1,173 @@
+// Copyright 2026 Element Creations Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+// Normal-build backport selection. Qualification init scripts retain their explicit isolated control contract.
+import groovy.json.JsonSlurper
+import java.security.MessageDigest
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.type.ArtifactTypeDefinition
+import org.gradle.api.attributes.Attribute
+import org.gradle.api.tasks.testing.Test
+
+def root = settings.rootDir
+def qualification = new File(root, 'tools/foundation/control-test.init.gradle').canonicalFile
+if (gradle.startParameter.initScripts.any { it.canonicalFile == qualification }) {
+    if (!System.getenv('FOUNDATION_CONTROL_MANIFEST')) throw new GradleException('Explicit Foundation qualification manifest missing')
+    logger.lifecycle('Explicit Foundation qualification init owns isolated dependency selection')
+    return
+}
+def group = 'androidx.compose.foundation'
+def base = '1.12.0'
+def version = '1.12.0-element-anchor.1'
+def expectedAar = '6845962e3b95e1919b94f8f0a0cb8eb5acc18df3817fd9c24aaa72c19d5b15d8'
+def expectedPatch = '986f2c6434628f96d750de4fe16e3c25dd01c49bc1ef629b3464664a29a09410'
+def rebuild = 'Run python3 tools/foundation/bootstrap under the documented build guards before building Element X.'
+def manifestFile = new File(root, 'build/foundation-private/production-repository.json')
+if (!manifestFile.isFile()) throw new GradleException(rebuild)
+def manifest = new JsonSlurper().parse(manifestFile)
+def digest = { byte[] bytes -> MessageDigest.getInstance('SHA-256').digest(bytes).encodeHex().toString() }
+if (manifest.kind != 'qualified-foundation-backport' || manifest.group != group || manifest.version != version ||
+        manifest.base_version != base || manifest.output_sha256 != expectedAar || manifest.patch_sha256 != expectedPatch ||
+        manifest.input_aar_sha256 != '657c05465eddae8ff7a1e55a4a615bc26da9012834a44e1e4282deeb54ae8ea7' ||
+        digest(new File(root, 'tools/foundation/anchored-drag-cleanup.patch').bytes) != expectedPatch ||
+        digest(new File(manifest.output).bytes) != expectedAar) throw new GradleException(rebuild)
+['publication_inputs', 'recipe_inputs'].each { field ->
+    if (!manifest[field]) throw new GradleException('Foundation provenance closure missing. ' + rebuild)
+    manifest[field].each { path, expected ->
+        def file = new File(path)
+        if (!file.isFile() || digest(file.bytes) != expected) throw new GradleException('Foundation input changed: ' + path + '. ' + rebuild)
+    }
+}
+// A BOM update must explicitly re-evaluate this fixed base-version backport.
+def catalog = new File(root, 'gradle/libs.versions.toml').text
+if (!(catalog =~ /(?m)^compose_bom\s*=\s*"2026\.08\.00"\s*$/).find())
+    throw new GradleException('Compose BOM changed; requalify or remove the Foundation backport')
+def expectedClasses = [:]
+new ZipFile(new File(manifest.output)).withCloseable { aar ->
+    new ZipInputStream(aar.getInputStream(aar.getEntry('classes.jar'))).withCloseable { jar ->
+        def entry
+        while ((entry = jar.nextEntry) != null) {
+            if (entry.name.endsWith('.class')) {
+                if (expectedClasses.containsKey(entry.name)) throw new GradleException('Duplicate qualified class')
+                expectedClasses[entry.name] = digest(jar.readAllBytes())
+            }
+        }
+    }
+}
+if (expectedClasses.size() != 1981 || manifest.source_family_classes.size() != 33)
+    throw new GradleException('Unexpected Foundation class family')
+def repository = settings.dependencyResolutionManagement.repositories.maven {
+    name = 'elementQualifiedFoundation'
+    url = new File(manifest.repository).toURI()
+}
+settings.dependencyResolutionManagement.repositories.exclusiveContent {
+    forRepositories(repository)
+    filter { includeModule(group, 'foundation'); includeModule(group, 'foundation-android') }
+}
+gradle.beforeProject { project ->
+    project.configurations.configureEach { configuration ->
+        configuration.resolutionStrategy.eachDependency { dependency ->
+            if (dependency.requested.group == group && dependency.requested.name in ['foundation', 'foundation-android']) {
+                def requested = dependency.requested.version
+                if (requested && requested != version) {
+                    def match = requested =~ /^(\d+)\.(\d+)\.(\d+)(?:-(?:alpha|beta|rc)\d+)?$/
+                    // Transitive libraries can request older releases. Do not backport over a newer request.
+                    if (!match.matches()) throw new GradleException('Unexpected Foundation version selector: ' + dependency.requested)
+                    def comparison = (1..3).collect { part -> match[0][part].toBigInteger() <=> base.split('\\.')[part - 1].toInteger() }
+                        .find { it != 0 }
+                    if (comparison == 1) throw new GradleException('Unexpected Foundation base version: ' + dependency.requested)
+                }
+                dependency.useTarget(group + ':foundation-android:' + version)
+                dependency.because('Qualified mutation-owner cleanup backport; complete AAR SHA-256 ' + expectedAar)
+            }
+        }
+        configuration.incoming.afterResolve { incoming ->
+            def selected = incoming.resolutionResult.allComponents.findAll { component ->
+                component.moduleVersion?.group == group && component.moduleVersion?.name in ['foundation', 'foundation-android']
+            }
+            if (selected) {
+                if (selected.size() != 1 || selected.first().moduleVersion.name != 'foundation-android' || selected.first().moduleVersion.version != version)
+                    throw new GradleException('Unexpected Foundation implementation in ' + configuration.name)
+                def artifacts = incoming.artifactView {
+                    componentFilter { id -> id instanceof ModuleComponentIdentifier && id.group == group && id.module == 'foundation-android' }
+                    attributes { attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, 'aar') }
+                }.files.files
+                if (artifacts.size() != 1 || digest(artifacts.first().bytes) != expectedAar)
+                    throw new GradleException('Resolved Foundation AAR identity differs in ' + configuration.name)
+            }
+        }
+    }
+    if (project.path == ':app') {
+        project.tasks.register('verifyFoundationBackport') {
+            doLast {
+                ['gplayDebugRuntimeClasspath', 'fdroidDebugRuntimeClasspath', 'gplayReleaseRuntimeClasspath', 'fdroidReleaseRuntimeClasspath'].each { name ->
+                    def configuration = project.configurations.getByName(name)
+                    def components = configuration.incoming.resolutionResult.allComponents.findAll { component ->
+                        component.moduleVersion?.group == group && component.moduleVersion?.name == 'foundation-android'
+                    }
+                    if (components.size() != 1 || components.first().moduleVersion.version != version)
+                        throw new GradleException('Missing qualified Foundation in ' + name)
+                    // Resolving the AAR also executes the configuration-wide identity guard above.
+                    configuration.incoming.artifactView {
+                        componentFilter { id -> id instanceof ModuleComponentIdentifier && id.group == group && id.module == 'foundation-android' }
+                        attributes { attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, 'aar') }
+                    }.files.files
+                    logger.lifecycle('Qualified production Foundation ' + name + ': ' + expectedAar)
+                }
+            }
+        }
+    }
+    project.tasks.withType(Test).configureEach { task ->
+        if (!task.name.startsWith('test') || !task.name.endsWith('UnitTest')) return
+        def testVariant = task.name.substring(4).uncapitalize()
+        def runtime = project.configurations.findByName(testVariant + 'RuntimeClasspath')
+        if (runtime != null) {
+            def types = ['android-classes-jar', 'android-java-res']
+            // Paparazzi registers dependency instrumentation for Android unit-test variants.
+            if (project.pluginManager.hasPlugin('app.cash.paparazzi')) types.add('android-asm-instrumented-jars')
+            def views = types.collect { type ->
+                runtime.incoming.artifactView {
+                    componentFilter { id -> id instanceof ModuleComponentIdentifier && id.group == group && id.module == 'foundation-android' && id.version == version }
+                    attributes {
+                        attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, type)
+                        if (type == 'android-asm-instrumented-jars') {
+                            attribute(Attribute.of('asm-transformed-variant', String), testVariant)
+                        }
+                    }
+                }.files
+            }
+            task.inputs.files(views).withPropertyName('qualifiedFoundationCarriers')
+            task.doFirst {
+                def attributed = views.collectMany { it.files }.collect { it.canonicalFile }.toSet()
+                def marker = 'androidx/compose/foundation/gestures/AnchoredDraggableState.class'
+                def carriers = task.classpath.files.findAll { file ->
+                    if (file.isDirectory() && new File(file, marker).exists()) throw new GradleException('Directory shadows Foundation')
+                    if (!file.isFile() || !file.name.endsWith('.jar')) return false
+                    new ZipFile(file).withCloseable { jar -> jar.getEntry(marker) != null }
+                }
+                if (attributed && !carriers) throw new GradleException('Foundation missing from actual Test JVM')
+                carriers.each { file ->
+                    if (!attributed.contains(file.canonicalFile)) {
+                        def inventory = new ZipFile(file).withCloseable { jar ->
+                            [classes: jar.entries().findAll { it.name.endsWith('.class') }.size(),
+                             markerSha256: digest(jar.getInputStream(jar.getEntry(marker)).withCloseable { it.bytes })]
+                        }
+                        throw new GradleException("Unattributed Foundation Test carrier in ${task.path}: ${file}; ${inventory}; attributed: ${attributed}")
+                    }
+                    def actual = [:]
+                    new ZipFile(file).withCloseable { jar ->
+                        jar.entries().each { entry ->
+                            if (entry.name.endsWith('.class')) {
+                                if (actual.containsKey(entry.name)) throw new GradleException('Duplicate Test class')
+                                actual[entry.name] = digest(jar.getInputStream(entry).withCloseable { it.bytes })
+                            }
+                        }
+                    }
+                    if (actual != expectedClasses) throw new GradleException('Actual Test JVM Foundation bytes differ')
+                }
+                if (carriers) logger.lifecycle('Qualified production Foundation: ' + expectedAar + '; all 1981 classes/33 family classes verified in every attributed Test carrier')
+            }
+        }
+    }
+}

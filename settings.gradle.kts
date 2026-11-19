@@ -50,7 +50,9 @@ dependencyResolutionManagement {
             }
             filter {
                 includeGroupByRegex("android\\..*")
-                includeGroupByRegex("androidx\\..*")
+                // The two qualified Foundation modules are exclusive to the local, hash-guarded repository.
+                includeGroupByRegex("androidx\\.(?!compose\\.foundation$).*")
+                includeModuleByRegex("androidx\\.compose\\.foundation", "(?!foundation(?:-android)?$).*")
                 includeGroupByRegex("com\\.android\\.tools.*")
                 includeGroupByRegex("com\\.google\\.firebase.*")
                 includeGroupByRegex("com\\.google\\.android.*")
@@ -65,6 +67,8 @@ dependencyResolutionManagement {
         }
     }
 }
+
+apply(from = "gradle/foundation.settings.gradle")
 
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 

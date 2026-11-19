@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Inspect linkage and scope of the three lifecycle class replacements. No AAR or install.
+
+All other original class bytes will be retained. Only the proven-unused old outer
+continuation may be removed. Caller owns build guards and resource admission.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import zipfile
+
+BASE = "androidx/compose/foundation/gestures/AnchoredDraggableState"
+PAYLOAD = {BASE + ".class", BASE + "$anchoredDrag$2.class", BASE + "$anchoredDrag$4.class"}
+OBSOLETE = BASE + "$anchoredDrag$3.class"
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def main():
+    root = Path(__file__).resolve().parents[2]
+    work = root / "build/foundation-private"
+    result_path = work / "candidate-result.json"
+    candidate = json.loads(result_path.read_text())
+    if candidate["status"] != "compiled-for-Gate-B-review-NOT-qualified" or sha(candidate["jar"]) != candidate["jar_sha256"]:
+        raise RuntimeError("Candidate identity differs")
+    if candidate["missing"] != [OBSOLETE] or candidate["added"]:
+        raise RuntimeError("Unexpected generated class set")
+    inputs_path = work / "candidate-inputs.json"
+    inputs = json.loads(inputs_path.read_text())
+    identities = {str(result_path): sha(result_path), str(inputs_path): sha(inputs_path)}
+    identities.update(inputs["prerequisites"])
+    identities.update(inputs["sources"])
+    identities.update(inputs["java"])
+    for path, expected in identities.items():
+        if sha(path) != expected:
+            raise RuntimeError("Candidate prerequisite changed: " + path)
+    scratch = Path(candidate["candidate"]).parent
+    original = scratch / "original-classes.jar"
+    if sha(original) != "e8a5f059e7ada7b60209d6fc8cb79283e9af989b3daadf1aa13f7d9a2b8fe31f":
+        raise RuntimeError("Original class archive changed")
+    removed_name = OBSOLETE[:-6].encode()
+    references = {}
+    with zipfile.ZipFile(original) as archive:
+        for name in archive.namelist():
+            if removed_name in archive.read(name):
+                references[name] = "contains obsolete internal name"
+                if name not in PAYLOAD | {OBSOLETE}:
+                    raise RuntimeError("Retained original entry refers to removed continuation: " + name)
+    with zipfile.ZipFile(candidate["jar"]) as archive:
+        for name in archive.namelist():
+            if removed_name in archive.read(name):
+                raise RuntimeError("Candidate still refers to obsolete continuation: " + name)
+        if not PAYLOAD.issubset(archive.namelist()):
+            raise RuntimeError("Lifecycle payload incomplete")
+    output = Path(candidate["candidate"]) / "contract-check"
+    output.mkdir(exist_ok=True)
+    (work / "candidate-contract.json").unlink(missing_ok=True)
+    resolved = json.loads((scratch / "resolved-inputs.json").read_text())
+    asm_paths = [entry["file"] for entry in resolved["inspector"]]
+    for path in asm_paths:
+        if identities.get(path) != sha(path):
+            raise RuntimeError("Inspector input is not bound by the qualified candidate")
+    asm = os.pathsep.join(asm_paths)
+    java = Path(json.loads((work / "candidate-command-1.json").read_text())[0]).parent
+    checker = root / "tools/foundation/producer/CheckLifecycleContract.java"
+    identities[str(checker)] = sha(checker)
+    commands = [
+        ("compile-checker", [str(java / "javac"), "--release", "11", "-cp", asm, "-d", str(output), str(checker)]),
+        ("check-contract", [str(java / "java"), "-Xmx1g", "-cp", str(output) + os.pathsep + asm,
+                            "CheckLifecycleContract", str(original), candidate["jar"], str(output)]),
+    ]
+    for label, command in commands:
+        with (output / (label + ".log")).open("w") as stream:
+            completed = subprocess.run(command, cwd=root, stdout=stream, stderr=subprocess.STDOUT)
+        if completed.returncode:
+            raise RuntimeError(f"{label} failed with exit {completed.returncode}; inspect {output}")
+    # An unpatched archive must not satisfy the three changed-method contract.
+    negative = output / "unpatched-negative"
+    with (output / "unpatched-negative.log").open("w") as stream:
+        rejected = subprocess.run([str(java / "java"), "-Xmx1g", "-cp", str(output) + os.pathsep + asm,
+                                   "CheckLifecycleContract", str(original), str(original), str(negative)],
+                                  cwd=root, stdout=stream, stderr=subprocess.STDOUT)
+    if rejected.returncode == 0 or "Expected exactly three lifecycle method changes" not in (output / "unpatched-negative.log").read_text():
+        raise RuntimeError("Unpatched negative control did not fail at the expected boundary")
+    for path, expected in identities.items():
+        if sha(path) != expected:
+            raise RuntimeError("Prerequisite changed during contract check: " + path)
+    report = {"status": "lifecycle-scope-and-linkage-check-PASS-not-installed", "candidate_jar_sha256": candidate["jar_sha256"],
+              "payload": sorted(PAYLOAD), "remove": [OBSOLETE], "original_obsolete_references": references,
+              "retain_original_bytes_for_every_other_entry": True, "contract_output": str(output),
+              "changed_methods": (output / "changed-methods.txt").read_text().splitlines(), "inputs": identities}
+    (work / "candidate-contract.json").write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")
+    print("Lifecycle declarations/metadata/code-scope/reference checks PASS; no AAR assembled or dependency installed")
+
+
+if __name__ == "__main__":
+    main()

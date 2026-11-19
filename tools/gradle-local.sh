@@ -11,21 +11,34 @@ exec 9>"$lock_dir/gradle.lock"
 echo 'Waiting for the local Element X build slot...'
 flock 9
 
-# R8 needs the larger heap for release builds. Only explicitly debug tasks use 4g.
+# Source-only reproduction uses direct Gradle descendants while this launcher retains the shared guard.
+if [[ ${1:-} == --bootstrap-foundation ]]; then
+    shift
+    exec python3 tools/foundation/bootstrap "$@"
+fi
+
+# R8 needs the larger heap for release builds. Only explicitly debug tasks use 3g.
 heap=8g
 if [[ $# -gt 0 ]]; then
     debug_only=true
+    has_debug_task=false
+    skip_test_filter=false
     for arg in "$@"; do
+        if [[ $skip_test_filter == true ]]; then
+            skip_test_filter=false
+            continue
+        fi
         case "$arg" in
+            --tests) skip_test_filter=true ;;
             -*) ;;
-            *Debug*) ;;
+            *Debug*) has_debug_task=true ;;
             *) debug_only=false ;;
         esac
     done
-    if [[ $debug_only == true ]]; then heap=4g; fi
+    if [[ $debug_only == true && $has_debug_task == true ]]; then heap=3g; fi
 fi
 
 # A single-use daemon exits after the build, before the E2E emulator starts.
 exec ./gradlew "$@" --max-workers=2 --no-parallel --no-daemon \
     "-Dorg.gradle.jvmargs=-Xmx$heap -Dfile.encoding=UTF-8 -XX:+UseG1GC" \
-    -Pkotlin.daemon.jvmargs=-Xmx2g
+    -Pkotlin.daemon.jvmargs=-Xmx1g

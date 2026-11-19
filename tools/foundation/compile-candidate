@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Compile the approved patch in isolation and retain exact deltas. NEVER installs/repackages.
+
+Requires the successful repackaged-control proof and unchanged measured inputs.
+Raw differences are evidence for Gate B review, not an automatic compatibility pass.
+Caller owns external build guards and resource admission.
+"""
+import difflib
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import uuid
+import xml.etree.ElementTree as ET
+import zipfile
+
+PATCH_SHA = "986f2c6434628f96d750de4fe16e3c25dd01c49bc1ef629b3464664a29a09410"
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def main():
+    reproduce = sys.argv[1:] == ["--reproduce-qualified"]
+    if sys.argv[1:] and not reproduce:
+        raise RuntimeError("Only --reproduce-qualified is supported")
+    root = Path(__file__).resolve().parents[2]
+    work = root / "build/foundation-private"
+    prerequisites = {}
+    for name in ("control-comparison.json", "control-inputs.json", "control-source-inputs.json", "control-command.json",
+                 "control-output-paths.json", "control-repository.json", "repacked-control-stages.json"):
+        path = work / name
+        prerequisites[str(path)] = sha(path)
+    if any(json.loads((work / "control-comparison.json").read_text()).values()):
+        raise RuntimeError("Strict control prerequisite failed")
+    stages = json.loads((work / "repacked-control-stages.json").read_text())
+    for name in ("qualify-control", "repack-control", "publish-control"):
+        if stages[name]["exit_code"] != 0:
+            raise RuntimeError("Control preparation incomplete")
+    if reproduce and stages.get("mode") != "reproduce-qualified-output-no-tests":
+        raise RuntimeError("Explicit known-output reproduction prerequisites missing")
+    # Reproduction is accepted later ONLY if the complete AAR equals the independently qualified fixed digest.
+    tests = () if reproduce else (
+        ("libraries/designsystem", "io.element.android.libraries.designsystem.theme.components.AnchoredDraggableStateTest", 3),
+        ("features/messages/impl", "io.element.android.features.messages.impl.actionlist.ActionListSheetInsetsTest", 2),
+    )
+    for module, name, count in tests:
+        label = name.rsplit(".", 1)[-1]
+        if stages[label]["exit_code"] != 1:
+            raise RuntimeError("Original control regression did not fail")
+        report = root / module / "build/test-results/testDebugUnitTest" / ("TEST-" + name + ".xml")
+        suite = ET.parse(report).getroot()
+        if any(int(suite.attrib[key]) != value for key, value in {"tests": count, "failures": count, "errors": 0, "skipped": 0}.items()):
+            raise RuntimeError("Control RED XML prerequisite differs")
+        identity = work / "test-classpaths" / ("_" + module.replace("/", "_") + "-testDebugUnitTest.json")
+        record = json.loads(identity.read_text())
+        if record["implementationCount"] != 1 or record["verifiedClassCount"] != 1982 or record["verifiedFamilyCount"] != 34:
+            raise RuntimeError("Control runtime identity prerequisite missing")
+        prerequisites[str(report)] = sha(report)
+        prerequisites[str(identity)] = sha(identity)
+    for name in ("control-inputs.json", "control-source-inputs.json"):
+        for path, identity in json.loads((work / name).read_text()).items():
+            expected = identity["sha256"] if isinstance(identity, dict) else identity
+            if sha(path) != expected:
+                raise RuntimeError("Control input changed: " + path)
+            prerequisites[path] = expected
+    control_paths = json.loads((work / "control-output-paths.json").read_text())
+    if sha(control_paths["classes"]) != control_paths["classes_sha256"]:
+        raise RuntimeError("Control compiler output changed")
+    control = json.loads((work / "control-repository.json").read_text())
+    if sha(control["output"]) != control["output_sha256"]:
+        raise RuntimeError("Control AAR changed")
+    original = Path(control["output"]).parent / "original-classes.jar"
+    if sha(original) != "e8a5f059e7ada7b60209d6fc8cb79283e9af989b3daadf1aa13f7d9a2b8fe31f":
+        raise RuntimeError("Qualified original friend classes changed")
+    prerequisites[str(original)] = sha(original)
+    patch = root / "tools/foundation/anchored-drag-cleanup.patch"
+    prerequisites[str(patch)] = sha(patch)
+    if sha(patch) != PATCH_SHA:
+        raise RuntimeError("Approved patch identity differs")
+    scratch = Path(control["output"]).parent
+    candidate = scratch / ("candidate-" + uuid.uuid4().hex[:12])
+    source_root = candidate / "source"
+    source_root.mkdir(parents=True)
+    logs = work / "candidate-logs"
+    logs.mkdir(exist_ok=True)
+    (work / "candidate-result.json").unlink(missing_ok=True)
+    sources = json.loads((work / "control-source-inputs.json").read_text())
+    replacements = {}
+    for old in sources:
+        old_path = Path(old)
+        if old_path.name == "AnchoredDraggable.kt":
+            relative = Path("commonMain/androidx/compose/foundation/gestures/AnchoredDraggable.kt")
+        else:
+            relative = old_path.relative_to(scratch / "control-source")
+        target = source_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(old_path.read_bytes())
+        replacements[old] = str(target)
+
+    def run(label, command, cwd=root):
+        with (logs / (label + ".log")).open("w") as stream:
+            result = subprocess.run(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT)
+        if result.returncode != 0:
+            raise RuntimeError(f"Candidate {label} failed with exit {result.returncode}; inspect {logs}")
+
+    run("patch-check", ["git", "apply", "--check", str(patch)], source_root)
+    run("patch-apply", ["git", "apply", str(patch)], source_root)
+    command = json.loads((work / "control-command.json").read_text())
+    for index, argument in enumerate(command):
+        for old, new in replacements.items():
+            argument = argument.replace(old, new)
+        command[index] = argument
+    # Bind every actual compiler/compile/plugin path as well as the logical resolved inputs.
+    used = set()
+    for option in ("-cp", "-classpath"):
+        used.update(command[command.index(option) + 1].split(os.pathsep))
+    used.update(argument.split("=", 1)[1] for argument in command if argument.startswith(("-Xplugin=", "-Xfriend-paths=")))
+    for path in used:
+        prerequisites[path] = sha(path)
+    source_manifest = {str(path): sha(path) for path in source_root.rglob("*.kt")}
+    for old, new in replacements.items():
+        if Path(old).name != "AnchoredDraggable.kt" and sha(new) != sources[old]:
+            raise RuntimeError("Supporting source was modified")
+    (work / "candidate-inputs.json").write_text(json.dumps({"prerequisites": prerequisites, "patch_sha256": PATCH_SHA,
+                                                            "sources": source_manifest, "java": {command[0]: sha(command[0])}}, sort_keys=True, indent=2) + "\n")
+    compiled = []
+    for iteration in (1, 2):
+        output = candidate / ("classes-" + str(iteration))
+        output.mkdir()
+        invocation = list(command)
+        invocation[invocation.index("-d") + 1] = str(output)
+        (work / f"candidate-command-{iteration}.json").write_text(json.dumps(invocation, indent=2) + "\n")
+        run("compile-patched-" + str(iteration), invocation)
+        compiled.append({str(path.relative_to(output)): sha(path) for path in output.rglob("*") if path.is_file()})
+    if compiled[0] != compiled[1]:
+        raise RuntimeError("Repeated patched compilation differs")
+    jar = candidate / "compiled-candidate.jar"
+    with zipfile.ZipFile(jar, "w") as archive:
+        for name in sorted(compiled[0]):
+            archive.write(candidate / "classes-1" / name, name)
+    inputs = json.loads((scratch / "resolved-inputs.json").read_text())
+    asm_cp = os.pathsep.join(entry["file"] for entry in inputs["inspector"])
+    java = Path(command[0]).parent
+    inspector = candidate / "inspector"
+    inspector.mkdir()
+    run("compile-inspector", [str(java / "javac"), "--release", "11", "-cp", asm_cp, "-d", str(inspector),
+                              str(root / "tools/foundation/producer/InspectClassFamily.java")])
+    normalized = candidate / "normalized"
+    run("inspect-candidate", [str(java / "java"), "-Xmx1g", "-cp", str(inspector) + os.pathsep + asm_cp,
+                              "InspectClassFamily", str(jar), str(normalized)])
+    before = candidate / "published-normalized"
+    run("inspect-published", [str(java / "java"), "-Xmx1g", "-cp", str(inspector) + os.pathsep + asm_cp,
+                              "InspectClassFamily", str(original), str(before)])
+    names = set((before / "classes.txt").read_text().splitlines())
+    after = set((normalized / "classes.txt").read_text().splitlines())
+    changed = []
+    differences = work / "candidate-diffs" / candidate.name
+    for name in sorted(names & after):
+        old, new = (before / (name + ".txt")).read_text(), (normalized / (name + ".txt")).read_text()
+        if old != new:
+            changed.append(name)
+            target = differences / (name + ".diff")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), fromfile="published/" + name, tofile="candidate/" + name)))
+    for path, expected in prerequisites.items():
+        if sha(path) != expected:
+            raise RuntimeError("Prerequisite changed during candidate compilation: " + path)
+    result = {"status": "compiled-for-Gate-B-review-NOT-qualified", "candidate": str(candidate), "jar": str(jar), "jar_sha256": sha(jar),
+              "normalized": str(normalized), "diffs": str(differences), "missing": sorted(names - after), "added": sorted(after - names),
+              "changed": changed, "repeat_compile_equal": True, "all_compiler_outputs": compiled[0], "patch_sha256": PATCH_SHA}
+    (work / "candidate-result.json").write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")
+    print("Patched source compiled twice; exact deltas retained for Gate B review. NO AAR or substitution created.")
+
+
+if __name__ == "__main__":
+    main()

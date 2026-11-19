@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Reproduce the already independently qualified fixed AAR, then publish only to owned local scratch.
+
+Caller owns Gradle/build guards and resource admission where required. This is not
+qualification of a new binary: every complete output must equal QUALIFIED_AAR.
+No Android app, private SDK, emulator, test report or screenshot is built here.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import uuid
+
+QUALIFIED_AAR = "6845962e3b95e1919b94f8f0a0cb8eb5acc18df3817fd9c24aaa72c19d5b15d8"
+
+
+def digest(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def valid(manifest):
+    try:
+        data = json.loads(manifest.read_text())
+        return (data['kind'] == 'qualified-foundation-backport' and data['output_sha256'] == QUALIFIED_AAR
+                and data['group'] == 'androidx.compose.foundation' and data['version'] == '1.12.0-element-anchor.1'
+                and data['base_version'] == '1.12.0'
+                and data['patch_sha256'] == '986f2c6434628f96d750de4fe16e3c25dd01c49bc1ef629b3464664a29a09410'
+                and digest(data['output']) == QUALIFIED_AAR
+                and all(digest(path) == expected for key in ['recipe_inputs', 'publication_inputs']
+                        for path, expected in data[key].items()))
+    except (OSError, KeyError, ValueError):
+        return False
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--ensure', action='store_true', help='Reuse only an exact verified source/publication closure')
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[2]
+    work = root / 'build/foundation-private'
+    manifest = work / 'production-repository.json'
+    if args.ensure and valid(manifest):
+        print('Exact qualified Foundation source/publication closure already present')
+        return
+    work.mkdir(parents=True, exist_ok=True)
+    archive = work / 'bootstrap-preimages' / uuid.uuid4().hex
+    archive.mkdir(parents=True)
+    for path in work.glob('*.json'):
+        shutil.copy2(path, archive / path.name)
+    manifest.unlink(missing_ok=True)
+    commands = [('qualify-repacked-control', ['--reproduce-qualified']), ('compile-candidate', ['--reproduce-qualified']),
+                ('check-candidate-contract', []), ('assemble-candidate', []), ('publish-control', ['--production'])]
+    stages = []
+    for tool, arguments in commands:
+        command = [sys.executable, str(root / 'tools/foundation' / tool), *arguments]
+        result = subprocess.run(command, cwd=root)
+        stages.append({'command': command, 'exit_code': result.returncode})
+        (work / 'bootstrap-stages.json').write_text(json.dumps(stages, indent=2) + '\n')
+        if result.returncode:
+            raise RuntimeError('Foundation reproduction failed; no production artifact accepted: ' + tool)
+        if tool == 'assemble-candidate':
+            assembled = json.loads((work / 'assembled-candidate.json').read_text())
+            if assembled['output_sha256'] != QUALIFIED_AAR or digest(assembled['output']) != QUALIFIED_AAR:
+                raise RuntimeError('Reproduced AAR differs from the independently qualified complete binary')
+    if not valid(manifest):
+        raise RuntimeError('Published Foundation source/artifact closure did not verify')
+    print('Reproduced qualified Foundation AAR exactly; local identifiable production coordinate ready')
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,21 @@
+name: Set up Gradle and qualified Foundation
+description: Reproduce the pinned source-backed Foundation backport before normal project resolution
+inputs:
+  cache-read-only:
+    description: Forward the workflow's existing Gradle cache policy
+    required: false
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Configure Gradle
+      uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      with:
+        cache-read-only: ${{ inputs.cache-read-only }}
+    - name: Reproduce qualified Foundation from pinned source
+      shell: bash
+      run: |
+        if [[ ! -f "$ANDROID_HOME/platforms/android-37/android.jar" && ! -f "$ANDROID_HOME/platforms/android-37.0/android.jar" ]]; then
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-37.0' < <(yes)
+        fi
+        python3 tools/foundation/bootstrap --ensure

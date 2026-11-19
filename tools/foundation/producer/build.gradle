@@ -1,0 +1,62 @@
+// Copyright 2026 Element Creations Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+import groovy.json.JsonOutput
+import org.gradle.api.attributes.Attribute
+import org.gradle.api.attributes.AttributeCompatibilityRule
+import org.gradle.api.attributes.AttributeDisambiguationRule
+import org.gradle.api.attributes.CompatibilityCheckDetails
+import org.gradle.api.attributes.MultipleCandidatesDetails
+import org.gradle.api.attributes.Usage
+
+// Match Kotlin Android's platform compatibility: Android can consume JVM libraries.
+abstract class AndroidJvmCompatibility implements AttributeCompatibilityRule<String> {
+    void execute(CompatibilityCheckDetails<String> details) {
+        if (details.consumerValue == 'androidJvm' && details.producerValue == 'jvm') details.compatible()
+    }
+}
+abstract class AndroidJvmDisambiguation implements AttributeDisambiguationRule<String> {
+    void execute(MultipleCandidatesDetails<String> details) {
+        if (details.candidateValues.contains('androidJvm')) details.closestMatch('androidJvm')
+        else if (details.candidateValues.contains('jvm')) details.closestMatch('jvm')
+    }
+}
+repositories { google(); mavenCentral() }
+dependencies.attributesSchema.attribute(Attribute.of('org.jetbrains.kotlin.platform.type', String)) {
+    compatibilityRules.add(AndroidJvmCompatibility)
+    disambiguationRules.add(AndroidJvmDisambiguation)
+}
+configurations {
+    compiler
+    composePlugin { transitive = false }
+    inspector
+    foundationCompile {
+        attributes {
+            attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_API))
+            attribute(Attribute.of('org.jetbrains.kotlin.platform.type', String), 'androidJvm')
+        }
+    }
+    baseAar { transitive = false }
+    sources { transitive = false }
+}
+dependencies {
+    compiler 'org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.20'
+    composePlugin 'org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:2.3.20'
+    inspector 'org.ow2.asm:asm-util:9.8'
+    inspector 'org.ow2.asm:asm-tree:9.8'
+    foundationCompile 'androidx.compose.foundation:foundation-android:1.12.0'
+    baseAar 'androidx.compose.foundation:foundation-android:1.12.0@aar'
+    sources 'androidx.compose.foundation:foundation-android:1.12.0:sources@jar'
+}
+tasks.register('resolveInputs') {
+    doLast {
+        def output = System.getenv('FOUNDATION_INPUT_MANIFEST')
+        if (!output) throw new GradleException('FOUNDATION_INPUT_MANIFEST is required')
+        def manifest = [:]
+        ['compiler', 'composePlugin', 'inspector', 'foundationCompile', 'baseAar', 'sources'].each { name ->
+            manifest[name] = configurations.getByName(name).resolvedConfiguration.resolvedArtifacts.collect { artifact ->
+                [coordinate: artifact.moduleVersion.id.toString(), file: artifact.file.absolutePath]
+            }.sort { it.coordinate + it.file }
+        }
+        new File(output).text = JsonOutput.prettyPrint(JsonOutput.toJson(manifest)) + '\n'
+    }
+}

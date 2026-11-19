@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Broader consumer qualification and diagnostic APK with an explicit isolated Foundation candidate.
+No production dependency/settings integration; caller owns guards and admission.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+MODULES = ["libraries/designsystem", "features/messages/impl", "libraries/mediaviewer/impl", "features/share/impl",
+           "libraries/mediaupload/impl", "features/preferences/impl", "libraries/featureflag/impl"]
+AAR_SHA = "6845962e3b95e1919b94f8f0a0cb8eb5acc18df3817fd9c24aaa72c19d5b15d8"
+
+
+def main():
+    app_only = sys.argv[1:] == ['--app-only']
+    if sys.argv[1:] and not app_only:
+        raise RuntimeError('Only --app-only is supported')
+    root = Path(__file__).resolve().parents[2]
+    work = root / "build/foundation-private"
+    manifest = work / "candidate-repository.json"
+    artifact = json.loads(manifest.read_text())
+    coverage = json.loads((work / "lifecycle-coverage.json").read_text())
+    if coverage["status"] != "expanded-lifecycle-coverage-GREEN" or coverage["artifact_sha256"] != AAR_SHA:
+        raise RuntimeError("Accepted lifecycle qualification missing")
+    if artifact["output_sha256"] != AAR_SHA or hashlib.sha256(Path(artifact["output"]).read_bytes()).hexdigest() != AAR_SHA:
+        raise RuntimeError("Candidate artifact identity differs")
+    reused_reports = {}
+    for module in MODULES:
+        directory = root / module / "build/test-results/testDebugUnitTest"
+        reports = list(directory.glob('TEST-*.xml')) if directory.exists() else []
+        if app_only and not reports:
+            raise RuntimeError('Prior completed module reports absent: ' + module)
+        for report in reports:
+            if app_only:
+                suite = ET.parse(report).getroot()
+                if int(suite.attrib['failures']) or int(suite.attrib['errors']):
+                    raise RuntimeError('Prior module failure cannot be reused: ' + module)
+                reused_reports[str(report)] = hashlib.sha256(report.read_bytes()).hexdigest()
+            else:
+                report.unlink()
+    # Regenerate only local repository metadata from hash-pinned upstream POMs; AAR bytes stay fixed.
+    publisher_log = work / 'candidate-license-metadata.log'
+    with publisher_log.open('w') as stream:
+        published = subprocess.run([sys.executable, str(root / 'tools/foundation/publish-control'), '--candidate'],
+                                   cwd=root, stdout=stream, stderr=subprocess.STDOUT)
+    if published.returncode:
+        raise RuntimeError('Candidate metadata refresh failed; inspect ' + str(publisher_log))
+    log = work / "candidate-consumers.log"
+    result_path = work / "candidate-consumers.json"
+    result_path.unlink(missing_ok=True)
+    command = [str(root / "gradlew"), "--no-daemon", "--no-configuration-cache", "--no-parallel", "--max-workers=2",
+               "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8 -XX:+UseG1GC", "-Pkotlin.daemon.jvmargs=-Xmx1g",
+               "-I", str(root / "tools/foundation/control-test.init.gradle"), ":app:verifyFoundationQualificationVariants"]
+    if not app_only:
+        command += [":" + module.replace('/', ':') + ":testDebugUnitTest" for module in MODULES]
+    command += [":app:compileGplayDebugKotlin", ":app:compileFdroidDebugKotlin", ":app:assembleGplayDebug"]
+    env = dict(os.environ, FOUNDATION_CONTROL_MANIFEST=str(manifest))
+    with log.open('w') as stream:
+        result = subprocess.run(command, cwd=root, env=env, stdout=stream, stderr=subprocess.STDOUT)
+    (work / 'candidate-consumers-command.json').write_text(json.dumps({"command": command, "exit_code": result.returncode}, indent=2) + '\n')
+    if result.returncode:
+        raise RuntimeError("Broader candidate consumer qualification failed; inspect " + str(log))
+    for path, expected in reused_reports.items():
+        if hashlib.sha256(Path(path).read_bytes()).hexdigest() != expected:
+            raise RuntimeError('Reused module test report changed during app-only build: ' + path)
+    modules = {}
+    for module in MODULES:
+        reports = list((root / module / "build/test-results/testDebugUnitTest").glob('TEST-*.xml'))
+        if not reports:
+            raise RuntimeError("No fresh unit reports for " + module)
+        counts = {key: 0 for key in ('tests', 'failures', 'errors', 'skipped')}
+        for report in reports:
+            suite = ET.parse(report).getroot()
+            for key in counts:
+                counts[key] += int(suite.attrib[key])
+        if counts['failures'] or counts['errors']:
+            raise RuntimeError("Unit failures in " + module)
+        modules[module] = counts
+    apk = root / 'app/build/outputs/apk/gplay/debug/app-gplay-x86_64-debug.apk'
+    if not apk.is_file():
+        raise RuntimeError("Fresh x86_64 debug APK absent")
+    variants = json.loads((work / 'app-qualification-variants.json').read_text())
+    if len(variants) != 2 or any(value['sha256'] != AAR_SHA for value in variants.values()):
+        raise RuntimeError("Both app flavour Foundation identities not proven")
+    result_path.write_text(json.dumps({"status": "candidate-consumers-and-debug-APK-built", "artifact_sha256": AAR_SHA,
+        "modules": modules, "variants": variants, "apk": str(apk), "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+        "reused_prior_module_reports": reused_reports, "module_tests_rerun": not app_only,
+        "production_dependency_changed": False, "installed_binary_identity": "pending", "native_verification": "pending"}, indent=2) + '\n')
+    print("Broader modules/both app flavours/debug APK built with isolated candidate; installed/native identity pending")
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Run unchanged original state regressions plus expanded lifecycle coverage on accepted isolated AAR.
+Caller owns build guards and admission. No candidate assembly or production dependency integration.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import xml.etree.ElementTree as ET
+
+
+def main():
+    root = Path(__file__).resolve().parents[2]
+    work = root / "build/foundation-private"
+    manifest = work / "candidate-repository.json"
+    artifact = json.loads(manifest.read_text())
+    expected = "6845962e3b95e1919b94f8f0a0cb8eb5acc18df3817fd9c24aaa72c19d5b15d8"
+    if artifact["kind"] != "patched-candidate-for-tests" or artifact["output_sha256"] != expected:
+        raise RuntimeError("Accepted candidate identity differs")
+    if hashlib.sha256(Path(artifact["output"]).read_bytes()).hexdigest() != expected:
+        raise RuntimeError("Actual candidate AAR differs")
+    prior = json.loads((work / "candidate-tests-result.json").read_text())
+    if prior["status"] != "isolated-original-regressions-GREEN" or prior["artifact_sha256"] != expected:
+        raise RuntimeError("Original five-case candidate qualification missing")
+    suites = {"AnchoredDraggableStateTest": 3, "AnchoredDraggableLifecycleTest": 6}
+    package = "io.element.android.libraries.designsystem.theme.components."
+    directory = root / "libraries/designsystem/build/test-results/testDebugUnitTest"
+    log = work / "lifecycle-coverage.log"
+    result_path = work / "lifecycle-coverage.json"
+    result_path.unlink(missing_ok=True)
+    for name in suites:
+        (directory / ("TEST-" + package + name + ".xml")).unlink(missing_ok=True)
+    command = [str(root / "gradlew"), "--no-daemon", "--no-configuration-cache", "--no-parallel", "--max-workers=2",
+               "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8 -XX:+UseG1GC", "-Pkotlin.daemon.jvmargs=-Xmx1g",
+               "-I", str(root / "tools/foundation/control-test.init.gradle"), ":libraries:designsystem:testDebugUnitTest"]
+    for name in suites:
+        command += ["--tests", package + name]
+    env = dict(os.environ, FOUNDATION_CONTROL_MANIFEST=str(manifest))
+    with log.open("w") as output:
+        completed = subprocess.run(command, cwd=root, env=env, stdout=output, stderr=subprocess.STDOUT)
+    (work / "lifecycle-coverage-command.json").write_text(json.dumps({"command": command, "exit_code": completed.returncode}, indent=2) + "\n")
+    if completed.returncode or "Qualified patched Foundation candidate:" not in log.read_text():
+        raise RuntimeError("Expanded lifecycle coverage failed or artifact identity is unproven; inspect " + str(log))
+    cases = []
+    for name, count in suites.items():
+        xml = directory / ("TEST-" + package + name + ".xml")
+        suite = ET.parse(xml).getroot()
+        if any(int(suite.attrib[key]) != value for key, value in {"tests": count, "failures": 0, "errors": 0, "skipped": 0}.items()):
+            raise RuntimeError("Lifecycle suite did not pass every expected case: " + name)
+        cases.extend(case.attrib["name"] for case in suite.findall("testcase"))
+        (work / xml.name).write_bytes(xml.read_bytes())
+    result_path.write_text(json.dumps({"status": "expanded-lifecycle-coverage-GREEN", "artifact_sha256": expected,
+                                      "cases": cases, "production_dependency_changed": False}, indent=2) + "\n")
+    print("Original3 plus6 lifecycle cases GREEN on accepted isolated AAR; native and production integration pending")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+# Copyright 2026 Element Creations Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+"""Qualify an UNMODIFIED single-source Foundation producer; never installs an artifact.
+
+Caller retains build locks and resource admission. Any compiler or compatibility
+failure stops before patch compilation, artifact assembly or dependency substitution.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import uuid
+import zipfile
+
+AAR_SHA = "657c05465eddae8ff7a1e55a4a615bc26da9012834a44e1e4282deeb54ae8ea7"
+SOURCE_SHA = "5b58cea5db2583142e4b4b39dce10cbd75722bd06ab35161f06f987be90a53f1"
+
+
+def sha(path):
+    with Path(path).open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def main():
+    root = Path(__file__).resolve().parents[2]
+    key = root.name
+    scratch = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "dev-scratch/element-x-android" / key / "foundation-private"
+    work = root / "build/foundation-private"
+    scratch.mkdir(parents=True, exist_ok=True)
+    work.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, FOUNDATION_INPUT_MANIFEST=str(scratch / "resolved-inputs.json"))
+    logs = work / "control-logs"
+    logs.mkdir(exist_ok=True)
+    # Failed attempts must not leave a previous comparison looking current.
+    for name in ("control-output-paths.json", "control-comparison.json", "repacked-control.json"):
+        (work / name).unlink(missing_ok=True)
+
+    def run(label, command):
+        print(label, flush=True)
+        with (logs / (label + ".log")).open("w") as output:
+            result = subprocess.run(command, cwd=root, env=env, stdout=output, stderr=subprocess.STDOUT)
+        if result.returncode:
+            raise RuntimeError(f"Control stage {label} failed; inspect {logs / (label + '.log')}")
+
+    run("resolve", [str(root / "gradlew"), "-p", str(root / "tools/foundation/producer"), "resolveInputs",
+                    "--no-daemon", "--no-parallel", "--max-workers=2", "--project-cache-dir", str(scratch / "gradle-project"),
+                    "-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8"])
+    inputs = json.loads((scratch / "resolved-inputs.json").read_text())
+    aar = Path(inputs["baseAar"][0]["file"])
+    sources = Path(inputs["sources"][0]["file"])
+    if sha(aar) != AAR_SHA or sha(sources) != SOURCE_SHA:
+        raise RuntimeError("Published Foundation input differs from approved source/AAR hashes")
+    manifest = {entry["file"]: {"coordinate": entry["coordinate"], "sha256": sha(entry["file"])}
+                for entries in inputs.values() for entry in entries}
+    (work / "control-inputs.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    original = scratch / "original-classes.jar"
+    with zipfile.ZipFile(aar) as archive:
+        original.write_bytes(archive.read("classes.jar"))
+    source = scratch / "control-source/AnchoredDraggable.kt"
+    source.parent.mkdir(exist_ok=True)
+    with zipfile.ZipFile(sources) as archive:
+        member = next(name for name in archive.namelist() if name.endswith("/AnchoredDraggable.kt"))
+        source.write_bytes(archive.read(member))
+        supporting_sources = []
+        for name in (
+            "commonMain/androidx/compose/foundation/internal/PlatformOptimizedCancellationException.kt",
+            "jvmAndAndroidMain/androidx/compose/foundation/internal/PlatformOptimizedCancellationException.jvmAndAndroid.kt",
+        ):
+            target = source.parent / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(archive.read(name))
+            supporting_sources.append(target)
+    # Preserve same-module stability inference for the unmodified expect/actual superclass.
+    # These supporting output classes are NOT part of the replacement source family.
+    common_sources = [source, supporting_sources[0]]
+    (work / "control-source-inputs.json").write_text(json.dumps({str(path): sha(path) for path in [source, *supporting_sources]},
+                                                               sort_keys=True, indent=2) + "\n")
+    compile_paths = [str(original)]
+    extracted = scratch / "compile-jars"
+    extracted.mkdir(exist_ok=True)
+    for entry in inputs["foundationCompile"]:
+        path = Path(entry["file"])
+        if path.suffix == ".aar":
+            target = extracted / (sha(path) + ".jar")
+            with zipfile.ZipFile(path) as archive:
+                if "classes.jar" not in archive.namelist():
+                    continue
+                target.write_bytes(archive.read("classes.jar"))
+            compile_paths.append(str(target))
+        elif path.suffix == ".jar":
+            compile_paths.append(str(path))
+    platforms = Path(env["ANDROID_HOME"]) / "platforms"
+    android = next((platforms / name / "android.jar" for name in ("android-37.0", "android-37")
+                    if (platforms / name / "android.jar").is_file()), None)
+    if android is None:
+        raise RuntimeError("Install compile Android platform 37 before reproducing Foundation")
+    compile_paths.append(str(android))
+    java = Path(env["JAVA_HOME"]) / "bin"
+    compiler_cp = os.pathsep.join(entry["file"] for entry in inputs["compiler"])
+    run_key = uuid.uuid4().hex[:12]
+    output = scratch / ("control-classes-" + run_key)
+    output.mkdir(exist_ok=True)
+    command = [str(java / "java"), "-Xmx2g", "-cp", compiler_cp, "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler",
+               "-no-stdlib", "-no-reflect", "-language-version", "2.1", "-api-version", "2.1",
+               "-module-name", "foundation", "-jvm-target", "11", "-Xbackend-threads=1",
+               "-Xjvm-default=all", "-Xno-param-assertions",
+               "-Xfriend-paths=" + str(original), "-Xmulti-platform", "-Xexpect-actual-classes",
+               "-Xcommon-sources=" + ",".join(str(path) for path in common_sources),
+               "-Xplugin=" + inputs["composePlugin"][0]["file"], "-P", "plugin:androidx.compose.compiler.plugins.kotlin:sourceInformation=true",
+               "-classpath", os.pathsep.join(dict.fromkeys(compile_paths)), "-d", str(output), str(source),
+               *[str(path) for path in supporting_sources]]
+    (work / "control-command.json").write_text(json.dumps(command, indent=2) + "\n")
+    run("compile-unmodified", command)
+    control_jar = scratch / ("control-classes-" + run_key + ".jar")
+    with zipfile.ZipFile(control_jar, "w") as archive:
+        for path in sorted(output.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(output))
+    asm_cp = os.pathsep.join(entry["file"] for entry in inputs["inspector"])
+    inspector = scratch / "inspector"
+    inspector.mkdir(exist_ok=True)
+    run("compile-inspector", [str(java / "javac"), "--release", "11", "-cp", asm_cp, "-d", str(inspector),
+                              str(root / "tools/foundation/producer/InspectClassFamily.java")])
+    inspect_cp = str(inspector) + os.pathsep + asm_cp
+    for label, jar in (("published", original), ("control", control_jar)):
+        run("inspect-" + label, [str(java / "java"), "-Xmx1g", "-cp", inspect_cp, "InspectClassFamily", str(jar),
+                                 str(scratch / (label + "-normalized-" + run_key))])
+    published = scratch / ("published-normalized-" + run_key)
+    control = scratch / ("control-normalized-" + run_key)
+    (work / "control-output-paths.json").write_text(json.dumps({"published": str(published), "control": str(control),
+                                                               "classes": str(control_jar), "classes_sha256": sha(control_jar),
+                                                               "original_aar_sha256": sha(aar)}, indent=2) + "\n")
+    names = (published / "classes.txt").read_text().splitlines()
+    actual = (control / "classes.txt").read_text().splitlines()
+    differences = {"missing": sorted(set(names) - set(actual)), "added": sorted(set(actual) - set(names)),
+                   "changed": [name for name in names if (control / (name + ".txt")).exists()
+                               and (published / (name + ".txt")).read_bytes() != (control / (name + ".txt")).read_bytes()]}
+    (work / "control-comparison.json").write_text(json.dumps(differences, indent=2) + "\n")
+    if any(differences.values()):
+        raise RuntimeError("Unmodified-source control differs; artifact installation/substitution NOT authorised")
+    print("Gate A normalized source-family comparison PASS; no artifact installed or substituted", flush=True)
+
+
+if __name__ == "__main__":
+    main()
