@@ -20,16 +20,19 @@ private val json = Json { ignoreUnknownKeys = true }
 internal fun List<RtcTransport>.toJson(): String = JsonArray(map { it.toJsonObject() }).toString()
 
 private fun RtcTransport.toJsonObject(): JsonObject = when (this) {
-    is RtcTransport.LiveKit -> JsonObject(
-        buildMap {
-            put("type", JsonPrimitive("livekit"))
-            // Mirror the MSC4195 wire format: absent fields are omitted rather than serialized as null.
-            url?.let { put("url", JsonPrimitive(it)) }
-            serviceUrl?.let { put("livekit_service_url", JsonPrimitive(it)) }
-        }
-    )
+    is RtcTransport.LiveKit -> liveKitJson(url, serviceUrl)
+    is RtcTransport.LegacyLiveKit -> liveKitJson(url, serviceUrl)
     is RtcTransport.Custom -> {
         val fields = runCatchingExceptions { json.parseToJsonElement(data) as? JsonObject }.getOrNull().orEmpty()
         JsonObject(fields + ("type" to JsonPrimitive(transportType)))
     }
 }
+
+// Element Call's current parser expects the legacy type name for LiveKit transports.
+private fun liveKitJson(url: String?, serviceUrl: String?): JsonObject = JsonObject(
+    buildMap {
+        put("type", JsonPrimitive("livekit"))
+        url?.let { put("url", JsonPrimitive(it)) }
+        serviceUrl?.let { put("livekit_service_url", JsonPrimitive(it)) }
+    }
+)

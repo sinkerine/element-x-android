@@ -15,7 +15,7 @@ class SdkRtcTransportsTest {
     @Test
     fun `transports keep their order, as the core picks the first it can use`() {
         val json = listOf(
-            RtcTransport.LiveKit(url = null, serviceUrl = "https://sfu.example.org/jwt"),
+            RtcTransport.LegacyLiveKit(url = null, serviceUrl = "https://sfu.example.org/jwt"),
             RtcTransport.Custom(transportType = "org.example.mesh", data = """{"url":"https://mesh.example.org"}"""),
         ).toJson()
 
