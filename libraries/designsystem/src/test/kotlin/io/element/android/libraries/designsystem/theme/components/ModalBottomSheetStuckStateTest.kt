@@ -9,7 +9,6 @@ package io.element.android.libraries.designsystem.theme.components
 
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
-import androidx.compose.foundation.gestures.snapTo
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
 import androidx.compose.runtime.MonotonicFrameClock
@@ -34,11 +33,10 @@ class ModalBottomSheetStuckStateTest {
     }
 
     /**
-     * Pins the Compose foundation behaviour which causes the issue. If this test starts failing after a Compose upgrade,
-     * the bug may have been fixed upstream, and `UnstuckSheetStateEffect` may not be needed anymore.
+     * The qualified Foundation backport clears the stale drag target when the untargeted drag completes.
      */
     @Test
-    fun `anchors updated while an untargeted drag holds the lock leave the animation running flag stuck`() = runTest {
+    fun `untargeted drag completion clears the animation flag after anchors change`() = runTest {
         val state = AnchoredDraggableState(initialValue = Anchor.Top, anchors = anchors(bottom = 1000f))
         val dragStarted = CompletableDeferred<Unit>()
         val releaseDrag = CompletableDeferred<Unit>()
@@ -54,9 +52,6 @@ class ModalBottomSheetStuckStateTest {
         state.updateAnchors(anchors(bottom = 1100f))
         releaseDrag.complete(Unit)
         dragJob.join()
-        assertThat(state.isAnimationRunning).isTrue()
-        // A targeted drag clears the stale state
-        state.snapTo(state.currentValue)
         assertThat(state.isAnimationRunning).isFalse()
     }
 

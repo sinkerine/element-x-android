@@ -54,6 +54,7 @@ internal data class PillifiedText(
  * @param inlineContent the inline content placeholders already present in this [AnnotatedString].
  * @param permalinkParser used to parse permalinks found in the text.
  * @param permalinkBuilder used to build permalinks for the detected mentions if they weren't in a URL format.
+ * @param otherPlaceholderIds inline content IDs reserved by the caller for content such as maths.
  * @return the new text, and [inlineContent] plus any added pill.
  */
 internal fun AnnotatedString.pillify(
