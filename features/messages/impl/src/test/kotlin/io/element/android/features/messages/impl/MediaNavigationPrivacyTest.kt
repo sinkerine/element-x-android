@@ -43,7 +43,7 @@ class MediaNavigationPrivacyTest : RobolectricTest() {
     @Test
     fun `media viewer navigation logging omits captions names and source descriptors`() {
         val target = MessagesFlowNode.NavTarget.MediaViewer(
-            mode = MediaViewerEntryPoint.MediaViewerMode.EventGallery(false),
+            mode = MediaViewerEntryPoint.MediaViewerMode.EventGallery,
             eventId = eventId,
             mediaInfo = info,
             mediaSource = source,
@@ -75,7 +75,6 @@ class MediaNavigationPrivacyTest : RobolectricTest() {
     @Test
     fun `gallery viewer navigation logging omits items and shared caption metadata`() {
         val target = MessagesFlowNode.NavTarget.GalleryViewer(
-            fromPinnedMessages = false,
             eventId = eventId,
             galleryInfo = GalleryInfo("private-caption", null, null, "private-sender", null, null, null, 0),
             canUseOverlay = false,

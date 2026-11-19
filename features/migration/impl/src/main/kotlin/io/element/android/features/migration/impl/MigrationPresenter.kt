@@ -49,7 +49,10 @@ class MigrationPresenter(
 
         return MigrationState(
             migrationAction = migrationAction,
-            onRetry = { retryCount++ },
+            onRetry = {
+                migrationAction = AsyncData.Loading(Unit)
+                retryCount++
+            },
         )
     }
 }

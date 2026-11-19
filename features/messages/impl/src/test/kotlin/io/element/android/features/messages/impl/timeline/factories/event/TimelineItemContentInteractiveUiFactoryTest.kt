@@ -84,7 +84,7 @@ class TimelineItemContentInteractiveUiFactoryTest {
             content = aMessageContent(),
             debugInfoProvider = TimelineItemDebugInfoProvider { aTimelineItemDebugInfo(originalJson = interactiveUiEvent()) }
         )
-        assertThat(factory.create(item, emptyList())).isInstanceOf(TimelineItemInteractiveUiContent::class.java)
+        assertThat(factory.create(item)).isInstanceOf(TimelineItemInteractiveUiContent::class.java)
         assertThat(factory.create(item.content, item.eventId, false, item.sender, item.senderProfile)).isInstanceOf(TimelineItemTextContent::class.java)
     }
 
@@ -191,8 +191,8 @@ class TimelineItemContentInteractiveUiFactoryTest {
         assertThat(factory.create(item(null), interactiveUiFallback)).isNull()
         val baseFactory = aTimelineItemContentFactory()
         val remote = item(null)
-        assertThat(baseFactory.create(remote, emptyList())).isInstanceOf(TimelineItemTextContent::class.java)
-        assertThat(baseFactory.create(remote.copy(content = aRedactedContent()), emptyList())).isEqualTo(TimelineItemRedactedContent)
+        assertThat(baseFactory.create(remote)).isInstanceOf(TimelineItemTextContent::class.java)
+        assertThat(baseFactory.create(remote.copy(content = aRedactedContent()))).isEqualTo(TimelineItemRedactedContent)
     }
 
     @Test
