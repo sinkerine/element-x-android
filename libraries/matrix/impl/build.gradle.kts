@@ -56,7 +56,6 @@ dependencies {
             provenance.getProperty("source.privacy.patch.sha256") == sha256(sourcePrivacyPatch)
     ) { rebuildSdkMessage }
     implementation(projects.libraries.rustsdk)
-    implementation(projects.libraries.rustlsTls)
 
     // The native call's MatrixBackend, over the SDK client. Only this module may hand it a raw SDK client.
     // element-call carries the RTC core, where MatrixBackend lives, as an api dependency.
