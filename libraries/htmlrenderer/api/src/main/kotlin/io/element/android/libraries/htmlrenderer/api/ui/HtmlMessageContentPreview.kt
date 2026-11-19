@@ -35,9 +35,9 @@ import io.element.android.libraries.htmlrenderer.api.HtmlMessageParser.Companion
 import io.element.android.libraries.htmlrenderer.api.ListItemNode
 import io.element.android.libraries.htmlrenderer.api.ListNode
 import io.element.android.libraries.htmlrenderer.api.LocalMentionDisplayNames
-import io.element.android.libraries.htmlrenderer.api.MentionDisplayNames
 import io.element.android.libraries.htmlrenderer.api.MathsBlockNode
 import io.element.android.libraries.htmlrenderer.api.MathsInlineContent
+import io.element.android.libraries.htmlrenderer.api.MentionDisplayNames
 import io.element.android.libraries.htmlrenderer.api.MentionNodeContent
 import io.element.android.libraries.htmlrenderer.api.ParagraphNode
 import io.element.android.libraries.htmlrenderer.api.QuoteNode
@@ -321,7 +321,11 @@ internal class HtmlMessageContentPreviewParam : PreviewParameterProvider<Documen
                 appendInlineContent(MENTION_ID, "Alice")
             },
             inlineContent = persistentMapOf(
-                MENTION_ID to MentionNodeContent.User(displayText = "Alice", userId = UserId("@alice:example.org")),
+                MENTION_ID to MentionNodeContent.User(
+                    displayText = "Alice",
+                    userId = UserId("@alice:example.org"),
+                    permalinkUrl = "https://matrix.to/#/@alice:example.org",
+                ),
             ),
             inlineMaths = persistentMapOf("maths_0" to MathsInlineContent("e^{i\\pi}+1=0", PreviewMathsLayout(widthEm))),
         ),
