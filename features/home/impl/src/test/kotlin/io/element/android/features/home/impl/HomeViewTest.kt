@@ -63,6 +63,8 @@ class HomeViewTest : RobolectricTest() {
             homeState = state,
             onRoomClick = { _, _ -> },
             onSettingsClick = {},
+            onAddAccountClick = {},
+            onSwitchToAccount = {},
             onSetUpRecoveryClick = {},
             onConfirmRecoveryKeyClick = {},
             onStartChatClick = {},
