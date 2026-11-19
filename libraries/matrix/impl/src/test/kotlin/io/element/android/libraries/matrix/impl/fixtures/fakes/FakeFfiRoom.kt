@@ -85,7 +85,6 @@ class FakeFfiRoom(
     override fun subscribeToStateEvents(eventType: StateEventType, listener: RoomStateEventsListener): TaskHandle =
         subscribeToStateEventsLambda(eventType, listener)
 
-
     private var roomInfoUpdatesFlow = MutableStateFlow(roomInfo)
     override fun subscribeToRoomInfoUpdates(listener: RoomInfoListener): TaskHandle {
         roomInfoUpdatesFlow
